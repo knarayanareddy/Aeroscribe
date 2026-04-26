@@ -3,7 +3,6 @@ name: Deploy Landing Page
 on:
   push:
     branches: ["main"]
-    paths: ["apps/landing-page/**"]
   workflow_dispatch:
 
 permissions:
@@ -22,7 +21,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache-dependencies-path: apps/landing-page/package-lock.json
+          cache-dependency-path: apps/landing-page/package-lock.json
 
       - name: Install dependencies
         run: npm ci
