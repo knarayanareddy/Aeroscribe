@@ -40,6 +40,10 @@ Thumbs.db
 !.vscode/extensions.json
 *.swp
 
+# Runtime data written by services/api (evidence, runs, audit, CFD studies).
+# The registry is an operational artefact, not source; back it up out of band.
+data/
+
 # Local archives and large binaries (use Releases for distribution)
 *.zip
 *.tar.gz

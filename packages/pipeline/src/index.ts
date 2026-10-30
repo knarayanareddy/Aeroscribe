@@ -27,3 +27,9 @@ export {
   type ReviewStats,
 } from './stats';
 export { formatMeasuredValue, formatNumber, formatPercent, truncateHash } from './format';
+export {
+  DEFAULT_JOURNAL_TARGET,
+  JOURNAL_TARGETS,
+  findJournalTarget,
+  type JournalTarget,
+} from './journals';

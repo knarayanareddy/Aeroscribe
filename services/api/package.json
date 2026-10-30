@@ -1,0 +1,23 @@
+{
+  "name": "@aeroscribe/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AeroScribe agent runtime: pipeline orchestration, evidence registry, literature clients and CFD adapters",
+  "main": "./src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "smoke:literature": "tsx scripts/literature-smoke.ts",
+    "smoke:cfd": "tsx scripts/cfd-smoke.ts"
+  },
+  "dependencies": {
+    "@aeroscribe/pipeline": "0.1.0",
+    "@hono/node-server": "^2.1.5",
+    "hono": "^4.10.7"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.6"
+  }
+}

@@ -7,7 +7,11 @@ import { afterEach, vi } from 'vitest';
  * stand-ins so component tests exercise real component code instead of guards.
  */
 
-if (!window.matchMedia) {
+// Node-environment suites (services/api) do not define `window`; the browser
+// stubs below only apply to the jsdom suites.
+const hasDom = typeof window !== 'undefined';
+
+if (hasDom && !window.matchMedia) {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: (query: string) => ({
@@ -23,7 +27,7 @@ if (!window.matchMedia) {
   });
 }
 
-if (!globalThis.IntersectionObserver) {
+if (hasDom && !globalThis.IntersectionObserver) {
   class MockIntersectionObserver implements IntersectionObserver {
     readonly root = null;
     readonly rootMargin = '';
@@ -37,7 +41,7 @@ if (!globalThis.IntersectionObserver) {
     MockIntersectionObserver as unknown as typeof IntersectionObserver;
 }
 
-if (!globalThis.ResizeObserver) {
+if (hasDom && !globalThis.ResizeObserver) {
   class MockResizeObserver {
     observe = vi.fn();
     unobserve = vi.fn();
@@ -46,16 +50,18 @@ if (!globalThis.ResizeObserver) {
   globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
 }
 
-// jsdom throws "Not implemented" for canvas contexts; return null so components
-// take their no-canvas fallback path.
-HTMLCanvasElement.prototype.getContext = (() => null) as HTMLCanvasElement['getContext'];
+if (hasDom) {
+  // jsdom throws "Not implemented" for canvas contexts; return null so components
+  // take their no-canvas fallback path.
+  HTMLCanvasElement.prototype.getContext = (() => null) as HTMLCanvasElement['getContext'];
 
-if (!HTMLCanvasElement.prototype.toDataURL) {
-  HTMLCanvasElement.prototype.toDataURL = () => 'data:,';
-}
+  if (!HTMLCanvasElement.prototype.toDataURL) {
+    HTMLCanvasElement.prototype.toDataURL = () => 'data:,';
+  }
 
-if (!window.scrollTo) {
-  window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
+  if (!window.scrollTo) {
+    window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
+  }
 }
 
 if (!globalThis.crypto?.randomUUID) {

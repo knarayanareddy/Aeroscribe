@@ -23,6 +23,8 @@ export interface StageInfo {
   agentsActive: string[];
   /** Human-in-the-loop gate identifier, e.g. `GATE-2`. */
   gateId?: string;
+  /** Sequence number of the evidence-registry record this stage produced. */
+  evidenceSeq?: number;
   gateApproved?: boolean;
   /** Number of times a reviewer sent this stage back for revision. */
   revisionCount?: number;
