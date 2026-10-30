@@ -2,25 +2,30 @@
 
 Last reviewed: 2026-10-30. This file is the honest answer to "what actually works?".
 If a marketing page, a screenshot or an archived design document disagrees with this table,
-this table is correct.
+this table is correct. The backend is mapped step by step in [`BACKEND.md`](./BACKEND.md).
 
 ## Summary
 
-| Area                      | Status              | Notes                                                                                     |
-| ------------------------- | ------------------- | ----------------------------------------------------------------------------------------- |
-| Landing page              | **Implemented**     | Static site, keyboard accessible, self-hosted fonts, no third-party requests.             |
-| Researcher dashboard (UI) | **Implemented**     | Nine views over fixture data, responsive down to 360 px.                                  |
-| Pipeline state machine    | **Implemented**     | Pure reducer in `packages/pipeline`; gate approval, revision requests, run creation.      |
-| Automated tests           | **Implemented**     | Vitest + Testing Library; 75 tests across 14 files.                                       |
-| CI / deployment           | **Implemented**     | Typecheck, lint, format check, tests and builds on every PR; both apps deployed to Pages. |
-| Agent backend             | **Not implemented** | No orchestrator, no LLM calls, no job queue.                                              |
-| Literature APIs           | **Not implemented** | Semantic Scholar / arXiv / Crossref / NTRS clients do not exist.                          |
-| CFD solvers               | **Not implemented** | No SU2/OpenFOAM/Eilmer4 integration; the CFD view renders fixture metrics.                |
-| Verified registry         | **Not implemented** | No checksummed, append-only store. Checksums in the UI are fixture strings.               |
-| LaTeX compilation         | **Not implemented** | The manuscript view generates a `.tex` document client-side; no PDF build.                |
-| Authentication            | **Not implemented** | No login, no user accounts, no per-user data.                                             |
-| Persistence               | **Not implemented** | Dashboard state lives in memory; a reload restores the fixtures.                          |
-| Wiki persistence          | **Not implemented** | Wiki edits and drafts are local to the session and labelled as such.                      |
+| Area                      | Status                   | Notes                                                                                                         |
+| ------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| Landing page              | **Implemented**          | Static site, keyboard accessible, self-hosted fonts, no third-party requests.                                 |
+| Researcher dashboard (UI) | **Implemented**          | Nine views over fixture data, responsive down to 360 px.                                                      |
+| Pipeline state machine    | **Implemented**          | Pure reducer in `packages/pipeline`; gate approval, revision requests, run creation.                          |
+| Automated tests           | **Implemented**          | Vitest + Testing Library: 214 tests across 25 files, apps and API.                                            |
+| CI / deployment           | **Implemented**          | Typecheck, lint, format check, tests and builds for both apps and the API on every PR.                        |
+| Agent runtime (backend)   | **Implemented**          | `services/api`: 9 stage handlers, orchestrator, gates, revisions, audit trail.                                |
+| Literature APIs           | **Implemented**          | Crossref, arXiv and Semantic Scholar clients with DTO mapping, retries and politeness.                        |
+| CFD solver adapter        | **Implemented**          | Real SU2 adapter (three-mesh study) plus a labelled synthetic benchmark for machines without it.              |
+| Grid-convergence (GCI)    | **Implemented**          | Roache GCI with order estimate, Richardson extrapolation and asymptotic-range rejection.                      |
+| Verified registry         | **Implemented**          | Append-only NDJSON hash chain; tamper, reorder and deletion are detected.                                     |
+| Claim verification        | **Implemented**          | Stage 5 refuses to write a manuscript containing an unbacked number or unresolved DOI.                        |
+| HTTP API                  | **Implemented**          | Hono server: runs, gates, evidence, audit, literature, claim checks, rate limiting.                           |
+| Persistence               | **Implemented (server)** | Runs, options, evidence and audit persist on disk and survive restarts. The dashboard still renders fixtures. |
+| LaTeX compilation         | **Not implemented**      | The manuscript view generates a `.tex` document client-side; no PDF build.                                    |
+| Journal submission        | **Not implemented**      | Stage 8 builds an evidence manifest only; nothing is uploaded.                                                |
+| Authentication            | **Partial**              | Single server-side bearer token; no accounts, no per-user data, off when no key is set.                       |
+| LLM-generated prose       | **Not implemented**      | Deliberately: the writer is mechanical so RULE-001 can be enforced exactly.                                   |
+| Wiki persistence          | **Not implemented**      | Wiki edits and drafts are local to the session and labelled as such.                                          |
 
 ## What each dashboard view actually does
 
@@ -53,11 +58,25 @@ What was removed or corrected in this pass:
   form that did nothing.
 - API-key inputs and an "Update configuration" button that persisted nothing.
 
+## Backend reality check
+
+The API in `services/api` is real code with real integrations, but three things are worth
+stating plainly:
+
+- **The dashboard is not wired to it yet.** Every view still renders fixtures; the API is
+  exercised through `curl`, the smoke scripts and the test suite.
+- **Synthetic CFD is not physics.** Without `SU2_CFD_BINARY` the pipeline runs a
+  deterministic analytic benchmark so the verification path can be tested. It is labelled
+  in every artefact, the manuscript is marked `synthetic: true`, the review verdict is
+  `revise`, and stage 8 blocks submission.
+- **Offline literature can never be cited.** The fixture corpus has no DOIs by design, so
+  RULE-002 makes offline references impossible — as it should be.
+
 ## Known limitations
 
-- Fixture data is static; nothing is fetched, computed or verified at runtime.
-- Gate approvals and revisions are lost on reload.
+- Dashboard fixture data is static; the UI does not call the API.
+- Gate approvals made in the dashboard are lost on reload (the server persists its own).
 - Wiki edits are not persisted anywhere.
+- The API rate limiter is per process, and the registry assumes a single writer.
+- No LaTeX/PDF build and no journal upload path.
 - The dashboard is marked `noindex` and is a prototype, not a product.
-- There is no backend to enforce the rules in [`specs/integrity-rules.md`](../specs/integrity-rules.md);
-  where a rule is only enforced by convention, the rules document says so.

@@ -39,6 +39,12 @@ export default tseslint.config(
     },
   },
   {
+    // Command-line entry points print on purpose: a smoke test that stays silent
+    // is useless, and a server announcing its bind address is normal.
+    files: ['services/api/scripts/**/*.ts', 'services/api/src/index.ts'],
+    rules: { 'no-console': 'off' },
+  },
+  {
     files: ['**/*.test.{ts,tsx}', 'vitest.setup.ts'],
     rules: {
       'react-refresh/only-export-components': 'off',

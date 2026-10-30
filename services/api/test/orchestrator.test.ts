@@ -1,0 +1,345 @@
+// @vitest-environment node
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { PIPELINE_STAGES, STAGE_COUNT } from '@aeroscribe/pipeline';
+import { CfdService } from '../src/cfd';
+import { ApiError } from '../src/errors';
+import { LiteratureService } from '../src/literature';
+import { Orchestrator } from '../src/orchestrator';
+import { AuditLog } from '../src/store/audit';
+import { EvidenceRegistry } from '../src/store/registry';
+import { RunRepository } from '../src/store/runs';
+
+let directory: string;
+let registry: EvidenceRegistry;
+let runs: RunRepository;
+let audit: AuditLog;
+let orchestrator: Orchestrator;
+let ids: string[];
+
+function build(dataDir = directory): Orchestrator {
+  // Same instances as the test body, so assertions see what the orchestrator wrote.
+  if (dataDir === directory) {
+    runs = new RunRepository(join(dataDir, 'runs'));
+    registry = new EvidenceRegistry(join(dataDir, 'registry.ndjson'));
+    audit = new AuditLog(join(dataDir, 'audit.ndjson'));
+  }
+  return new Orchestrator({
+    runs,
+    registry,
+    audit,
+    literature: new LiteratureService({ offline: true, providers: [] }),
+    cfd: new CfdService({ su2: { available: false, binary: null }, workDir: join(dataDir, 'cfd') }),
+    newRunId: () => ids.shift() ?? 'run-fallback',
+    defaultOptions: { paperLimit: 3, verifyTop: 0 },
+  });
+}
+
+beforeEach(async () => {
+  directory = await mkdtemp(join(tmpdir(), 'aeroscribe-orch-'));
+  ids = ['run-1', 'run-2', 'run-3'];
+  orchestrator = build();
+});
+
+afterEach(async () => {
+  await rm(directory, { recursive: true, force: true });
+});
+
+/** Advance the current stage, then approve its gate. Returns the final run. */
+async function advanceAndApprove(runId: string) {
+  const advanced = await orchestrator.advance(runId, 'tester');
+  const gateId = advanced.stage.gateId!;
+  const approved = await orchestrator.approveGate(runId, gateId, 'reviewer');
+  return { advanced, approved };
+}
+
+describe('createRun', () => {
+  it('rejects a topic that is too short to research', async () => {
+    await expect(orchestrator.createRun({ topic: 'drag' })).rejects.toMatchObject({
+      status: 400,
+      code: 'invalid_request',
+    });
+  });
+
+  it('persists the run, its options and an audit entry', async () => {
+    const run = await orchestrator.createRun({
+      topic: 'transonic wing drag prediction',
+      researcher: 'ana',
+    });
+
+    expect(run.id).toBe('run-1');
+    expect(run.currentStage).toBe(0);
+    expect(run.stages).toHaveLength(STAGE_COUNT);
+    expect(run.stages[0]!.status).toBe('running');
+
+    expect(await runs.get('run-1')).toMatchObject({ topic: 'transonic wing drag prediction' });
+    expect(await runs.getOptions('run-1')).toMatchObject({ paperLimit: 3, verifyTop: 0 });
+
+    const { entries } = await audit.read({ runId: 'run-1' });
+    expect(entries.map((entry) => entry.action)).toEqual(['run.created']);
+    expect(entries[0]!.actor).toBe('ana');
+  });
+
+  it('lists runs newest first', async () => {
+    await orchestrator.createRun({ topic: 'transonic wing drag prediction' });
+    await orchestrator.createRun({ topic: 'supersonic inlet buzz' });
+
+    const list = await orchestrator.listRuns();
+    expect(list.map((run) => run.id)).toEqual(['run-2', 'run-1']);
+  });
+});
+
+describe('a full nine-stage run', () => {
+  it('advances all nine stages and parks each one at its gate', async () => {
+    const created = await orchestrator.createRun({ topic: 'transonic wing drag prediction' });
+
+    const kinds: string[] = [];
+    for (let stageId = 0; stageId < STAGE_COUNT; stageId += 1) {
+      const advanced = await orchestrator.advance(created.id, 'tester');
+      expect(advanced.stage.id).toBe(stageId);
+      expect(advanced.evidenceSeq).not.toBeNull();
+      kinds.push((await registry.get(advanced.evidenceSeq!))!.kind);
+
+      if (stageId < STAGE_COUNT - 1) {
+        expect(advanced.stage.status).toBe('gate_pending');
+        const approved = await orchestrator.approveGate(
+          created.id,
+          advanced.stage.gateId!,
+          'reviewer',
+        );
+        expect(approved.currentStage).toBe(stageId + 1);
+        expect(approved.stages[stageId + 1]!.status).toBe('running');
+      } else {
+        // The last stage refuses to be submittable when the numbers are synthetic.
+        expect(advanced.blocked!.reason).toMatch(/synthetic solver/);
+        expect(advanced.stage.status).toBe('failed');
+      }
+    }
+
+    expect(kinds).toEqual([
+      'stage-output',
+      'literature-search',
+      'novelty-report',
+      'stage-output',
+      'cfd-run',
+      'manuscript',
+      'review-report',
+      'compliance-report',
+      'submission-package',
+    ]);
+
+    const final = await orchestrator.getRun(created.id);
+    expect(final.stages.slice(0, 8).every((stage) => stage.status === 'completed')).toBe(true);
+    expect(final.stages[8]).toMatchObject({ status: 'failed' });
+    expect(final.stages[8]!.gateApproved).not.toBe(true);
+    expect(final.status).toBe('failed');
+    expect((await registry.verify()).valid).toBe(true);
+  });
+
+  it('appends exactly one evidence record per stage', async () => {
+    const run = await orchestrator.createRun({ topic: 'transonic wing drag prediction' });
+
+    for (let stageId = 0; stageId < STAGE_COUNT; stageId += 1) {
+      await orchestrator.advance(run.id);
+      const current = await orchestrator.getRun(run.id);
+      if (current.stages[stageId]!.status === 'gate_pending') {
+        await orchestrator.approveGate(run.id, PIPELINE_STAGES[stageId]!.gateId);
+      }
+    }
+
+    const records = await orchestrator.evidence(run.id);
+    expect(records).toHaveLength(STAGE_COUNT);
+    expect(records.map((record) => record.seq)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(records.every((record) => record.runId === run.id)).toBe(true);
+    expect(records.map((record) => record.stageId)).toEqual(
+      PIPELINE_STAGES.map((stage) => stage.id),
+    );
+  });
+
+  it('audits every transition and keeps the chain verifiable', async () => {
+    const run = await orchestrator.createRun({ topic: 'transonic wing drag prediction' });
+    await advanceAndApprove(run.id);
+
+    const actions = (await audit.read({ runId: run.id })).entries.map((entry) => entry.action);
+    expect(actions).toEqual(['run.created', 'run.advanced', 'evidence.appended', 'gate.approved']);
+
+    expect((await audit.read()).malformed).toBe(0);
+  });
+
+  it('labels the synthetic manuscript and blocks its submission', async () => {
+    const run = await orchestrator.createRun({ topic: 'transonic wing drag prediction' });
+    for (let stageId = 0; stageId < STAGE_COUNT - 1; stageId += 1) {
+      await advanceAndApprove(run.id);
+    }
+    await orchestrator.advance(run.id);
+
+    const [manuscript] = await orchestrator.evidence(run.id, 'manuscript');
+    const payload = manuscript!.payload as {
+      synthetic: boolean;
+      sections: Array<{ heading: string }>;
+      referenceCount: number;
+      numbers: Record<string, number>;
+    };
+
+    expect(payload.synthetic).toBe(true);
+    expect(payload.sections.map((section) => section.heading)).toContain('AI use disclosure');
+    // Offline fixtures never carry a DOI, so nothing can be cited as verified.
+    expect(payload.referenceCount).toBe(0);
+
+    const [cfd] = await orchestrator.evidence(run.id, 'cfd-run');
+    expect((cfd!.payload as { solver: string }).solver).toBe('synthetic');
+    expect((cfd!.payload as { disclaimer?: string }).disclaimer).toMatch(
+      /must not be quoted as a physical result/i,
+    );
+
+    const [packaged] = await orchestrator.evidence(run.id, 'submission-package');
+    const submission = (packaged!.payload as { submission: { status: string; blockers: string[] } })
+      .submission;
+    expect(submission.status).toBe('blocked');
+    expect(submission.blockers).toContain('the results come from the synthetic solver');
+  });
+});
+
+describe('gate discipline', () => {
+  it('refuses to advance past an unapproved gate', async () => {
+    const run = await orchestrator.createRun({ topic: 'transonic wing drag prediction' });
+    await orchestrator.advance(run.id);
+
+    const error = await orchestrator.advance(run.id).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({ status: 409, code: 'conflict' });
+    expect((error as ApiError).message).toMatch(/waiting for gate GATE-0/);
+  });
+
+  it('refuses to approve a gate that is not the one currently open', async () => {
+    const run = await orchestrator.createRun({ topic: 'transonic wing drag prediction' });
+
+    // Nothing executed yet: stage 0 is running, not gate_pending.
+    await expect(orchestrator.approveGate(run.id, 'GATE-0')).rejects.toMatchObject({ status: 409 });
+
+    await orchestrator.advance(run.id);
+    await expect(orchestrator.approveGate(run.id, 'GATE-3')).rejects.toMatchObject({ status: 409 });
+    await expect(orchestrator.approveGate(run.id, 'GATE-0')).resolves.toMatchObject({
+      status: 'running',
+    });
+  });
+
+  it('sends a stage back for revision and re-runs it on the same gate', async () => {
+    const run = await orchestrator.createRun({ topic: 'transonic wing drag prediction' });
+    await orchestrator.advance(run.id);
+
+    const revised = await orchestrator.requestRevision(
+      run.id,
+      'GATE-0',
+      'reviewer',
+      'Sharpen the scope.',
+    );
+    expect(revised.currentStage).toBe(0);
+    expect(revised.stages[0]).toMatchObject({
+      status: 'running',
+      gateApproved: false,
+      revisionCount: 1,
+    });
+
+    const rerun = await orchestrator.advance(run.id);
+    expect(rerun.stage.id).toBe(0);
+    expect(rerun.stage.status).toBe('gate_pending');
+    expect(rerun.stage.revisionCount).toBe(1);
+
+    const approved = await orchestrator.approveGate(run.id, 'GATE-0');
+    expect(approved.currentStage).toBe(1);
+
+    const { entries } = await audit.read({ runId: run.id, action: 'gate.rejected' });
+    expect(entries[0]!.detail).toMatchObject({ gateId: 'GATE-0', note: 'Sharpen the scope.' });
+  });
+
+  it('404s for an unknown run', async () => {
+    await expect(orchestrator.advance('run-nope')).rejects.toMatchObject({
+      status: 404,
+      code: 'not_found',
+    });
+    await expect(orchestrator.getRun('run-nope')).rejects.toMatchObject({ status: 404 });
+    await expect(orchestrator.evidence('run-nope')).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe('restart durability', () => {
+  it('reloads options and continues a run after a fresh process', async () => {
+    const run = await orchestrator.createRun({
+      topic: 'transonic wing drag prediction',
+      options: { paperLimit: 2, quantity: 'lift coefficient' },
+    });
+    await advanceAndApprove(run.id);
+
+    // Simulate a deploy: brand new objects over the same data directory.
+    orchestrator = build();
+    const resumed = await orchestrator.getRun(run.id);
+    expect(resumed.currentStage).toBe(1);
+
+    const advanced = await orchestrator.advance(run.id);
+    expect(advanced.stage.id).toBe(1);
+
+    const [literature] = await orchestrator.evidence(run.id, 'literature-search');
+    expect((literature!.payload as { papersFound: number }).papersFound).toBeLessThanOrEqual(2);
+    await orchestrator.approveGate(run.id, 'GATE-1');
+
+    for (let stageId = 2; stageId < STAGE_COUNT - 1; stageId += 1) {
+      await advanceAndApprove(run.id);
+    }
+    await orchestrator.advance(run.id);
+    const [cfd] = await orchestrator.evidence(run.id, 'cfd-run');
+    expect((cfd!.payload as { quantity: string }).quantity).toBe('lift coefficient');
+    expect((await orchestrator.verifyRegistry()).valid).toBe(true);
+  });
+
+  it('never leaves a half-written run file behind', async () => {
+    const run = await orchestrator.createRun({ topic: 'transonic wing drag prediction' });
+    await orchestrator.advance(run.id);
+
+    const files = await readdir(join(directory, 'runs'));
+    expect(files.sort()).toEqual(['run-1.json', 'run-1.options.json']);
+
+    const parsed = JSON.parse(await readFile(join(directory, 'runs', 'run-1.json'), 'utf8'));
+    expect(parsed.stages).toHaveLength(STAGE_COUNT);
+  });
+});
+
+describe('failure handling', () => {
+  it('marks the stage failed and rethrows when a handler throws', async () => {
+    const broken = new Orchestrator({
+      runs,
+      registry,
+      audit,
+      literature: new LiteratureService({ offline: true, providers: [] }),
+      cfd: {
+        // A CFD service that fails the way a missing solver does.
+        run: async () => {
+          throw new ApiError(503, 'capability_unavailable', 'SU2 is not installed.');
+        },
+        describe: () => ({ su2: { available: false, binary: null }, offline: true }),
+      } as unknown as CfdService,
+      newRunId: () => 'run-broken',
+    });
+
+    const run = await broken.createRun({ topic: 'transonic wing drag prediction' });
+    for (let stageId = 0; stageId < 4; stageId += 1) {
+      await broken.advance(run.id);
+      await broken.approveGate(run.id, PIPELINE_STAGES[stageId]!.gateId);
+    }
+
+    await expect(broken.advance(run.id)).rejects.toMatchObject({ status: 503 });
+
+    const failed = await broken.getRun(run.id);
+    expect(failed.stages[4]).toMatchObject({ status: 'failed' });
+    expect(failed.status).toBe('failed');
+
+    const { entries } = await audit.read({ runId: run.id });
+    expect(entries.at(-1)!.action).toBe('stage.blocked');
+
+    // A failed stage never appended evidence, so the registry still verifies.
+    expect(await registry.list({ runId: run.id })).toHaveLength(4);
+    expect((await registry.verify()).valid).toBe(true);
+  });
+});
