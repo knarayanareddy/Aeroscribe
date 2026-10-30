@@ -1,5 +1,8 @@
 export type * from './types';
 export {
+  CFD_GATE_CHECKPOINTS,
+  GATE_CHECKPOINTS,
+  GATE_CHECKPOINT_COUNT,
   PIPELINE_STAGES,
   STAGE_COUNT,
   createRun,

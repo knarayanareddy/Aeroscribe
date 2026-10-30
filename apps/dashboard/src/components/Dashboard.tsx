@@ -1,4 +1,10 @@
-import { STAGE_COUNT, currentStage, formatRelativeTime, runProgress } from '@aeroscribe/pipeline';
+import {
+  GATE_CHECKPOINT_COUNT,
+  STAGE_COUNT,
+  currentStage,
+  formatRelativeTime,
+  runProgress,
+} from '@aeroscribe/pipeline';
 import { mockPapers, mockWikiArticles } from '../data/mockData';
 import { usePipeline } from '../state/pipelineContext';
 import type { View } from './Sidebar';
@@ -263,7 +269,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               {
                 icon: '👤',
                 label: 'Human-in-the-loop',
-                description: `A researcher decision gate at each of the ${STAGE_COUNT} pipeline stages.`,
+                description: `A researcher decision gate closes each of the ${STAGE_COUNT} pipeline stages — ${GATE_CHECKPOINT_COUNT} checkpoints in the specification.`,
               },
             ].map((principle) => (
               <li key={principle.label} className="flex gap-3">
