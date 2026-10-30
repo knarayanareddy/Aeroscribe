@@ -19,10 +19,13 @@ pipeline.
 | 8   | AeroWiki & Submission     | —                                                                         | GATE-8                    |
 
 The specification defines **eleven human checkpoints across nine stages**: stage 4 splits into
-three gates (mesh convergence, experimental validation, final figure set). The prototype models
-one gate per stage, so the dashboard shows `GATE-4A` for stage 4; `GATE-4B` and `GATE-4C` exist
-only in the specification. Older copy said either "nine gates" or "11 mandatory gates" without
-explaining the difference, which made the two numbers look like a contradiction.
+three gates (mesh convergence, experimental validation, final figure set). This is not a
+contradiction to be explained away — it is encoded in `packages/pipeline/src/stages.ts`:
+every stage has a `gateIds` array (stage 4 has three entries) and
+`GATE_CHECKPOINT_COUNT` is derived from it, so the landing page, the dashboard and the tests
+cannot drift apart. The prototype's `StageInfo.gateId` holds the _first_ checkpoint of its
+stage, which is why the dashboard shows `GATE-4A` for stage 4; `GATE-4B` and `GATE-4C` exist
+only in the specification.
 
 > Note: the archived design draft's RULE-003 lists gate stages as "0, 3, 4a, 4b, 4c, 6, 7",
 > which contradicts its own gate table (GATE-0 … GATE-8, with 4A/4B/4C). The table above follows

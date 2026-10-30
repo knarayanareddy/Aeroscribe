@@ -14,6 +14,11 @@ export interface StageDefinition {
   agents: string[];
   /** Human-in-the-loop gate that closes the stage. */
   gateId: string;
+  /**
+   * Every gate checkpoint this stage contains. Stage 4 has three separate
+   * checkpoints (4A/4B/4C) in the specification; all other stages have one.
+   */
+  gateIds: string[];
 }
 
 export const PIPELINE_STAGES: readonly StageDefinition[] = [
@@ -23,6 +28,7 @@ export const PIPELINE_STAGES: readonly StageDefinition[] = [
     shortName: 'Topic',
     agents: ['TopicIntelligenceAgent'],
     gateId: 'GATE-0',
+    gateIds: ['GATE-0'],
   },
   {
     id: 1,
@@ -30,6 +36,7 @@ export const PIPELINE_STAGES: readonly StageDefinition[] = [
     shortName: 'Literature',
     agents: ['LiteratureHarvestAgent', 'CitationGraphAgent', 'LiteratureRerankerAgent'],
     gateId: 'GATE-1',
+    gateIds: ['GATE-1'],
   },
   {
     id: 2,
@@ -37,6 +44,7 @@ export const PIPELINE_STAGES: readonly StageDefinition[] = [
     shortName: 'Novelty',
     agents: ['NoveltyDetectionAgent'],
     gateId: 'GATE-2',
+    gateIds: ['GATE-2'],
   },
   {
     id: 3,
@@ -44,6 +52,7 @@ export const PIPELINE_STAGES: readonly StageDefinition[] = [
     shortName: 'Framing',
     agents: ['ContributionFramingAgent'],
     gateId: 'GATE-3',
+    gateIds: ['GATE-3'],
   },
   {
     id: 4,
@@ -51,6 +60,7 @@ export const PIPELINE_STAGES: readonly StageDefinition[] = [
     shortName: 'CFD',
     agents: ['CFDSetupAgent', 'CFDSolverAgent'],
     gateId: 'GATE-4A',
+    gateIds: ['GATE-4A', 'GATE-4B', 'GATE-4C'],
   },
   {
     id: 5,
@@ -58,6 +68,7 @@ export const PIPELINE_STAGES: readonly StageDefinition[] = [
     shortName: 'Writing',
     agents: ['SectionWriterAgent', 'ManuscriptAssemblerAgent'],
     gateId: 'GATE-5',
+    gateIds: ['GATE-5'],
   },
   {
     id: 6,
@@ -65,6 +76,7 @@ export const PIPELINE_STAGES: readonly StageDefinition[] = [
     shortName: 'Review',
     agents: ['ReviewerAAgent', 'ReviewerBAgent', 'ReviewerCAgent', 'ReviewerDAgent'],
     gateId: 'GATE-6',
+    gateIds: ['GATE-6'],
   },
   {
     id: 7,
@@ -72,6 +84,7 @@ export const PIPELINE_STAGES: readonly StageDefinition[] = [
     shortName: 'Revision',
     agents: ['RevisionAgent', 'JournalComplianceAgent'],
     gateId: 'GATE-7',
+    gateIds: ['GATE-7'],
   },
   {
     id: 8,
@@ -79,15 +92,25 @@ export const PIPELINE_STAGES: readonly StageDefinition[] = [
     shortName: 'Submit',
     agents: ['WikiCompilerAgent', 'SubmissionPackagerAgent'],
     gateId: 'GATE-8',
+    gateIds: ['GATE-8'],
   },
 ] as const;
 
-/**
- * Number of stages in a full pipeline run. The specification defines eleven gate
- * checkpoints because stage 4 splits into GATE-4A/4B/4C; the prototype models
- * one gate per stage and shows GATE-4A for stage 4.
- */
+/** Number of stages in a full pipeline run. */
 export const STAGE_COUNT = PIPELINE_STAGES.length;
+
+/**
+ * Every gate checkpoint in the specification, in order. Stage 4 contributes
+ * three (GATE-4A/4B/4C), so there are eleven checkpoints across nine stages.
+ * The prototype models one *field* per stage, so `StageInfo.gateId` holds the
+ * first checkpoint of its stage.
+ */
+export const GATE_CHECKPOINTS: readonly string[] = PIPELINE_STAGES.flatMap(
+  (stage) => stage.gateIds,
+);
+
+/** Number of human gate checkpoints (11), not of stages (9). */
+export const GATE_CHECKPOINT_COUNT = GATE_CHECKPOINTS.length;
 
 /**
  * Build the stage list for a new run: the first stage is running, everything

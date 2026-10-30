@@ -1,4 +1,4 @@
-import { PIPELINE_STAGES, STAGE_COUNT } from '@aeroscribe/pipeline';
+import { GATE_CHECKPOINT_COUNT, PIPELINE_STAGES, STAGE_COUNT } from '@aeroscribe/pipeline';
 
 export default function HowItWorks() {
   return (
@@ -11,12 +11,14 @@ export default function HowItWorks() {
             The Process
           </p>
           <h2 className="mb-4 bg-gradient-to-r from-white to-blue-200 bg-clip-text font-display text-4xl font-bold text-transparent md:text-5xl">
-            {STAGE_COUNT} stages, {STAGE_COUNT} human checkpoints
+            {STAGE_COUNT} stages, {GATE_CHECKPOINT_COUNT} human checkpoints
           </h2>
           <p className="mx-auto max-w-2xl font-grotesk text-lg text-gray-400">
             No stage can silently hand off to the next one: every stage ends at a gate that a
-            researcher must approve or send back for revision. This list is generated from the same
-            stage definitions the dashboard uses.
+            researcher must approve or send back for revision. Stage 4 has three separate
+            checkpoints in the specification ({GATE_CHECKPOINT_COUNT} in total, not {STAGE_COUNT});
+            the prototype dashboard models one gate field per stage. This list is generated from the
+            same stage definitions the dashboard uses.
           </p>
         </div>
 

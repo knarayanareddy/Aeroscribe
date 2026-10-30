@@ -1,10 +1,11 @@
+import { GATE_CHECKPOINT_COUNT, STAGE_COUNT } from '@aeroscribe/pipeline';
 import heroBackground from '../assets/hero-bg.jpg';
 import { site } from '../config/site';
 import ParticleField from './ParticleField';
 
 const stats = [
-  { value: '9', label: 'Pipeline stages' },
-  { value: '11', label: 'Specified gate checkpoints' },
+  { value: String(STAGE_COUNT), label: 'Pipeline stages' },
+  { value: String(GATE_CHECKPOINT_COUNT), label: 'Specified gate checkpoints' },
   { value: 'SHA-256', label: 'Evidence checksums' },
   { value: 'MIT', label: 'Open source' },
 ];

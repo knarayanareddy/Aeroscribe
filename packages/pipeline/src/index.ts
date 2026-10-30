@@ -1,5 +1,7 @@
 export type * from './types';
 export {
+  GATE_CHECKPOINTS,
+  GATE_CHECKPOINT_COUNT,
   PIPELINE_STAGES,
   STAGE_COUNT,
   createRun,
