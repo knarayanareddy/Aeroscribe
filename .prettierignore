@@ -1,0 +1,12 @@
+node_modules/
+dist/
+site/
+coverage/
+package-lock.json
+
+
+*.png
+*.zip
+
+# Archived drafts are intentionally preserved as exported, not reformatted
+specs/archive/**
