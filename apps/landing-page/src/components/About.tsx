@@ -5,8 +5,9 @@ const tags = ['Open source', 'Human-gated', 'Evidence-first', 'Early prototype']
 
 const buildStatus = [
   { label: 'Landing site', value: 'Implemented', dot: 'bg-emerald-400' },
-  { label: 'Researcher dashboard', value: 'Implemented', dot: 'bg-emerald-400' },
-  { label: 'Agent backend', value: 'Specified', dot: 'bg-amber-400' },
+  { label: 'Researcher dashboard', value: 'Fixture data', dot: 'bg-amber-400' },
+  { label: 'Agent API', value: 'Implemented', dot: 'bg-emerald-400' },
+  { label: 'API ↔ dashboard', value: 'Not wired', dot: 'bg-amber-400' },
 ];
 
 export default function About() {
@@ -33,15 +34,18 @@ export default function About() {
               </p>
               <p>
                 That means human decision gates at every stage, a checksummed evidence registry, and
-                a hard rule against fabricated numbers. The repository currently ships the research
-                dashboard and this site; the agent backend is specified in{' '}
+                a hard rule against fabricated numbers. The agent runtime lives in{' '}
+                <span className="font-mono text-sm text-blue-200">services/api</span>: nine stage
+                handlers, Crossref/arXiv/Semantic Scholar clients, a SU2 adapter with grid
+                convergence checks, and an append-only hash chain that every generated number is
+                verified against. The dashboard is still a fixture-data prototype and the{' '}
                 <a
-                  href={site.specsUrl}
+                  href={`${site.repoUrl}/blob/main/docs/BACKEND.md`}
                   className="text-blue-300 underline decoration-blue-500/40 underline-offset-4 hover:text-white"
                 >
-                  /specs
+                  backend map
                 </a>{' '}
-                and tracked in the implementation status document.
+                states exactly what is real.
               </p>
             </div>
 

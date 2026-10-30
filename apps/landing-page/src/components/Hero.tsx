@@ -52,9 +52,10 @@ export default function Hero() {
         </p>
 
         <p className="mx-auto mb-10 max-w-2xl font-grotesk text-sm text-gray-400">
-          Status: the researcher dashboard and this site are implemented. The agent backend is
-          specified in <span className="font-mono text-gray-300">/specs</span> and is not running
-          yet.
+          Status: this site, the researcher dashboard and the agent API in{' '}
+          <span className="font-mono text-gray-300">services/api</span> are implemented and tested.
+          The dashboard still runs on labelled fixture data — it is not wired to the API yet, and
+          without a real CFD solver the pipeline&rsquo;s numbers are marked synthetic.
         </p>
 
         <div className="mb-16 flex flex-col justify-center gap-4 sm:flex-row">
