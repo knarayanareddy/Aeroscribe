@@ -153,5 +153,11 @@ export interface IntegrityRule {
   title: string;
   description: string;
   /** Where the rule is enforced today: `ui` (prototype), or `specified` only. */
-  enforcement: 'ui' | 'specified';
+  /**
+   * Where the rule is actually enforced today:
+   * - `api`      the service in `services/api` refuses to violate it;
+   * - `ui`       only visible in this prototype's interface;
+   * - `specified` written down in specs/integrity-rules.md, enforced nowhere yet.
+   */
+  enforcement: 'api' | 'ui' | 'specified';
 }

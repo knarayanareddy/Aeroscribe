@@ -14,9 +14,9 @@ describe('Hero', () => {
   it('states the prototype status and links to the dashboard', () => {
     render(<Hero />);
 
-    expect(
-      screen.getByText(/the researcher dashboard and this site are implemented/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/the researcher dashboard and the agent API/i)).toBeInTheDocument();
+    // The old copy claimed the backend did not exist; it must not come back.
+    expect(screen.queryByText(/is not running yet/i)).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Open the dashboard/i })).toHaveAttribute(
       'href',
       '/Aeroscribe/dashboard/',

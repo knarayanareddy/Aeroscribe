@@ -929,9 +929,11 @@ export const mockContradictions: Contradiction[] = [
 
 // ── INTEGRITY RULES (Settings view) ──────────────────────────────────────────
 /**
- * `enforcement` is deliberately explicit: `ui` rules are visible in this
- * prototype, `specified` rules exist only in specs/integrity-rules.md and will
- * be enforced by the backend once it exists.
+ * `enforcement` is deliberately explicit: `api` rules are enforced by the
+ * service in `services/api`, `ui` rules are visible in this prototype, and
+ * `specified` rules exist only in specs/integrity-rules.md. The API is a real
+ * server; this view still renders fixtures, so an `api` badge means "the
+ * backend refuses to violate this", not "this screen checks it".
  */
 export const integrityRules: IntegrityRule[] = [
   {
@@ -939,14 +941,14 @@ export const integrityRules: IntegrityRule[] = [
     title: 'Zero fabrication',
     description:
       'Never fabricate, hallucinate or invent a numerical result. Every number must trace to a registry entry.',
-    enforcement: 'ui',
+    enforcement: 'api',
   },
   {
     id: 'RULE-002',
     title: 'Citation verification',
     description:
       'Never add a reference that has not been DOI-resolved. Citation hallucination halts the pipeline.',
-    enforcement: 'specified',
+    enforcement: 'api',
   },
   {
     id: 'RULE-003',
@@ -960,7 +962,7 @@ export const integrityRules: IntegrityRule[] = [
     title: 'AI authorship prohibited',
     description:
       'Never list an AI system as a paper author; an AI-usage disclosure statement is always generated.',
-    enforcement: 'specified',
+    enforcement: 'api',
   },
   {
     id: 'RULE-005',
@@ -981,6 +983,6 @@ export const integrityRules: IntegrityRule[] = [
     title: 'Append-only evidence registry',
     description:
       'Registry records may not be deleted or modified; corrections are new records that reference the original.',
-    enforcement: 'specified',
+    enforcement: 'api',
   },
 ];

@@ -342,12 +342,23 @@ export default function SettingsView() {
                 </div>
                 <span
                   className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${
-                    rule.enforcement === 'ui'
-                      ? 'bg-emerald-100 text-emerald-700'
-                      : 'bg-amber-100 text-amber-800'
+                    rule.enforcement === 'api'
+                      ? 'bg-blue-100 text-blue-700'
+                      : rule.enforcement === 'ui'
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-amber-100 text-amber-800'
                   }`}
+                  title={
+                    rule.enforcement === 'api'
+                      ? 'The service in services/api refuses to violate this rule'
+                      : undefined
+                  }
                 >
-                  {rule.enforcement === 'ui' ? 'Visible in UI' : 'Specified only'}
+                  {rule.enforcement === 'api'
+                    ? 'Enforced by API'
+                    : rule.enforcement === 'ui'
+                      ? 'Visible in UI'
+                      : 'Specified only'}
                 </span>
               </li>
             ))}

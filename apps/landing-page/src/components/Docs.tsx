@@ -9,11 +9,18 @@ const documents = [
     accent: '#3B82F6',
   },
   {
+    title: 'Backend map',
+    path: 'docs/BACKEND.md',
+    description:
+      'The agent runtime, stage by stage: handlers, evidence kinds, endpoints, configuration, rate limits and what happens when each dependency fails.',
+    accent: '#8B5CF6',
+  },
+  {
     title: 'System architecture',
     path: 'specs/architecture.md',
     description:
-      'The system as built: two Vite apps, a shared pipeline package, the state model, CI and the Pages deployment.',
-    accent: '#8B5CF6',
+      'The system as built: two Vite apps, a shared pipeline package, the API service, the state model, CI and the Pages deployment.',
+    accent: '#EC4899',
   },
   {
     title: 'Pipeline & gates',
@@ -46,15 +53,16 @@ export default function Docs() {
           </h2>
           <p className="mx-auto max-w-2xl font-grotesk text-lg text-gray-400">
             AeroScribe has not produced peer-reviewed publications yet. What it does have is a
-            written specification, published openly, so every claim in this page can be checked
-            against it.
+            written specification and a backend you can run, both published openly, so every claim
+            in this page can be checked against them.
           </p>
         </div>
 
         <div className="mb-8 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-5 text-center">
           <p className="font-grotesk text-sm text-amber-200">
             <strong className="font-semibold">No publications to date.</strong> Every result shown
-            in the dashboard is illustrative fixture data, labelled as such.
+            in the dashboard is illustrative fixture data, and a pipeline run without a real CFD
+            solver is labelled synthetic and blocked from submission.
           </p>
         </div>
 

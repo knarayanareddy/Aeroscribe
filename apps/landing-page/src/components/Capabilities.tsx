@@ -1,4 +1,4 @@
-type CapabilityStatus = 'prototype' | 'specified';
+type CapabilityStatus = 'implemented' | 'prototype' | 'specified';
 
 interface Capability {
   title: string;
@@ -11,36 +11,36 @@ const capabilities: readonly Capability[] = [
   {
     title: 'Autonomous agent orchestration',
     description:
-      'Specialised agents own one pipeline stage each, with an orchestrator that tracks state, retries and cost per run. The stage graph and hand-off protocol are specified; the runtime is next.',
-    status: 'specified',
+      'One orchestrator runs nine stage handlers in order, stops at every human gate, records an audit entry for each state change and refuses to advance past an unapproved gate. Real code in services/api, exercised end to end by the test suite.',
+    status: 'implemented',
     icon: '🧠',
   },
   {
     title: 'Literature archaeology',
     description:
-      'Semantic Scholar, arXiv, Crossref and NTRS queries with DOI resolution, citation-graph expansion and relevance reranking. Every reference must resolve before it may be cited.',
-    status: 'specified',
+      'Crossref, arXiv and Semantic Scholar clients with DOI resolution, per-provider error reporting, exponential backoff and politeness limits. A reference is citable only after a DOI registry returned it for this run.',
+    status: 'implemented',
     icon: '📚',
   },
   {
     title: 'Uncertainty-first evidence',
     description:
-      'Each computed value is stored with its uncertainty, confidence level, method and a SHA-256 checksum. The dashboard already renders results in value ± uncertainty (method, CI) form.',
-    status: 'prototype',
+      'A real SU2 adapter runs three meshes and a Roache grid-convergence study checks the observed order and the asymptotic range before any value is quoted. Without a solver, the deterministic synthetic benchmark is labelled and blocks submission.',
+    status: 'implemented',
     icon: '🔐',
   },
   {
-    title: 'Novelty and gap detection',
+    title: 'Traceable numbers',
     description:
-      'A gap matrix over phenomena × methodology × scale, scored against recent preprints to estimate pre-emption risk before any compute is spent.',
-    status: 'specified',
+      'Every value and DOI in a generated manuscript is re-verified against an append-only, hash-chained evidence registry. One unbacked number and the writing stage refuses to produce the manuscript.',
+    status: 'implemented',
     icon: '🔍',
   },
   {
     title: 'Peer-review council',
     description:
-      'Methodology, literature, physics and compliance reviewers raise severity-tagged comments; the dashboard tracks resolution rate and blocks submission on open majors.',
-    status: 'prototype',
+      'Six deterministic checks with stated rule ids — claim tracing, DOI resolution, abstract length, reference count, AI disclosure and GCI validity. Any major comment blocks submission; nothing is scored by a language model.',
+    status: 'implemented',
     icon: '🧪',
   },
   {
@@ -53,11 +53,13 @@ const capabilities: readonly Capability[] = [
 ];
 
 const statusStyles: Record<CapabilityStatus, string> = {
-  prototype: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300',
+  implemented: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300',
+  prototype: 'border-sky-400/30 bg-sky-400/10 text-sky-300',
   specified: 'border-amber-400/30 bg-amber-400/10 text-amber-300',
 };
 
 const statusLabels: Record<CapabilityStatus, string> = {
+  implemented: 'In services/api',
   prototype: 'In dashboard',
   specified: 'Specified',
 };
@@ -76,8 +78,8 @@ export default function Capabilities() {
             What the pipeline is built to do
           </h2>
           <p className="mx-auto max-w-2xl font-grotesk text-lg text-gray-400">
-            Each card is labelled with what actually exists today: pieces running in the dashboard
-            versus pieces specified for the backend.
+            Each card is labelled with what actually exists today: code running in the API, pieces
+            rendered by the fixture-data dashboard, and anything still specified only.
           </p>
         </div>
 

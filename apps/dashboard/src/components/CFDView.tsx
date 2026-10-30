@@ -349,10 +349,11 @@ export default function CFDView() {
           <div className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="font-semibold text-slate-800">Evidence registry</h2>
             <p className="mt-1 text-sm text-slate-600">
-              The registry is specified as an append-only ledger: each record stores the value, its
-              uncertainty, the method and a SHA-256 checksum of the artefact that produced it
-              (RULE-043). It is not implemented yet — the checksums shown in this prototype come
-              from the fixture file.
+              The registry is an append-only ledger: each record stores the value, its uncertainty,
+              the method and a SHA-256 checksum of the artefact that produced it (RULE-043). The
+              service in <code className="rounded bg-slate-100 px-1 py-0.5">services/api</code>{' '}
+              implements it as a hash chain. <strong>This screen does not read it</strong>: the
+              checksums below come from the fixture file.
             </p>
             <p className="mt-3 text-xs text-slate-500">
               See <code className="rounded bg-slate-100 px-1 py-0.5">specs/integrity-rules.md</code>{' '}
