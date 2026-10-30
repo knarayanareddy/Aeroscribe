@@ -144,17 +144,17 @@ only ordering that matters.
 
 Every stage is a `StageHandler` — one function, one evidence record, one gate.
 
-| #   | Stage                  | Handler (file)                                   | Reads                                                                | Writes evidence kind | Gate    |
-| --- | ---------------------- | ------------------------------------------------ | -------------------------------------------------------------------- | -------------------- | ------- |
-| 0   | Topic Intelligence     | `topicIntelligence` (`agents/research.ts`)       | `run.topic`, `run.journal`                                           | `stage-output`       | GATE-0  |
-| 1   | Literature Archaeology | `literatureArchaeology` (`agents/research.ts`)   | providers, `options.paperLimit`, `options.verifyTop`                 | `literature-search`  | GATE-1  |
-| 2   | Novelty Detection      | `noveltyDetection` (`agents/research.ts`)        | latest `literature-search`                                           | `novelty-report`     | GATE-2  |
-| 3   | Contribution Framing   | `contributionFraming` (`agents/research.ts`)     | latest `novelty-report`, latest `stage-output`                       | `stage-output`       | GATE-3  |
-| 4   | Evidence Generation    | `evidenceGeneration` (`agents/evidence.ts`)      | `CfdService`, `options.solver/quantity/meshes`                       | `cfd-run`            | GATE-4A |
-| 5   | Paper Synthesis        | `paperSynthesis` (`agents/writing.ts`)           | all prior records                                                    | `manuscript`         | GATE-5  |
-| 6   | Peer Review Council    | `peerReview` (`agents/review.ts`)                | `manuscript`, `cfd-run`                                              | `review-report`      | GATE-6  |
-| 7   | Revision & Compliance  | `complianceCheck` (`agents/review.ts`)           | `manuscript`, `review-report`, journal profile                       | `compliance-report`  | GATE-7  |
-| 8   | AeroWiki & Submission  | `knowledgeAndSubmission` (`agents/knowledge.ts`) | `manuscript`, `review-report`, `compliance-report`, `novelty-report` | `submission-package` | GATE-8  |
+| #   | Stage                     | Handler (file)                                   | Reads                                                                | Writes evidence kind | Gate    |
+| --- | ------------------------- | ------------------------------------------------ | -------------------------------------------------------------------- | -------------------- | ------- |
+| 0   | Topic Intelligence        | `topicIntelligence` (`agents/research.ts`)       | `run.topic`, `run.journal`                                           | `stage-output`       | GATE-0  |
+| 1   | Literature Archaeology    | `literatureArchaeology` (`agents/research.ts`)   | providers, `options.paperLimit`, `options.verifyTop`                 | `literature-search`  | GATE-1  |
+| 2   | Novelty Detection         | `noveltyDetection` (`agents/research.ts`)        | latest `literature-search`                                           | `novelty-report`     | GATE-2  |
+| 3   | Contribution Framing      | `contributionFraming` (`agents/research.ts`)     | latest `novelty-report`, latest `stage-output`                       | `stage-output`       | GATE-3  |
+| 4   | Evidence Generation (CFD) | `evidenceGeneration` (`agents/evidence.ts`)      | `CfdService`, `options.solver/quantity/meshes`                       | `cfd-run`            | GATE-4A |
+| 5   | Paper Synthesis           | `paperSynthesis` (`agents/writing.ts`)           | all prior records                                                    | `manuscript`         | GATE-5  |
+| 6   | Peer Review Council       | `peerReview` (`agents/review.ts`)                | `manuscript`, `cfd-run`                                              | `review-report`      | GATE-6  |
+| 7   | Revision & Compliance     | `complianceCheck` (`agents/review.ts`)           | `manuscript`, `review-report`, journal profile                       | `compliance-report`  | GATE-7  |
+| 8   | AeroWiki & Submission     | `knowledgeAndSubmission` (`agents/knowledge.ts`) | `manuscript`, `review-report`, `compliance-report`, `novelty-report` | `submission-package` | GATE-8  |
 
 `STAGE_HANDLERS` in `orchestrator.ts` is an array indexed by stage id, so adding a
 stage means changing `PIPELINE_STAGES` **and** that array — and the type system plus
