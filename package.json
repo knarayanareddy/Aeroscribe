@@ -7,7 +7,8 @@
   "license": "MIT",
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "services/*"
   ],
   "engines": {
     "node": ">=20.19.0"
@@ -27,7 +28,11 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "dev:api": "npm run dev -w @aeroscribe/api",
+    "start:api": "npm run start -w @aeroscribe/api",
+    "smoke:literature": "npm run smoke:literature -w @aeroscribe/api --",
+    "smoke:cfd": "npm run smoke:cfd -w @aeroscribe/api --"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
@@ -36,6 +41,8 @@
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.8",
     "@types/node": "^26.6.6",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
     "@vitest/coverage-v8": "^5.0.5",
     "eslint": "^9.39.5",
     "eslint-plugin-jsx-a11y": "^6.10.2",

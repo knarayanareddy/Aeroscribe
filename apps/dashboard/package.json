@@ -12,15 +12,15 @@
   "dependencies": {
     "@aeroscribe/pipeline": "0.1.0",
     "@aeroscribe/ui": "0.1.0",
-    "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "4.1.17",
+    "@tailwindcss/vite": "4.3.3",
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "5.1.1",
-    "tailwindcss": "4.1.17",
+    "tailwindcss": "4.3.3",
     "typescript": "5.9.3",
     "vite": "^7.3.7"
   }

@@ -1,10 +1,14 @@
 version: 2
+
 updates:
+  # One PR for all JavaScript dependency updates, grouped so the queue stays short.
   - package-ecosystem: npm
     directory: '/'
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'chore(deps)'
     groups:
       react:
         patterns:
@@ -26,8 +30,31 @@ updates:
           - 'typescript-eslint'
           - 'prettier'
           - 'typescript'
+    ignore:
+      # eslint 10 is out of peer range for eslint-plugin-jsx-a11y (^9 max), so
+      # `npm ci` fails on install. Revisit when the plugin publishes support.
+      - dependency-name: 'eslint'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@eslint/js'
+        update-types: ['version-update:semver-major']
+      # TypeScript 7 is the native port; it needs its own migration branch.
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
+      # Vite 8 (rolldown) must land together with @vitejs/plugin-react 6 and the
+      # Tailwind plugin; a lone bump breaks typecheck on duplicate Vite types.
+      - dependency-name: 'vite'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@vitejs/plugin-react'
+        update-types: ['version-update:semver-major']
 
+  # All action bumps in a single PR: five separate PRs per run was the pile-up.
   - package-ecosystem: github-actions
     directory: '/'
     schedule:
       interval: monthly
+    commit-message:
+      prefix: 'chore(ci)'
+    groups:
+      github-actions:
+        patterns:
+          - '*'
