@@ -18,6 +18,7 @@ let runs: RunRepository;
 let audit: AuditLog;
 let orchestrator: Orchestrator;
 let ids: string[];
+let nowMs: number;
 
 function build(dataDir = directory): Orchestrator {
   // Same instances as the test body, so assertions see what the orchestrator wrote.
@@ -33,6 +34,10 @@ function build(dataDir = directory): Orchestrator {
     literature: new LiteratureService({ offline: true, providers: [] }),
     cfd: new CfdService({ su2: { available: false, binary: null }, workDir: join(dataDir, 'cfd') }),
     newRunId: () => ids.shift() ?? 'run-fallback',
+    // A clock that advances on every read: ordering assertions then test the
+    // contract ("newest first") instead of whichever millisecond the machine
+    // managed to land two writes in.
+    clock: () => new Date((nowMs += 1_000)),
     defaultOptions: { paperLimit: 3, verifyTop: 0 },
   });
 }
@@ -40,6 +45,7 @@ function build(dataDir = directory): Orchestrator {
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'aeroscribe-orch-'));
   ids = ['run-1', 'run-2', 'run-3'];
+  nowMs = Date.parse('2026-10-30T09:00:00.000Z');
   orchestrator = build();
 });
 
@@ -88,6 +94,7 @@ describe('createRun', () => {
 
     const list = await orchestrator.listRuns();
     expect(list.map((run) => run.id)).toEqual(['run-2', 'run-1']);
+    expect(list[0]!.createdAt > list[1]!.createdAt).toBe(true);
   });
 });
 

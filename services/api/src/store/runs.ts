@@ -54,9 +54,12 @@ export class RunRepository {
         .map((entry) => readJson<PipelineRun>(join(this.directory, entry))),
     );
 
+    // Newest first. Two runs created in the same millisecond tie on createdAt,
+    // and directory order is not a contract, so the id breaks the tie: the list
+    // must not depend on which order the filesystem happens to return.
     return runs
       .filter((run): run is PipelineRun => run !== null)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
   }
 
   async remove(runId: string): Promise<void> {
