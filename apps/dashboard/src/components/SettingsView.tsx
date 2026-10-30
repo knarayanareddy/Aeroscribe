@@ -1,34 +1,97 @@
+import { STAGE_COUNT } from '@aeroscribe/pipeline';
 import { useState } from 'react';
-import { journalProfiles } from '../data/mockData';
+import { integrityRules, journalProfiles } from '../data/mockData';
+
+type Tab = 'environment' | 'journals' | 'agents' | 'integrity';
+
+const tabs: Array<{ id: Tab; label: string }> = [
+  { id: 'environment', label: 'Environment' },
+  { id: 'journals', label: 'Journal profiles' },
+  { id: 'agents', label: 'Agent config' },
+  { id: 'integrity', label: 'Integrity rules' },
+];
+
+/**
+ * Settings are read-only in the prototype.
+ *
+ * The previous version rendered password inputs for API keys with no handler
+ * behind them. Prompting an operator to paste a secret into a client-side
+ * component that cannot store it safely is worse than showing nothing, so this
+ * view reports configuration state instead of collecting credentials.
+ */
+const environmentVariables = [
+  {
+    name: 'ANTHROPIC_API_KEY',
+    purpose: 'Agent runtime (orchestrator, writers, reviewers)',
+    status: 'Not configured',
+  },
+  {
+    name: 'SEMANTIC_SCHOLAR_API_KEY',
+    purpose: 'Literature harvesting and reranking',
+    status: 'Not configured',
+  },
+  {
+    name: 'DATABASE_URL',
+    purpose: 'Pipeline state and evidence registry',
+    status: 'Not connected',
+  },
+  {
+    name: 'OBJECT_STORAGE_URL',
+    purpose: 'CFD artefacts and manuscript bundles',
+    status: 'Not connected',
+  },
+];
+
+const modelRouting = [
+  { role: 'Orchestration', model: 'claude-sonnet-4-5', stages: 'Stages 0–8' },
+  { role: 'Writing and review', model: 'claude-opus-4-5', stages: 'Stages 5–6' },
+  { role: 'Classification and reranking', model: 'claude-haiku-3-5', stages: 'Stages 1–2' },
+];
+
+const agentTimeouts = [
+  { agent: 'PipelineOrchestrator', timeout: '72 hours' },
+  { agent: 'LiteratureHarvestAgent', timeout: '4 hours' },
+  { agent: 'CFDSolverAgent', timeout: '15 min/run' },
+  { agent: 'SectionWriterAgent', timeout: '2 hours' },
+  { agent: 'ReviewerA/B/C/DAgent', timeout: '1 hour each' },
+];
+
+const contextBudget = [
+  { stage: 'Stage 1 (Literature)', maxMcps: 15 },
+  { stage: 'Stage 4 (CFD evidence)', maxMcps: 8 },
+];
 
 export default function SettingsView() {
-  const [activeTab, setActiveTab] = useState<'api' | 'journals' | 'agents' | 'integrity'>('api');
-  const [model, setModel] = useState('claude-opus-4-5');
-  const [fastModel, setFastModel] = useState('claude-haiku-3-5');
-  const [semanticKey, setSemanticKey] = useState('••••••••••••••••••••');
-  const [maxContextStage1, setMaxContextStage1] = useState(15);
-  const [maxContextStage4, setMaxContextStage4] = useState(8);
+  const [activeTab, setActiveTab] = useState<Tab>('environment');
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Settings</h1>
-        <p className="text-slate-500 mt-1">Configure the AeroScribe autonomous research engine</p>
+        <p className="mt-1 text-slate-500">
+          Read-only configuration reference · secrets belong in the environment, never in the
+          browser
+        </p>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 bg-slate-100 rounded-xl p-1 w-fit">
-        {[
-          { id: 'api', label: 'API & Models' },
-          { id: 'journals', label: 'Journal Profiles' },
-          { id: 'agents', label: 'Agent Config' },
-          { id: 'integrity', label: 'Integrity Rules' },
-        ].map(tab => (
+      <div
+        role="tablist"
+        aria-label="Settings sections"
+        className="flex w-fit flex-wrap gap-1 rounded-xl bg-slate-100 p-1"
+      >
+        {tabs.map((tab) => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id as typeof activeTab)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              activeTab === tab.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            type="button"
+            role="tab"
+            id={`settings-tab-${tab.id}`}
+            aria-selected={activeTab === tab.id}
+            aria-controls={`settings-panel-${tab.id}`}
+            onClick={() => setActiveTab(tab.id)}
+            className={`rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+              activeTab === tab.id
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700'
             }`}
           >
             {tab.label}
@@ -36,206 +99,259 @@ export default function SettingsView() {
         ))}
       </div>
 
-      {activeTab === 'api' && (
-        <div className="space-y-5">
-          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-6 space-y-5">
-            <h3 className="font-semibold text-slate-800 border-b border-slate-100 pb-3">🤖 AI Models</h3>
-            <div className="grid grid-cols-2 gap-5">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Primary Model</label>
-                <select
-                  value={model}
-                  onChange={e => setModel(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="claude-opus-4-5">claude-opus-4-5 (Most capable)</option>
-                  <option value="claude-sonnet-4-5">claude-sonnet-4-5 (Balanced)</option>
-                  <option value="claude-haiku-3-5">claude-haiku-3-5 (Fast)</option>
-                </select>
-                <p className="text-xs text-slate-400 mt-1">Used for Stage 5 (Writing) and Stage 6 (Review)</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Fast Model (Reranking, Classification)</label>
-                <select
-                  value={fastModel}
-                  onChange={e => setFastModel(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="claude-haiku-3-5">claude-haiku-3-5</option>
-                  <option value="claude-sonnet-4-5">claude-sonnet-4-5</option>
-                </select>
-                <p className="text-xs text-slate-400 mt-1">Used for literature reranking and contradiction detection</p>
-              </div>
-            </div>
+      {activeTab === 'environment' && (
+        <div
+          role="tabpanel"
+          id="settings-panel-environment"
+          aria-labelledby="settings-tab-environment"
+          className="space-y-5"
+        >
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <p className="text-sm font-semibold text-amber-900">No backend is connected</p>
+            <p className="mt-1 text-xs text-amber-800">
+              This prototype renders fixture data. Credentials are read by the API/worker processes
+              from the environment; the dashboard never receives or stores them (RULE-040).
+            </p>
           </div>
 
-          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-6 space-y-4">
-            <h3 className="font-semibold text-slate-800 border-b border-slate-100 pb-3">🔑 API Keys</h3>
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
-              ⚠️ <strong>RULE-040:</strong> API keys are stored as environment variables only. Never hardcoded in source files. The PreToolUse hook actively blocks any write containing key patterns.
+          <section className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
+            <div className="border-b border-slate-100 px-5 py-3">
+              <h2 className="font-semibold text-slate-800">Environment variables</h2>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Required by the specified backend — documented in specs/architecture.md
+              </p>
             </div>
-            {[
-              { label: 'Anthropic API Key', env: 'ANTHROPIC_API_KEY', value: '••••••••••••••••••••', masked: true },
-              { label: 'Semantic Scholar API Key', env: 'SEMANTIC_SCHOLAR_API_KEY', value: semanticKey, masked: false, setter: setSemanticKey },
-              { label: 'Clerk Secret Key', env: 'CLERK_SECRET_KEY', value: '••••••••••••••••••••', masked: true },
-            ].map(k => (
-              <div key={k.env}>
-                <label className="block text-sm font-medium text-slate-700 mb-1">{k.label}</label>
-                <div className="flex gap-2">
-                  <input
-                    type="password"
-                    value={k.value}
-                    onChange={k.setter ? e => k.setter!(e.target.value) : undefined}
-                    readOnly={k.masked}
-                    className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder={`Set via ${k.env}`}
-                  />
-                  <button className="px-3 py-2 border border-slate-200 rounded-lg text-xs text-slate-500 hover:bg-slate-50">Update</button>
-                </div>
-                <p className="text-xs text-slate-400 mt-0.5 font-mono">{k.env}</p>
-              </div>
-            ))}
-          </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <th scope="col" className="px-5 py-3 text-left font-medium">
+                      Variable
+                    </th>
+                    <th scope="col" className="px-4 py-3 text-left font-medium">
+                      Purpose
+                    </th>
+                    <th scope="col" className="px-4 py-3 text-left font-medium">
+                      Status
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {environmentVariables.map((variable) => (
+                    <tr key={variable.name}>
+                      <td className="whitespace-nowrap px-5 py-3 font-mono text-xs text-slate-700">
+                        {variable.name}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{variable.purpose}</td>
+                      <td className="whitespace-nowrap px-4 py-3">
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                          {variable.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
 
-          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-6 space-y-4">
-            <h3 className="font-semibold text-slate-800 border-b border-slate-100 pb-3">💾 Infrastructure</h3>
-            <div className="grid grid-cols-2 gap-4">
+          <section className="rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
+            <h2 className="mb-1 font-semibold text-slate-800">Model routing</h2>
+            <p className="mb-4 text-xs text-slate-500">
+              Fixed profiles in the prototype; will move behind the API.
+            </p>
+            <ul className="space-y-2">
+              {modelRouting.map((route) => (
+                <li
+                  key={route.role}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-100 p-3"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-slate-800">{route.role}</p>
+                    <p className="text-xs text-slate-500">{route.stages}</p>
+                  </div>
+                  <code className="rounded bg-slate-100 px-2 py-1 font-mono text-xs text-slate-700">
+                    {route.model}
+                  </code>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
+            <h2 className="mb-3 font-semibold text-slate-800">Infrastructure</h2>
+            <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {[
-                { label: 'Database', value: 'PostgreSQL 16 (primary state)', status: 'connected' },
-                { label: 'Cache / Queue', value: 'Redis 7 + BullMQ', status: 'connected' },
-                { label: 'Object Storage', value: 'MinIO (S3-compatible)', status: 'connected' },
-                { label: 'CFD Solver', value: 'OpenFOAM 10 (HPC cluster)', status: 'idle' },
-              ].map(i => (
-                <div key={i.label} className="border border-slate-100 rounded-lg p-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-semibold text-slate-600">{i.label}</span>
-                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${i.status === 'connected' ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
-                      {i.status}
+                { label: 'Database', value: 'PostgreSQL 16 (specified)' },
+                { label: 'Cache / queue', value: 'Redis 7 + BullMQ (specified)' },
+                { label: 'Object storage', value: 'S3-compatible (specified)' },
+                { label: 'CFD solver', value: 'OpenFOAM / SU2 (specified)' },
+              ].map((item) => (
+                <li key={item.label} className="rounded-lg border border-slate-100 p-3">
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-600">{item.label}</span>
+                    <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">
+                      not connected
                     </span>
                   </div>
-                  <div className="text-sm text-slate-700">{i.value}</div>
-                </div>
+                  <p className="text-sm text-slate-700">{item.value}</p>
+                </li>
               ))}
-            </div>
-          </div>
+            </ul>
+          </section>
         </div>
       )}
 
       {activeTab === 'journals' && (
-        <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-100">
-            <h3 className="font-semibold text-slate-800">Journal Profile Database</h3>
-            <p className="text-xs text-slate-500 mt-0.5">Scope keywords, formatting requirements, acceptance rates</p>
+        <div
+          role="tabpanel"
+          id="settings-panel-journals"
+          aria-labelledby="settings-tab-journals"
+          className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm"
+        >
+          <div className="border-b border-slate-100 px-5 py-4">
+            <h2 className="font-semibold text-slate-800">Journal profile database</h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Scope, formatting requirements and acceptance rates used for calibration
+            </p>
           </div>
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wider">
-              <tr>
-                <th className="text-left px-6 py-3 font-medium">Journal</th>
-                <th className="text-left px-4 py-3 font-medium">Publisher</th>
-                <th className="text-right px-4 py-3 font-medium">Impact Factor</th>
-                <th className="text-right px-4 py-3 font-medium">Accept Rate</th>
-                <th className="text-right px-4 py-3 font-medium">Review Time</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {journalProfiles.map(j => (
-                <tr key={j.id} className="hover:bg-slate-50">
-                  <td className="px-6 py-3 font-medium text-slate-800">{j.name}</td>
-                  <td className="px-4 py-3 text-slate-500">{j.publisher}</td>
-                  <td className="px-4 py-3 text-right">
-                    <span className={`font-bold ${j.impactFactor >= 5 ? 'text-emerald-600' : j.impactFactor >= 2.5 ? 'text-blue-600' : 'text-slate-700'}`}>
-                      {j.impactFactor}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right text-slate-600">{j.acceptanceRate}%</td>
-                  <td className="px-4 py-3 text-right text-slate-600">{j.reviewWeeks} wks</td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+                <tr>
+                  <th scope="col" className="px-5 py-3 text-left font-medium">
+                    Journal
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-left font-medium">
+                    Publisher
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-right font-medium">
+                    Impact factor
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-right font-medium">
+                    Accept rate
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-right font-medium">
+                    Review time
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {journalProfiles.map((journal) => (
+                  <tr key={journal.id} className="hover:bg-slate-50">
+                    <td className="min-w-[14rem] px-5 py-3 font-medium text-slate-800">
+                      {journal.name}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-500">
+                      {journal.publisher}
+                    </td>
+                    <td className="px-4 py-3 text-right font-semibold text-slate-700">
+                      {journal.impactFactor}
+                    </td>
+                    <td className="px-4 py-3 text-right text-slate-600">
+                      {journal.acceptanceRate}%
+                    </td>
+                    <td className="px-4 py-3 text-right text-slate-600">
+                      {journal.reviewWeeks} wks
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
+            Impact factors and acceptance rates are illustrative values stored with the fixture
+            data; verify them against the publisher before relying on them.
+          </p>
         </div>
       )}
 
       {activeTab === 'agents' && (
-        <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-6 space-y-4">
-            <h3 className="font-semibold text-slate-800 border-b border-slate-100 pb-3">⚙️ Context Budget Rules (RULE-024)</h3>
-            <div className="space-y-4">
-              <div>
-                <div className="flex justify-between mb-1">
-                  <label className="text-sm font-medium text-slate-700">Stage 1 (Literature): Max MCPs Active</label>
-                  <span className="text-sm font-bold text-blue-600">{maxContextStage1}</span>
-                </div>
-                <input
-                  type="range" min={5} max={20} value={maxContextStage1}
-                  onChange={e => setMaxContextStage1(Number(e.target.value))}
-                  className="w-full accent-blue-600"
-                />
-                <div className="flex justify-between text-xs text-slate-400 mt-0.5"><span>5</span><span>20</span></div>
-              </div>
-              <div>
-                <div className="flex justify-between mb-1">
-                  <label className="text-sm font-medium text-slate-700">Stage 4 (CFD Evidence): Max MCPs Active</label>
-                  <span className="text-sm font-bold text-blue-600">{maxContextStage4}</span>
-                </div>
-                <input
-                  type="range" min={4} max={12} value={maxContextStage4}
-                  onChange={e => setMaxContextStage4(Number(e.target.value))}
-                  className="w-full accent-blue-600"
-                />
-                <div className="flex justify-between text-xs text-slate-400 mt-0.5"><span>4</span><span>12</span></div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-6">
-            <h3 className="font-semibold text-slate-800 border-b border-slate-100 pb-3 mb-4">⏱ Agent Timeouts</h3>
-            <div className="space-y-2.5">
-              {[
-                { agent: 'PipelineOrchestrator', timeout: '72 hours' },
-                { agent: 'LiteratureHarvestAgent', timeout: '4 hours' },
-                { agent: 'CFDSolverAgent', timeout: '15 min/run' },
-                { agent: 'SectionWriterAgent', timeout: '2 hours' },
-                { agent: 'ReviewerA/B/C/DAgent', timeout: '1 hour each' },
-              ].map(a => (
-                <div key={a.agent} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
-                  <span className="text-sm font-mono text-slate-700">{a.agent}</span>
-                  <span className="text-sm font-medium text-blue-600">{a.timeout}</span>
-                </div>
+        <div
+          role="tabpanel"
+          id="settings-panel-agents"
+          aria-labelledby="settings-tab-agents"
+          className="space-y-4"
+        >
+          <section className="rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
+            <h2 className="mb-1 font-semibold text-slate-800">Context budget (RULE-024)</h2>
+            <p className="mb-4 text-xs text-slate-500">Maximum MCP servers active per stage.</p>
+            <ul className="space-y-2">
+              {contextBudget.map((budget) => (
+                <li
+                  key={budget.stage}
+                  className="flex items-center justify-between border-b border-slate-50 py-1.5 last:border-0"
+                >
+                  <span className="text-sm text-slate-700">{budget.stage}</span>
+                  <span className="text-sm font-semibold text-blue-600">{budget.maxMcps}</span>
+                </li>
               ))}
-            </div>
-          </div>
+            </ul>
+          </section>
+
+          <section className="rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
+            <h2 className="mb-4 font-semibold text-slate-800">Agent timeouts</h2>
+            <ul className="space-y-2.5">
+              {agentTimeouts.map((agent) => (
+                <li
+                  key={agent.agent}
+                  className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-50 py-2 last:border-0"
+                >
+                  <span className="font-mono text-sm text-slate-700">{agent.agent}</span>
+                  <span className="text-sm font-medium text-blue-600">{agent.timeout}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <p className="rounded-lg border border-slate-200 bg-white p-4 text-xs text-slate-500">
+            {STAGE_COUNT} stages run sequentially; the orchestrator persists state between gates so
+            a run can be paused for days without losing context.
+          </p>
         </div>
       )}
 
       {activeTab === 'integrity' && (
-        <div className="space-y-4">
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-            <div className="font-bold text-red-800 mb-2">⚖️ ARTICLE I: ABSOLUTE PROHIBITIONS</div>
-            <p className="text-xs text-red-700">These rules are enforced by the PreToolUse integrity hook. Violations result in immediate pipeline HALT. No override is possible.</p>
+        <div
+          role="tabpanel"
+          id="settings-panel-integrity"
+          aria-labelledby="settings-tab-integrity"
+          className="space-y-4"
+        >
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+            <p className="mb-1 font-bold text-red-800">Article I — absolute prohibitions</p>
+            <p className="text-xs text-red-700">
+              Rules marked “UI” are visible in this prototype. Rules marked “specified” exist in
+              specs/integrity-rules.md and will be enforced by the backend; they are not enforced by
+              code today.
+            </p>
           </div>
-          {[
-            { rule: 'RULE-001', title: 'Zero Fabrication', desc: 'NEVER fabricate, hallucinate, or invent any numerical result. Every number traces to VerifiedRegistry.', status: 'enforced' },
-            { rule: 'RULE-002', title: 'Citation Verification', desc: 'NEVER add a reference that has not been DOI-resolved by LiteratureArchaeologyAgent. Citation hallucination = pipeline HALT.', status: 'enforced' },
-            { rule: 'RULE-003', title: 'HITL Gates', desc: 'NEVER bypass a Human-in-the-Loop gate. 11 mandatory gates per pipeline. No auto-approval.', status: 'enforced' },
-            { rule: 'RULE-004', title: 'AI Authorship Prohibited', desc: 'NEVER list an AI system as a paper author. AI disclosure statement is ALWAYS generated and included.', status: 'enforced' },
-            { rule: 'RULE-005', title: 'Journal Scope Validation', desc: 'NEVER submit to a journal outside its declared scope. JournalComplianceAgent must validate scope fit ≥ 7.0/10.', status: 'enforced' },
-            { rule: 'RULE-040', title: 'No Hardcoded Secrets', desc: 'API keys, credentials must use environment variables only. PreToolUse hook blocks any write containing secret patterns.', status: 'enforced' },
-            { rule: 'RULE-043', title: 'Append-Only Registry', desc: 'VerifiedRegistry is append-only. No record may be deleted or modified. Enforced at database level.', status: 'enforced' },
-          ].map(r => (
-            <div key={r.rule} className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 flex items-start gap-4">
-              <div className="shrink-0">
-                <span className="text-xs font-bold font-mono text-slate-400 bg-slate-100 px-2 py-1 rounded">{r.rule}</span>
-              </div>
-              <div className="flex-1">
-                <div className="font-semibold text-slate-800 text-sm">{r.title}</div>
-                <div className="text-xs text-slate-500 mt-1">{r.desc}</div>
-              </div>
-              <span className="shrink-0 text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium">
-                ✓ {r.status}
-              </span>
-            </div>
-          ))}
+
+          <ul className="space-y-3">
+            {integrityRules.map((rule) => (
+              <li
+                key={rule.id}
+                className="flex flex-wrap items-start gap-4 rounded-xl border border-slate-100 bg-white p-4 shadow-sm"
+              >
+                <span className="shrink-0 rounded bg-slate-100 px-2 py-1 font-mono text-xs font-bold text-slate-500">
+                  {rule.id}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-slate-800">{rule.title}</p>
+                  <p className="mt-1 text-xs text-slate-500">{rule.description}</p>
+                </div>
+                <span
+                  className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${
+                    rule.enforcement === 'ui'
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-amber-100 text-amber-800'
+                  }`}
+                >
+                  {rule.enforcement === 'ui' ? 'Visible in UI' : 'Specified only'}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>

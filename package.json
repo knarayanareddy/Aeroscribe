@@ -1,0 +1,50 @@
+{
+  "name": "aeroscribe",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "AeroScribe \u2014 open prototype for an auditable autonomous aerospace research pipeline",
+  "license": "MIT",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev:landing": "npm run dev -w @aeroscribe/landing-page",
+    "dev:dashboard": "npm run dev -w @aeroscribe/dashboard",
+    "build": "npm run build -w @aeroscribe/landing-page && npm run build -w @aeroscribe/dashboard",
+    "build:landing": "npm run build -w @aeroscribe/landing-page",
+    "build:dashboard": "npm run build -w @aeroscribe/dashboard",
+    "preview:landing": "npm run preview -w @aeroscribe/landing-page",
+    "preview:dashboard": "npm run preview -w @aeroscribe/dashboard",
+    "typecheck": "tsc --noEmit -p tsconfig.json && npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
+    "@types/node": "^26.6.6",
+    "@vitest/coverage-v8": "^5.0.5",
+    "eslint": "^9.39.5",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.7",
+    "globals": "^17.13.0",
+    "jsdom": "^30.1.3",
+    "prettier": "^3.9.10",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^5.0.5"
+  }
+}

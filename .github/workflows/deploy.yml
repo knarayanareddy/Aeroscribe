@@ -1,8 +1,8 @@
-name: Deploy Landing Page
+name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main"]
+    branches: ['main']
   workflow_dispatch:
 
 permissions:
@@ -10,8 +10,15 @@ permissions:
   pages: write
   id-token: write
 
+# Never cancel an in-flight deployment: a half-published site is worse than a
+# slightly stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
   build:
+    name: Build Pages site
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -20,23 +27,35 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache-dependency-path: apps/landing-page/package-lock.json
+          node-version-file: .nvmrc
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
-        working-directory: apps/landing-page
 
-      - name: Build
-        run: npm run build
-        working-directory: apps/landing-page
+      - name: Verify before publishing
+        run: |
+          npm run typecheck
+          npm test
+          npm run build
 
-      - name: Upload artifact
+      - name: Assemble site (landing page + dashboard sub-app)
+        run: |
+          mkdir -p site/dashboard
+          cp -R apps/landing-page/dist/. site/
+          cp -R apps/dashboard/dist/. site/dashboard/
+          touch site/.nojekyll
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: apps/landing-page/dist
+          path: site
 
   deploy:
+    name: Deploy
     needs: build
     runs-on: ubuntu-latest
     environment:

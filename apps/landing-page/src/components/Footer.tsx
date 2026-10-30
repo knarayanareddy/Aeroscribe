@@ -1,142 +1,100 @@
-const links = {
-  Platform: ["Capabilities", "Research Areas", "How It Works", "API Docs", "Status"],
-  Company: ["About", "Team", "Careers", "Press Kit", "Blog"],
-  Research: ["Publications", "Datasets", "Benchmarks", "Open Source", "Community"],
-  Legal: ["Privacy Policy", "Terms of Service", "Security", "Compliance"],
-};
+import { site } from '../config/site';
+
+const linkGroups = [
+  {
+    heading: 'Project',
+    links: [
+      { label: 'GitHub repository', href: site.repoUrl },
+      { label: 'Issues', href: site.issuesUrl },
+      { label: 'Contributing', href: `${site.repoUrl}/blob/main/CONTRIBUTING.md` },
+      { label: 'License (MIT)', href: `${site.repoUrl}/blob/main/LICENSE` },
+    ],
+  },
+  {
+    heading: 'Documentation',
+    links: [
+      {
+        label: 'Implementation status',
+        href: `${site.repoUrl}/blob/main/docs/IMPLEMENTATION_STATUS.md`,
+      },
+      { label: 'System architecture', href: `${site.repoUrl}/blob/main/specs/architecture.md` },
+      { label: 'Pipeline & gates', href: `${site.repoUrl}/blob/main/specs/pipeline.md` },
+      { label: 'Integrity rules', href: `${site.repoUrl}/blob/main/specs/integrity-rules.md` },
+    ],
+  },
+  {
+    heading: 'Applications',
+    links: [
+      { label: 'Landing page', href: '#top' },
+      { label: 'Researcher dashboard', href: site.dashboardUrl },
+      { label: 'Security policy', href: `${site.repoUrl}/blob/main/SECURITY.md` },
+    ],
+  },
+] as const;
 
 export default function Footer() {
-  return (
-    <footer className="relative border-t border-white/5 pt-20 pb-10 overflow-hidden">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_30%_at_50%_0%,rgba(59,130,246,0.05),transparent)] pointer-events-none" />
+  const year = new Date().getFullYear();
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid md:grid-cols-2 lg:grid-cols-6 gap-10 mb-16">
-          {/* Brand */}
-          <div className="lg:col-span-2">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="relative w-9 h-9">
-                <div className="absolute inset-0 bg-blue-500 rounded-full opacity-20" />
-                <svg viewBox="0 0 36 36" fill="none" className="w-9 h-9 relative z-10">
-                  <path d="M18 4L32 28H4L18 4Z" stroke="#3B82F6" strokeWidth="1.5" fill="none" />
-                  <path d="M18 4L32 28H4L18 4Z" fill="url(#footerLogoGrad)" fillOpacity="0.15" />
-                  <circle cx="18" cy="20" r="3" fill="#60A5FA" />
-                  <line x1="18" y1="20" x2="18" y2="28" stroke="#3B82F6" strokeWidth="1" opacity="0.5" />
-                  <defs>
-                    <linearGradient id="footerLogoGrad" x1="4" y1="4" x2="32" y2="28" gradientUnits="userSpaceOnUse">
-                      <stop stopColor="#3B82F6" />
-                      <stop offset="1" stopColor="#8B5CF6" />
-                    </linearGradient>
-                  </defs>
+  return (
+    <footer className="relative border-t border-white/5 bg-ink">
+      <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+        <div className="grid gap-10 lg:grid-cols-[1.4fr_repeat(3,1fr)]">
+          <div>
+            <div className="mb-4 flex items-center gap-3">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-violet-500">
+                <svg viewBox="0 0 36 36" fill="none" className="h-5 w-5" aria-hidden="true">
+                  <path d="M18 6L30 28H6L18 6Z" stroke="#fff" strokeWidth={2} />
                 </svg>
-              </div>
-              <span
-                style={{ fontFamily: "Orbitron, sans-serif" }}
-                className="text-lg font-bold tracking-widest bg-gradient-to-r from-blue-400 to-violet-400 bg-clip-text text-transparent"
-              >
+              </span>
+              <span className="font-display text-lg font-bold tracking-widest text-white">
                 AEROSCRIBE
               </span>
             </div>
-            <p
-              className="text-gray-500 text-sm leading-relaxed mb-6 max-w-xs"
-              style={{ fontFamily: "Space Grotesk, sans-serif" }}
-            >
-              The world's first autonomous aerospace research laboratory — compressing decades of discovery into days.
+            <p className="mb-4 max-w-sm font-grotesk text-sm leading-relaxed text-gray-500">
+              An open prototype of an auditable autonomous aerospace research pipeline. Illustrative
+              data only — no peer-reviewed output yet.
             </p>
-            {/* Social */}
-            <div className="flex gap-3">
-              {[
-                { label: "GitHub", icon: "⌥" },
-                { label: "Twitter", icon: "𝕏" },
-                { label: "LinkedIn", icon: "in" },
-                { label: "Discord", icon: "◈" },
-              ].map((s) => (
-                <button
-                  key={s.label}
-                  aria-label={s.label}
-                  className="w-9 h-9 rounded-lg bg-white/5 hover:bg-blue-500/20 text-gray-400 hover:text-blue-400 text-xs font-bold transition-all flex items-center justify-center border border-white/5 hover:border-blue-500/30"
-                >
-                  {s.icon}
-                </button>
-              ))}
-            </div>
+            <a
+              href={site.repoUrl}
+              className="inline-flex items-center gap-2 font-grotesk text-sm font-medium text-gray-400 transition-colors hover:text-white"
+            >
+              <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 .5A11.5 11.5 0 0 0 .5 12.02c0 5.09 3.29 9.4 7.86 10.93.58.1.79-.25.79-.55v-1.94c-3.2.7-3.88-1.54-3.88-1.54-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.2 1.77 1.2 1.03 1.78 2.7 1.27 3.36.97.1-.75.4-1.27.73-1.56-2.56-.29-5.25-1.29-5.25-5.75 0-1.27.45-2.31 1.19-3.12-.12-.29-.52-1.47.11-3.06 0 0 .97-.31 3.18 1.19a10.9 10.9 0 0 1 5.79 0c2.2-1.5 3.17-1.19 3.17-1.19.63 1.59.23 2.77.12 3.06.74.81 1.18 1.85 1.18 3.12 0 4.47-2.69 5.45-5.26 5.74.41.36.78 1.06.78 2.14v3.17c0 .31.21.66.8.55A11.51 11.51 0 0 0 23.5 12.02C23.5 5.66 18.35.5 12 .5Z" />
+              </svg>
+              Star or fork on GitHub
+            </a>
           </div>
 
-          {/* Links */}
-          {Object.entries(links).map(([category, items]) => (
-            <div key={category}>
-              <div
-                className="text-white text-sm font-semibold mb-4"
-                style={{ fontFamily: "Space Grotesk, sans-serif" }}
-              >
-                {category}
-              </div>
+          {linkGroups.map((group) => (
+            <nav key={group.heading} aria-label={group.heading}>
+              <h2 className="mb-4 font-grotesk text-sm font-semibold text-white">
+                {group.heading}
+              </h2>
               <ul className="space-y-2.5">
-                {items.map((item) => (
-                  <li key={item}>
+                {group.links.map((link) => (
+                  <li key={link.label}>
                     <a
-                      href="#"
-                      className="text-gray-500 hover:text-gray-300 text-sm transition-colors"
-                      style={{ fontFamily: "Space Grotesk, sans-serif" }}
+                      href={link.href}
+                      className="font-grotesk text-sm text-gray-500 transition-colors hover:text-gray-300"
                     >
-                      {item}
+                      {link.label}
                     </a>
                   </li>
                 ))}
               </ul>
-            </div>
+            </nav>
           ))}
         </div>
 
-        {/* Newsletter */}
-        <div className="border-t border-white/5 pt-10 mb-10">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-            <div>
-              <div
-                className="text-white font-semibold mb-1"
-                style={{ fontFamily: "Space Grotesk, sans-serif" }}
-              >
-                Stay on the frontier
-              </div>
-              <div
-                className="text-gray-500 text-sm"
-                style={{ fontFamily: "Space Grotesk, sans-serif" }}
-              >
-                Get the latest research breakthroughs, platform updates, and aerospace AI news.
-              </div>
-            </div>
-            <div className="flex gap-2 w-full md:w-auto">
-              <input
-                type="email"
-                placeholder="your@email.com"
-                className="flex-1 md:w-64 px-4 py-2.5 rounded-full bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 text-sm"
-                style={{ fontFamily: "Space Grotesk, sans-serif" }}
-              />
-              <button
-                className="px-5 py-2.5 rounded-full bg-gradient-to-r from-blue-600 to-violet-600 text-white text-sm font-semibold hover:from-blue-500 hover:to-violet-500 transition-all whitespace-nowrap"
-                style={{ fontFamily: "Space Grotesk, sans-serif" }}
-              >
-                Subscribe
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom bar */}
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-gray-600 text-xs">
-          <div style={{ fontFamily: "Space Grotesk, sans-serif" }}>
-            © {new Date().getFullYear()} Aeroscribe. All rights reserved. World's first autonomous aerospace research laboratory.
-          </div>
-          <div
-            className="flex items-center gap-1"
-            style={{ fontFamily: "Space Grotesk, sans-serif" }}
-          >
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-400" />
+        <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-white/5 pt-8 font-grotesk text-xs text-gray-600 md:flex-row">
+          <p>© {year} AeroScribe contributors · MIT licensed · not affiliated with any agency</p>
+          <p className="flex items-center gap-2">
+            <span className="relative flex h-1.5 w-1.5" aria-hidden="true">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 motion-safe:animate-ping" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
             </span>
-            &nbsp;All systems operational
-          </div>
+            Static prototype — no tracking, no cookies
+          </p>
         </div>
       </div>
     </footer>

@@ -1,5 +1,12 @@
-import { useState } from 'react';
+import type { WikiArticle } from '@aeroscribe/pipeline';
+import { useId, useState, type ReactNode } from 'react';
 import { mockWikiArticles } from '../data/mockData';
+import { parseWikiMarkdown, type InlineToken } from '../lib/wikiMarkdown';
+
+interface ArticleBody {
+  body: string;
+  related: string[];
+}
 
 const articleContent: Record<string, { body: string; related: string[] }> = {
   'wiki-001': {
@@ -20,7 +27,11 @@ The thermodynamic cycle of an RDE approximates the Fickett-Jacobs (FJ) cycle rat
 - Wave count: 1–8 waves depending on geometry
 
 **Papers linked from AeroScribe pipelines:** Nakamura et al. (2023), Liu et al. (2024), Andrus et al. (2023), Kaemming & Paxson (2024)...`,
-    related: ['Pressure-Gain Combustion Cycles', 'Detonation Cell Width — Measurement Methods', 'Stratospheric Combustion Limits'],
+    related: [
+      'Pressure-Gain Combustion Cycles',
+      'Detonation Cell Width — Measurement Methods',
+      'Stratospheric Combustion Limits',
+    ],
   },
   'wiki-002': {
     body: `The **detonation cell width** (λ) is a fundamental measure of the detonability of a combustible mixture. It corresponds to the average transverse spacing between triple points in the detonation wave's cellular structure, visible as diamond-shaped patterns on soot-foil records.
@@ -56,194 +67,388 @@ The Humphrey cycle (constant-volume combustion) achieves thermal efficiencies of
   },
 };
 
-export default function WikiView() {
-  const [articles] = useState(mockWikiArticles);
-  const [selected, setSelected] = useState(mockWikiArticles[0]);
-  const [search, setSearch] = useState('');
-  const [editMode, setEditMode] = useState(false);
+function renderInline(tokens: InlineToken[]): ReactNode[] {
+  return tokens.map((token, index) => {
+    if (token.type === 'strong') return <strong key={index}>{token.value}</strong>;
+    if (token.type === 'em') return <em key={index}>{token.value}</em>;
+    if (token.type === 'code') {
+      return (
+        <code
+          key={index}
+          className="rounded bg-slate-100 px-1 py-0.5 font-mono text-xs text-slate-700"
+        >
+          {token.value}
+        </code>
+      );
+    }
+    return <span key={index}>{token.value}</span>;
+  });
+}
 
-  const filtered = articles.filter(a =>
-    !search || a.title.toLowerCase().includes(search.toLowerCase()) || a.category.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const categories = Array.from(new Set(articles.map(a => a.category)));
-
-  const content = articleContent[selected.id];
-
-  const renderMarkdown = (text: string) => {
-    return text
-      .split('\n\n')
-      .map((para, i) => {
-        if (para.startsWith('**') && para.endsWith('**') && !para.slice(2, -2).includes('\n')) {
-          return <h3 key={i} className="text-base font-bold text-slate-900 mt-5 mb-2">{para.slice(2, -2)}</h3>;
-        }
-        const formatted = para
-          .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-          .replace(/\*(.*?)\*/g, '<em>$1</em>')
-          .replace(/`(.*?)`/g, '<code class="bg-slate-100 px-1 py-0.5 rounded text-xs font-mono text-slate-700">$1</code>');
-        if (para.startsWith('- ') || para.startsWith('1.')) {
-          const items = para.split('\n').map(line => line.replace(/^[-\d.]+\s/, ''));
+function Markdown({ source }: { source: string }) {
+  return (
+    <div className="space-y-2">
+      {parseWikiMarkdown(source).map((block, index) => {
+        if (block.type === 'heading') {
           return (
-            <ul key={i} className="list-disc list-inside space-y-1 ml-2 my-2">
-              {items.map((item, j) => (
-                <li key={j} className="text-sm text-slate-700" dangerouslySetInnerHTML={{ __html: item.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+            <h3 key={index} className="mt-5 mb-2 text-base font-bold text-slate-900">
+              {block.text}
+            </h3>
+          );
+        }
+        if (block.type === 'list') {
+          return (
+            <ul key={index} className="my-2 ml-2 list-disc space-y-1 pl-4">
+              {block.items.map((item, itemIndex) => (
+                <li key={itemIndex} className="text-sm text-slate-700">
+                  {renderInline(item)}
+                </li>
               ))}
             </ul>
           );
         }
-        return <p key={i} className="text-sm text-slate-700 leading-relaxed my-2" dangerouslySetInnerHTML={{ __html: formatted }} />;
-      });
+        return (
+          <p key={index} className="my-2 text-sm leading-relaxed text-slate-700">
+            {renderInline(block.tokens)}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+export default function WikiView() {
+  const [articles, setArticles] = useState<WikiArticle[]>(mockWikiArticles);
+  const [contentById, setContentById] = useState<Record<string, ArticleBody>>(articleContent);
+  const [selectedId, setSelectedId] = useState(mockWikiArticles[0]?.id ?? '');
+  const [search, setSearch] = useState('');
+  const [editMode, setEditMode] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [note, setNote] = useState<string | null>(null);
+
+  const searchId = useId();
+  const editorId = useId();
+
+  const selected = articles.find((article) => article.id === selectedId) ?? articles[0];
+  const content = selected ? contentById[selected.id] : undefined;
+
+  const filtered = articles.filter(
+    (article) =>
+      article.title.toLowerCase().includes(search.toLowerCase()) ||
+      article.category.toLowerCase().includes(search.toLowerCase()),
+  );
+
+  const categories = Array.from(new Set(articles.map((article) => article.category)));
+
+  const startEditing = () => {
+    setDraft(content?.body ?? '');
+    setEditMode(true);
+    setNote(null);
   };
 
+  const saveDraft = () => {
+    if (!selected) return;
+    setContentById((current) => ({
+      ...current,
+      [selected.id]: { body: draft, related: current[selected.id]?.related ?? [] },
+    }));
+    setArticles((current) =>
+      current.map((article) =>
+        article.id === selected.id
+          ? { ...article, lastUpdated: new Date().toISOString().slice(0, 10) }
+          : article,
+      ),
+    );
+    setEditMode(false);
+    setNote('Saved in this browser session only — the wiki service is not connected yet.');
+  };
+
+  const createArticle = () => {
+    const id = `wiki-draft-${Date.now()}`;
+    const article: WikiArticle = {
+      id,
+      title: 'Untitled article',
+      category: 'Draft',
+      lastUpdated: new Date().toISOString().slice(0, 10),
+      papersLinked: 0,
+      status: 'draft',
+    };
+
+    setArticles((current) => [article, ...current]);
+    setContentById((current) => ({ ...current, [id]: { body: '', related: [] } }));
+    setSelectedId(id);
+    setDraft('');
+    setEditMode(true);
+    setNote('New draft created locally. It is not persisted or shared.');
+  };
+
+  const published = articles.filter((article) => article.status === 'published').length;
+  const drafts = articles.filter((article) => article.status === 'draft').length;
+  const linkedPapers = articles.reduce((total, article) => total + article.papersLinked, 0);
+
   return (
-    <div className="p-8 space-y-6">
-      <div className="flex items-start justify-between">
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">AeroWiki</h1>
-          <p className="text-slate-500 mt-1">Compounding knowledge base — auto-updated by WikiCompilerAgent after each pipeline run</p>
+          <p className="mt-1 text-slate-500">
+            Compounding knowledge base · local editing only, nothing is persisted
+          </p>
         </div>
-        <button className="px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors flex items-center gap-2">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+        <button
+          type="button"
+          onClick={createArticle}
+          className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+        >
+          <svg
+            className="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2.5}
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
             <path d="M12 4v16m8-8H4" strokeLinecap="round" />
           </svg>
-          New Article
+          New article
         </button>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
+      {note && (
+        <p
+          role="status"
+          className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-2 text-sm text-blue-800"
+        >
+          {note}
+        </p>
+      )}
+
+      <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {[
-          { label: 'Published Articles', value: articles.filter(a => a.status === 'published').length.toString() },
-          { label: 'Draft Articles', value: articles.filter(a => a.status === 'draft').length.toString() },
-          { label: 'Papers Linked', value: articles.reduce((a, w) => a + w.papersLinked, 0).toString() },
-        ].map(s => (
-          <div key={s.label} className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 text-center">
-            <div className="text-2xl font-bold text-slate-900">{s.value}</div>
-            <div className="text-xs text-slate-500 mt-1">{s.label}</div>
+          { label: 'Published articles', value: published },
+          { label: 'Draft articles', value: drafts },
+          { label: 'Papers linked', value: linkedPapers },
+        ].map((stat) => (
+          <div
+            key={stat.label}
+            className="rounded-xl border border-slate-100 bg-white p-4 text-center shadow-sm"
+          >
+            <dd className="text-2xl font-bold text-slate-900">{stat.value}</dd>
+            <dt className="mt-1 text-xs text-slate-500">{stat.label}</dt>
           </div>
         ))}
-      </div>
+      </dl>
 
-      <div className="grid grid-cols-3 gap-6">
-        {/* Article list */}
-        <div className="col-span-1 space-y-3">
-          <div className="relative">
-            <svg className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" strokeLinecap="round" />
-            </svg>
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search articles..."
-              className="w-full border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <section aria-label="Article list" className="space-y-3 lg:col-span-1">
+          <div>
+            <label htmlFor={searchId} className="sr-only">
+              Search articles
+            </label>
+            <div className="relative">
+              <svg
+                className="absolute left-3 top-2.5 h-4 w-4 text-slate-400"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <circle cx={11} cy={11} r={8} />
+                <path d="M21 21l-4.35-4.35" strokeLinecap="round" />
+              </svg>
+              <input
+                id={searchId}
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search articles…"
+                className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
           </div>
 
-          {categories.map(cat => {
-            const catArticles = filtered.filter(a => a.category === cat);
-            if (!catArticles.length) return null;
+          {filtered.length === 0 && (
+            <p className="rounded-xl border border-dashed border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
+              No articles match “{search}”.
+            </p>
+          )}
+
+          {categories.map((category) => {
+            const categoryArticles = filtered.filter((article) => article.category === category);
+            if (categoryArticles.length === 0) return null;
+
             return (
-              <div key={cat}>
-                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 px-1">{cat}</div>
-                {catArticles.map(a => (
-                  <button
-                    key={a.id}
-                    onClick={() => setSelected(a)}
-                    className={`w-full text-left p-3 rounded-xl border transition-all mb-1.5 ${
-                      selected.id === a.id
-                        ? 'border-blue-300 bg-blue-50'
-                        : 'border-slate-100 bg-white hover:border-slate-200'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${a.status === 'published' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-                      <span className="text-sm font-medium text-slate-800 flex-1 line-clamp-1">{a.title}</span>
-                    </div>
-                    <div className="flex items-center gap-2 mt-1 pl-3.5">
-                      <span className="text-xs text-slate-400">{a.papersLinked} papers</span>
-                      <span className="text-xs text-slate-300">·</span>
-                      <span className="text-xs text-slate-400">{a.lastUpdated}</span>
-                    </div>
-                  </button>
-                ))}
+              <div key={category}>
+                <h2 className="mb-2 px-1 text-xs font-bold uppercase tracking-wider text-slate-400">
+                  {category}
+                </h2>
+                <ul className="space-y-1.5">
+                  {categoryArticles.map((article) => {
+                    const isSelected = selected?.id === article.id;
+                    return (
+                      <li key={article.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedId(article.id);
+                            setEditMode(false);
+                            setNote(null);
+                          }}
+                          aria-pressed={isSelected}
+                          className={`w-full rounded-xl border p-3 text-left transition-all ${
+                            isSelected
+                              ? 'border-blue-300 bg-blue-50'
+                              : 'border-slate-100 bg-white hover:border-slate-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`h-1.5 w-1.5 shrink-0 rounded-full ${article.status === 'published' ? 'bg-emerald-400' : 'bg-amber-400'}`}
+                              aria-hidden="true"
+                            />
+                            <span className="line-clamp-1 flex-1 text-sm font-medium text-slate-800">
+                              {article.title}
+                            </span>
+                          </div>
+                          <div className="mt-1 flex items-center gap-2 pl-3.5 text-xs text-slate-400">
+                            <span>{article.papersLinked} papers</span>
+                            <span aria-hidden="true">·</span>
+                            <span>{article.lastUpdated}</span>
+                          </div>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
             );
           })}
-        </div>
+        </section>
 
-        {/* Article content */}
-        <div className="col-span-2">
-          <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                    selected.status === 'published' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                  }`}>
-                    {selected.status}
-                  </span>
-                  <span className="text-xs text-slate-400">{selected.category}</span>
-                  <span className="text-xs text-slate-400">· Last updated {selected.lastUpdated}</span>
-                </div>
-                <h2 className="text-xl font-bold text-slate-900">{selected.title}</h2>
-              </div>
-              <div className="flex gap-2 shrink-0 ml-4">
-                <button
-                  onClick={() => setEditMode(!editMode)}
-                  className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-50"
-                >
-                  {editMode ? 'Preview' : 'Edit'}
-                </button>
-                <button className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-50">
-                  History
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6 max-h-[500px] overflow-y-auto">
-              {content ? (
-                <div>
-                  <div className="prose prose-sm max-w-none">
-                    {renderMarkdown(content.body)}
+        <section aria-label="Article content" className="lg:col-span-2">
+          {!selected ? (
+            <p className="rounded-xl border border-dashed border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
+              Select an article to read it.
+            </p>
+          ) : (
+            <div className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-6">
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                        selected.status === 'published'
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-amber-100 text-amber-700'
+                      }`}
+                    >
+                      {selected.status}
+                    </span>
+                    <span className="text-xs text-slate-400">{selected.category}</span>
+                    <span className="text-xs text-slate-400">· updated {selected.lastUpdated}</span>
                   </div>
+                  <h2 className="text-xl font-bold text-slate-900">{selected.title}</h2>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => (editMode ? setEditMode(false) : startEditing())}
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                  >
+                    {editMode ? 'Cancel' : 'Edit'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled
+                    title="Version history requires the wiki service, which is not implemented yet"
+                    className="cursor-not-allowed rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-400"
+                  >
+                    History
+                  </button>
+                </div>
+              </div>
 
-                  {content.related.length > 0 && (
-                    <div className="mt-8 pt-4 border-t border-slate-100">
-                      <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">🔗 Related Articles</div>
-                      <div className="flex flex-wrap gap-2">
-                        {content.related.map(r => (
-                          <button
-                            key={r}
-                            onClick={() => {
-                              const a = articles.find(x => x.title === r);
-                              if (a) setSelected(a);
-                            }}
-                            className="text-xs px-3 py-1.5 bg-blue-50 text-blue-600 rounded-full border border-blue-100 hover:bg-blue-100 transition-colors"
-                          >
-                            {r}
-                          </button>
-                        ))}
+              <div className="max-h-[32rem] overflow-y-auto p-4 sm:p-6">
+                {editMode ? (
+                  <div className="space-y-3">
+                    <label htmlFor={editorId} className="block text-sm font-medium text-slate-700">
+                      Article body (markdown subset: **bold**, *italic*, `code`, - lists)
+                    </label>
+                    <textarea
+                      id={editorId}
+                      value={draft}
+                      onChange={(event) => setDraft(event.target.value)}
+                      rows={16}
+                      className="w-full rounded-lg border border-slate-200 p-3 font-mono text-sm text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={saveDraft}
+                        className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                      >
+                        Save draft
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditMode(false)}
+                        className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200"
+                      >
+                        Discard
+                      </button>
+                    </div>
+                  </div>
+                ) : content ? (
+                  <div>
+                    <Markdown source={content.body} />
+
+                    {content.related.length > 0 && (
+                      <div className="mt-8 border-t border-slate-100 pt-4">
+                        <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                          🔗 Related articles
+                        </h3>
+                        <ul className="flex flex-wrap gap-2">
+                          {content.related.map((relatedTitle) => {
+                            const related = articles.find(
+                              (article) => article.title === relatedTitle,
+                            );
+                            return (
+                              <li key={relatedTitle}>
+                                <button
+                                  type="button"
+                                  disabled={!related}
+                                  onClick={() => related && setSelectedId(related.id)}
+                                  className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs text-blue-600 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {relatedTitle}
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  <div className="mt-6 pt-4 border-t border-slate-100">
-                    <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">📎 Linked Papers ({selected.papersLinked})</div>
-                    <div className="text-xs text-slate-400 bg-slate-50 rounded-lg p-3">
-                      This article was synthesized from {selected.papersLinked} DOI-verified papers processed by AeroScribe pipeline runs. All claims trace to VerifiedRegistry entries.
+                    <div className="mt-6 border-t border-slate-100 pt-4">
+                      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                        📎 Linked papers ({selected.papersLinked})
+                      </h3>
+                      <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
+                        Source links are illustrative in this prototype; the wiki service will
+                        attach verified registry entries here.
+                      </p>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <div className="text-center py-16">
-                  <div className="text-4xl mb-4">📝</div>
-                  <p className="text-slate-500 text-sm">Article content being compiled by WikiCompilerAgent</p>
-                  <p className="text-slate-400 text-xs mt-1">Will be available after pipeline Stage 8 completes</p>
-                </div>
-              )}
+                ) : (
+                  <p className="py-10 text-center text-sm text-slate-500">
+                    No content yet. Use “Edit” to write the first draft.
+                  </p>
+                )}
+              </div>
             </div>
-          </div>
-        </div>
+          )}
+        </section>
       </div>
     </div>
   );

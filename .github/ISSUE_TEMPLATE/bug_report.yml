@@ -1,0 +1,33 @@
+name: Bug report
+description: Something is broken or misleading
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please do not paste API keys or other secrets.
+  - type: input
+    id: url
+    attributes:
+      label: Where
+      description: Page, file path or URL
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Screenshots or console output welcome
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: e.g. Chrome 140 on macOS, or Node 22.22.0

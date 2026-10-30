@@ -1,132 +1,162 @@
-import { useState } from "react";
+import { cn } from '@aeroscribe/ui';
+import { useEffect, useState } from 'react';
+import { navLinks, site } from '../config/site';
 
-interface NavbarProps {
-  scrollY: number;
-}
-
-const navLinks = [
-  { label: "About", href: "#about" },
-  { label: "Capabilities", href: "#capabilities" },
-  { label: "Research", href: "#research" },
-  { label: "How It Works", href: "#how-it-works" },
-  { label: "Team", href: "#team" },
-  { label: "Publications", href: "#publications" },
-  { label: "Contact", href: "#contact" },
-];
-
-export default function Navbar({ scrollY }: NavbarProps) {
+export default function Navbar() {
+  const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const isScrolled = scrollY > 50;
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 24);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [menuOpen]);
 
   return (
-    <nav
-      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${
-        isScrolled
-          ? "bg-[#020817]/90 backdrop-blur-xl border-b border-blue-500/20 shadow-lg shadow-blue-900/20"
-          : "bg-transparent"
-      }`}
+    <header
+      className={cn(
+        'fixed inset-x-0 top-0 z-50 transition-all duration-300',
+        scrolled
+          ? 'border-b border-blue-500/20 bg-ink/90 shadow-lg shadow-blue-900/20 backdrop-blur-xl'
+          : 'bg-transparent',
+      )}
     >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 md:h-20">
-          {/* Logo */}
-          <a href="#" className="flex items-center gap-3 group">
-            <div className="relative w-9 h-9">
-              <div className="absolute inset-0 bg-blue-500 rounded-full opacity-20 group-hover:opacity-40 transition-opacity animate-pulse" />
-              <svg viewBox="0 0 36 36" fill="none" className="w-9 h-9 relative z-10">
-                <path
-                  d="M18 4L32 28H4L18 4Z"
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="flex h-16 items-center justify-between md:h-20">
+          <a href="#top" className="group flex items-center gap-3">
+            <span className="relative h-9 w-9" aria-hidden="true">
+              <span className="absolute inset-0 rounded-full bg-blue-500 opacity-20 transition-opacity group-hover:opacity-40 motion-safe:animate-pulse" />
+              <svg viewBox="0 0 36 36" fill="none" className="relative z-10 h-9 w-9">
+                <path d="M18 4L32 28H4L18 4Z" stroke="#3B82F6" strokeWidth={1.5} fill="none" />
+                <path d="M18 4L32 28H4L18 4Z" fill="url(#logoGrad)" fillOpacity={0.15} />
+                <circle cx="18" cy="20" r={3} fill="#60A5FA" />
+                <line
+                  x1="18"
+                  y1="20"
+                  x2="18"
+                  y2="28"
                   stroke="#3B82F6"
-                  strokeWidth="1.5"
-                  fill="none"
+                  strokeWidth={1}
+                  opacity={0.5}
                 />
-                <path d="M18 4L32 28H4L18 4Z" fill="url(#logoGrad)" fillOpacity="0.15" />
-                <circle cx="18" cy="20" r="3" fill="#60A5FA" />
-                <line x1="18" y1="20" x2="18" y2="28" stroke="#3B82F6" strokeWidth="1" opacity="0.5" />
                 <defs>
-                  <linearGradient id="logoGrad" x1="4" y1="4" x2="32" y2="28" gradientUnits="userSpaceOnUse">
+                  <linearGradient
+                    id="logoGrad"
+                    x1="4"
+                    y1="4"
+                    x2="32"
+                    y2="28"
+                    gradientUnits="userSpaceOnUse"
+                  >
                     <stop stopColor="#3B82F6" />
                     <stop offset="1" stopColor="#8B5CF6" />
                   </linearGradient>
                 </defs>
               </svg>
-            </div>
-            <span
-              style={{ fontFamily: "Orbitron, sans-serif" }}
-              className="text-xl font-bold tracking-widest bg-gradient-to-r from-blue-400 to-violet-400 bg-clip-text text-transparent"
-            >
+            </span>
+            <span className="bg-gradient-to-r from-blue-400 to-violet-400 bg-clip-text font-display text-xl font-bold tracking-widest text-transparent">
               AEROSCRIBE
             </span>
           </a>
 
-          {/* Desktop Nav */}
-          <div className="hidden md:flex items-center gap-1">
+          <nav aria-label="Primary" className="hidden items-center gap-1 lg:flex">
             {navLinks.map((link) => (
               <a
-                key={link.label}
+                key={link.href}
                 href={link.href}
-                className="px-3 py-2 text-sm font-medium text-gray-300 hover:text-blue-400 transition-colors duration-200 rounded-md hover:bg-blue-500/10"
-                style={{ fontFamily: "Space Grotesk, sans-serif" }}
+                className="rounded-md px-3 py-2 font-grotesk text-sm font-medium text-gray-300 transition-colors hover:bg-blue-500/10 hover:text-blue-300"
               >
                 {link.label}
               </a>
             ))}
             <a
-              href="#contact"
-              className="ml-4 px-5 py-2 text-sm font-semibold rounded-full bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-500 hover:to-violet-500 text-white transition-all duration-300 shadow-lg shadow-blue-900/40 hover:shadow-blue-700/40"
-              style={{ fontFamily: "Space Grotesk, sans-serif" }}
+              href={site.dashboardUrl}
+              className="ml-2 rounded-full border border-blue-500/40 px-4 py-2 font-grotesk text-sm font-semibold text-blue-200 transition-colors hover:border-blue-400 hover:bg-blue-500/10 hover:text-white"
             >
-              Get Access
+              Open dashboard
             </a>
-          </div>
+            <a
+              href="#contact"
+              className="ml-2 rounded-full bg-gradient-to-r from-blue-600 to-violet-600 px-5 py-2 font-grotesk text-sm font-semibold text-white shadow-lg shadow-blue-900/40 transition-all hover:from-blue-500 hover:to-violet-500"
+            >
+              Get updates
+            </a>
+          </nav>
 
-          {/* Mobile menu button */}
           <button
-            onClick={() => setMenuOpen(!menuOpen)}
-            className="md:hidden p-2 rounded-md text-gray-300 hover:text-white hover:bg-blue-500/10 transition-colors"
+            type="button"
+            onClick={() => setMenuOpen((open) => !open)}
+            aria-expanded={menuOpen}
+            aria-controls="mobile-nav"
+            aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+            className="rounded-md p-2 text-gray-300 transition-colors hover:bg-blue-500/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400 lg:hidden"
           >
-            <div className="w-6 h-5 flex flex-col justify-between">
+            <span className="flex h-5 w-6 flex-col justify-between" aria-hidden="true">
               <span
-                className={`block h-0.5 bg-current transition-all duration-300 ${menuOpen ? "rotate-45 translate-y-2" : ""}`}
+                className={cn(
+                  'block h-0.5 bg-current transition-all duration-300',
+                  menuOpen && 'translate-y-2 rotate-45',
+                )}
               />
               <span
-                className={`block h-0.5 bg-current transition-all duration-300 ${menuOpen ? "opacity-0" : ""}`}
+                className={cn(
+                  'block h-0.5 bg-current transition-all duration-300',
+                  menuOpen && 'opacity-0',
+                )}
               />
               <span
-                className={`block h-0.5 bg-current transition-all duration-300 ${menuOpen ? "-rotate-45 -translate-y-2" : ""}`}
+                className={cn(
+                  'block h-0.5 bg-current transition-all duration-300',
+                  menuOpen && '-translate-y-2 -rotate-45',
+                )}
               />
-            </div>
+            </span>
           </button>
         </div>
 
-        {/* Mobile menu */}
         <div
-          className={`md:hidden transition-all duration-300 overflow-hidden ${
-            menuOpen ? "max-h-96 pb-4" : "max-h-0"
-          }`}
+          id="mobile-nav"
+          hidden={!menuOpen}
+          className={cn('overflow-hidden lg:hidden', menuOpen ? 'pb-4' : '')}
         >
-          <div className="flex flex-col gap-1 pt-2 border-t border-blue-500/20">
+          <div className="flex flex-col gap-1 border-t border-blue-500/20 pt-2">
             {navLinks.map((link) => (
               <a
-                key={link.label}
+                key={link.href}
                 href={link.href}
                 onClick={() => setMenuOpen(false)}
-                className="px-4 py-2.5 text-sm font-medium text-gray-300 hover:text-blue-400 hover:bg-blue-500/10 rounded-md transition-colors"
-                style={{ fontFamily: "Space Grotesk, sans-serif" }}
+                className="rounded-md px-4 py-2.5 font-grotesk text-sm font-medium text-gray-300 transition-colors hover:bg-blue-500/10 hover:text-blue-300"
               >
                 {link.label}
               </a>
             ))}
             <a
+              href={site.dashboardUrl}
+              onClick={() => setMenuOpen(false)}
+              className="mx-4 mt-2 rounded-full border border-blue-500/40 py-2.5 text-center font-grotesk text-sm font-semibold text-blue-200"
+            >
+              Open dashboard
+            </a>
+            <a
               href="#contact"
               onClick={() => setMenuOpen(false)}
-              className="mt-2 mx-4 py-2.5 text-center text-sm font-semibold rounded-full bg-gradient-to-r from-blue-600 to-violet-600 text-white"
-              style={{ fontFamily: "Space Grotesk, sans-serif" }}
+              className="mx-4 mt-2 rounded-full bg-gradient-to-r from-blue-600 to-violet-600 py-2.5 text-center font-grotesk text-sm font-semibold text-white"
             >
-              Get Access
+              Get updates
             </a>
           </div>
         </div>
       </div>
-    </nav>
+    </header>
   );
 }
