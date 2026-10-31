@@ -325,6 +325,22 @@ describe.each(HARNESSES)('store contract: $name', (harness) => {
   });
 });
 
+describe('the filesystem probe', () => {
+  it('reports a data directory it cannot write to', async () => {
+    // A path nested under a regular file cannot be created. The probe must say
+    // so: the alternative is a healthy-looking process that fails every write.
+    const directory = await filesystemDirectory();
+    const blocker = join(directory, 'blocker');
+    await writeFile(blocker, 'not a directory', 'utf8');
+
+    const stores = createStores({ dataDir: join(blocker, 'data'), store: 'filesystem' });
+    const probe = await stores.probe();
+    expect(probe.backend).toBe('filesystem');
+    expect(probe.ok).toBe(false);
+    expect(probe.detail).toMatch(/not writable/);
+  });
+});
+
 /** Three records, which every tamper scenario needs. */
 async function seed(stores: Stores): Promise<void> {
   for (const [index, kind] of ['stage-output', 'cfd-run', 'manuscript'] as const) {
