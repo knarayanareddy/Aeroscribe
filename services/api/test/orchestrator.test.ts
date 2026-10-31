@@ -202,10 +202,25 @@ describe('a full nine-stage run', () => {
     );
 
     const [packaged] = await orchestrator.evidence(run.id, 'submission-package');
-    const submission = (packaged!.payload as { submission: { status: string; blockers: string[] } })
-      .submission;
+    const submission = (
+      packaged!.payload as {
+        submission: {
+          status: string;
+          blockers: string[];
+          files: Array<{ name: string; sha256: string; bytes: number | null }>;
+        };
+      }
+    ).submission;
     expect(submission.status).toBe('blocked');
     expect(submission.blockers).toContain('the results come from the synthetic solver');
+
+    // The manifest describes artefacts that really exist as canonical JSON: the
+    // size is measured, not left null, and every digest is a SHA-256.
+    expect(submission.files.length).toBeGreaterThan(6);
+    for (const file of submission.files) {
+      expect(file.sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(file.bytes).toBeGreaterThan(0);
+    }
   });
 });
 
@@ -348,5 +363,81 @@ describe('failure handling', () => {
     // A failed stage never appended evidence, so the registry still verifies.
     expect(await registry.list({ runId: run.id })).toHaveLength(4);
     expect((await registry.verify()).valid).toBe(true);
+  });
+});
+
+describe('concurrent advances', () => {
+  it('runs a stage once and rejects the second advance while it is in flight', async () => {
+    // Hold the literature search open, which is what a real stage 1 does while
+    // it waits on Crossref: the window in which a second request can arrive.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // Resolves once the first advance is actually inside the stage handler.
+    let entered!: () => void;
+    const inHandler = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const literature = new LiteratureService({ offline: true, providers: [] });
+    const original = literature.search.bind(literature);
+    let calls = 0;
+    literature.search = async (...args) => {
+      calls += 1;
+      entered();
+      await gate;
+      return original(...args);
+    };
+
+    const slow = new Orchestrator({
+      runs,
+      registry,
+      audit,
+      literature,
+      cfd: new CfdService({
+        su2: { available: false, binary: null },
+        workDir: join(directory, 'cfd'),
+      }),
+      newRunId: () => 'run-slow',
+      defaultOptions: { paperLimit: 3, verifyTop: 0 },
+    });
+
+    const run = await slow.createRun({ topic: 'transonic wing drag prediction' });
+    await slow.advance(run.id);
+    await slow.approveGate(run.id, PIPELINE_STAGES[0]!.gateId!);
+
+    const first = slow.advance(run.id);
+    // The second request arrives while the first is still blocked on Crossref.
+    await inHandler;
+
+    await expect(slow.advance(run.id)).rejects.toMatchObject({ status: 409 });
+    expect(calls).toBe(1);
+
+    release();
+    const finished = await first;
+    expect(finished.stage.id).toBe(1);
+
+    // Exactly one stage-1 record: no duplicated evidence from the lost request.
+    const records = await registry.list({ runId: run.id });
+    expect(records.filter((record) => record.stageId === 1)).toHaveLength(1);
+    expect((await registry.verify()).valid).toBe(true);
+
+    // And the guard is released, so the run can move on.
+    await slow.approveGate(run.id, PIPELINE_STAGES[1]!.gateId!);
+    await expect(slow.advance(run.id)).resolves.toMatchObject({ stage: { id: 2 } });
+  });
+
+  it('resumes a stage that is only *recorded* as running, e.g. after a restart', async () => {
+    const run = await orchestrator.createRun({ topic: 'laminar boundary layer transition' });
+    // Simulate a process that died mid-stage: the file says running, no handler
+    // is in flight in this instance.
+    const stored = await runs.get(run.id);
+    stored.stages[0]!.status = 'running';
+    stored.status = 'running';
+    await runs.save(stored);
+
+    const resumed = await orchestrator.advance(run.id);
+    expect(resumed.stage.status).toBe('gate_pending');
+    expect((await registry.list({ runId: run.id })).filter((r) => r.stageId === 0)).toHaveLength(1);
   });
 });

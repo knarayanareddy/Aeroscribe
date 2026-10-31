@@ -3,18 +3,26 @@ import { dirname } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { GENESIS_HASH, canonicalJson, hashEquals, hashPayload, sha256 } from '../lib/canonical';
 
-export type EvidenceKind =
-  | 'stage-output'
-  | 'literature-search'
-  | 'doi-verification'
-  | 'cfd-run'
-  | 'gci-study'
-  | 'novelty-report'
-  | 'manuscript'
-  | 'review-report'
-  | 'compliance-report'
-  | 'wiki-article'
-  | 'submission-package';
+/**
+ * What a stage can write. One record per stage, so the list is the union of the
+ * `kind` each handler returns.
+ *
+ * Deliberately narrow: `doi-verification`, `gci-study` and `wiki-article` used to
+ * be declared here but no stage ever wrote them, which made a `kind=` filter
+ * look like a empty result set rather than a kind that does not exist.
+ */
+export const EVIDENCE_KINDS = [
+  'stage-output',
+  'literature-search',
+  'cfd-run',
+  'novelty-report',
+  'manuscript',
+  'review-report',
+  'compliance-report',
+  'submission-package',
+] as const;
+
+export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
 
 /**
  * One immutable entry in the evidence registry.

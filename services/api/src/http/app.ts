@@ -2,9 +2,9 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import type { Capabilities, Config } from '../config';
-import { ApiError, badRequest, unauthorized } from '../errors';
+import { ApiError, badRequest, payloadTooLarge, unauthorized } from '../errors';
 import type { Orchestrator } from '../orchestrator';
-import type { EvidenceKind } from '../store/registry';
+import { EVIDENCE_KINDS, type EvidenceKind } from '../store/registry';
 import { buildPolicy, verifyClaims } from '../claims/verify';
 import { RateLimiter } from './rateLimit';
 
@@ -18,19 +18,13 @@ export interface AppDependencies {
   enableLogging?: boolean;
 }
 
-const EVIDENCE_KINDS: readonly EvidenceKind[] = [
-  'stage-output',
-  'literature-search',
-  'doi-verification',
-  'cfd-run',
-  'gci-study',
-  'novelty-report',
-  'manuscript',
-  'review-report',
-  'compliance-report',
-  'wiki-article',
-  'submission-package',
-];
+// Kinds the pipeline can actually produce, taken from the one list the store
+// defines. This used to be a second, hand-maintained copy that advertised
+// `doi-verification`, `gci-study` and `wiki-article` — kinds no stage writes, so
+// filtering on them returned an empty list forever and looked like "not recorded
+// yet" rather than "does not exist". DOI resolutions live in the literature
+// record, the GCI study inside the CFD record, the wiki article inside the
+// submission package.
 
 function bearerToken(header: string | undefined): string | null {
   if (!header) return null;
@@ -281,14 +275,89 @@ function sanitiseOptions(raw: unknown): Record<string, unknown> | undefined {
   }
   if (typeof input.caseDescription === 'string') options.caseDescription = input.caseDescription;
 
+  // Without this the SU2 path is unreachable over HTTP: the request would keep
+  // `solver: "su2"` but lose the meshes, and stage 4 would fail with a 503 that
+  // blames a missing solver configuration the caller did send.
+  if (input.meshes !== undefined) {
+    const meshes = parseMeshes(input.meshes);
+    if (meshes) options.meshes = meshes;
+  }
+
   return Object.keys(options).length > 0 ? options : undefined;
 }
+
+interface MeshOption {
+  level: string;
+  cells: number;
+  path: string;
+}
+
+/**
+ * Validate a mesh study at the boundary.
+ *
+ * A run that is guaranteed to fail at stage 4 should be rejected here, with a
+ * 400 that names the problem, rather than created and then 503'd twenty minutes
+ * into the pipeline. The rules match what the GCI machinery needs: three
+ * distinct levels with distinct cell counts.
+ */
+function parseMeshes(raw: unknown): MeshOption[] | null {
+  if (!Array.isArray(raw)) {
+    throw badRequest('"meshes" must be an array of { level, cells, path } objects.');
+  }
+  if (raw.length !== 3) {
+    throw badRequest(
+      '"meshes" must contain exactly three levels: a grid-convergence study compares fine, medium and coarse.',
+      { received: raw.length },
+    );
+  }
+
+  const meshes = raw.map((entry, index) => {
+    if (!entry || typeof entry !== 'object') {
+      throw badRequest(`"meshes[${index}]" must be an object.`);
+    }
+    const mesh = entry as Record<string, unknown>;
+
+    if (typeof mesh.level !== 'string' || mesh.level.trim() === '') {
+      throw badRequest(`"meshes[${index}].level" must be a non-empty string.`);
+    }
+    if (typeof mesh.cells !== 'number' || !Number.isInteger(mesh.cells) || mesh.cells <= 0) {
+      throw badRequest(`"meshes[${index}].cells" must be a positive integer.`);
+    }
+    if (typeof mesh.path !== 'string' || mesh.path.trim() === '') {
+      throw badRequest(`"meshes[${index}].path" must be a non-empty string.`);
+    }
+
+    return { level: mesh.level.trim(), cells: mesh.cells, path: mesh.path.trim() };
+  });
+
+  if (new Set(meshes.map((mesh) => mesh.level)).size !== meshes.length) {
+    throw badRequest('"meshes" must use distinct level names.');
+  }
+  if (new Set(meshes.map((mesh) => mesh.cells)).size !== meshes.length) {
+    throw badRequest(
+      '"meshes" must use distinct cell counts; identical counts cannot show convergence.',
+    );
+  }
+
+  return meshes;
+}
+
+/** Request bodies are small JSON documents; a megabyte is generous. */
+const MAX_BODY_BYTES = 1024 * 1024;
 
 async function readJson<T>(
   request: Request,
   { optional = false }: { optional?: boolean } = {},
 ): Promise<T> {
+  const declared = Number(request.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+    throw payloadTooLarge(`The request body exceeds ${MAX_BODY_BYTES} bytes.`);
+  }
+
   const text = await request.text();
+  if (Buffer.byteLength(text, 'utf8') > MAX_BODY_BYTES) {
+    throw payloadTooLarge(`The request body exceeds ${MAX_BODY_BYTES} bytes.`);
+  }
   if (text.trim() === '') {
     if (optional) return {} as T;
     throw badRequest('A JSON body is required.');

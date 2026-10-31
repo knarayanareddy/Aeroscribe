@@ -15,9 +15,7 @@
   "dependencies": {
     "@aeroscribe/pipeline": "0.1.0",
     "@hono/node-server": "^2.1.5",
-    "hono": "^4.10.7"
-  },
-  "devDependencies": {
+    "hono": "^4.10.7",
     "tsx": "^4.20.6"
   }
 }

@@ -25,6 +25,10 @@ export function conflict(message: string, details?: unknown): ApiError {
   return new ApiError(409, 'conflict', message, details);
 }
 
+export function payloadTooLarge(message: string, details?: unknown): ApiError {
+  return new ApiError(413, 'payload_too_large', message, details);
+}
+
 export function unauthorized(message = 'A valid API key is required.'): ApiError {
   return new ApiError(401, 'unauthorized', message);
 }

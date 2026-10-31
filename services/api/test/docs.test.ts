@@ -40,8 +40,11 @@ function routesFromDocs(source: string): Route[] {
 
 /** `process.env.KEY` / `env.KEY` identifiers referenced by config.ts. */
 function envKeysFromConfig(source: string): string[] {
+  // `envString(` may wrap before its first argument, so whitespace after the
+  // opening parenthesis is part of the pattern — without it a key read across
+  // two lines (AEROSCRIBE_CORS_ORIGINS) silently escaped this test.
   const keys = Array.from(
-    source.matchAll(/env(?:String|Int|Bool)?\(env,\s*'([A-Z0-9_]+)'/g),
+    source.matchAll(/env(?:String|Int|Bool)?\(\s*env,\s*'([A-Z0-9_]+)'/g),
     (m) => m[1]!,
   );
   const direct = Array.from(source.matchAll(/env\.([A-Z0-9_]{3,})/g), (m) => m[1]!);
@@ -101,6 +104,28 @@ describe('docs/BACKEND.md matches the configuration loader', () => {
     }
   });
 
+  it('lists every variable in services/api/.env.example', async () => {
+    const [config, example] = await Promise.all([
+      readRepoFile('services/api/src/config.ts'),
+      readRepoFile('services/api/.env.example'),
+    ]);
+
+    // An operator copies the example file; a variable missing from it is a
+    // setting nobody discovers until a run behaves unexpectedly.
+    for (const key of envKeysFromConfig(config)) {
+      expect(example, `${key} is missing from services/api/.env.example`).toContain(`${key}=`);
+    }
+    expect(example).toContain('SEMANTIC_SCHOLAR_API_KEY=');
+    expect(example).toContain('AEROSCRIBE_API_KEY=');
+
+    // And it must not promise a variable the code never reads.
+    const documented = Array.from(example.matchAll(/^([A-Z][A-Z0-9_]+)=/gm), (m) => m[1]!);
+    const known = new Set([...envKeysFromConfig(config), 'SEMANTIC_SCHOLAR_API_KEY']);
+    for (const key of documented) {
+      expect(known.has(key), `${key} is in .env.example but nothing reads it`).toBe(true);
+    }
+  });
+
   it('documents the server-only Semantic Scholar key that index.ts reads', async () => {
     const [index, docs] = await Promise.all([
       readRepoFile('services/api/src/index.ts'),
@@ -128,5 +153,70 @@ describe('docs/BACKEND.md matches the stage catalogue', () => {
     expect(positions.every((position) => position !== -1)).toBe(true);
     // The stage table in the map must be in pipeline order.
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+  });
+});
+
+describe('specs/architecture.md matches the repository', () => {
+  const workspaceDirs = ['apps', 'packages', 'services'];
+
+  function layoutBlock(doc: string): string {
+    const start = doc.indexOf('## Repository layout');
+    const end = doc.indexOf('## Runtime data flow');
+    expect(start, 'specs/architecture.md has no "## Repository layout" section').toBeGreaterThan(
+      -1,
+    );
+    expect(end, 'the layout section must be followed by "## Runtime data flow"').toBeGreaterThan(
+      start,
+    );
+    return doc.slice(start, end);
+  }
+
+  it('lists every workspace that exists on disk', async () => {
+    const { readdir } = await import('node:fs/promises');
+    const doc = await readRepoFile('specs/architecture.md');
+    const layout = layoutBlock(doc);
+
+    for (const group of workspaceDirs) {
+      const entries = await readdir(resolve(root, group), { withFileTypes: true });
+      const packages = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+      expect(packages.length).toBeGreaterThan(0);
+      for (const name of packages) {
+        expect(layout, `${group}/${name} is missing from the architecture tree`).toContain(
+          `${name}/`,
+        );
+      }
+    }
+  });
+
+  it('invents no workspace, package or service that is not on disk', async () => {
+    const { stat } = await import('node:fs/promises');
+    const doc = await readRepoFile('specs/architecture.md');
+    const layout = layoutBlock(doc);
+
+    // Only the two tree prefixes that mark a top-level entry are checked; deeper
+    // entries are covered by the workspace test above.
+    const topLevel = Array.from(layout.matchAll(/^├── ([A-Za-z0-9_.-]+)\//gm), (m) => m[1]!);
+    expect(topLevel).toContain('services');
+
+    for (const name of topLevel) {
+      const info = await stat(resolve(root, name)).catch(() => null);
+      expect(info?.isDirectory(), `the layout lists ${name}/, which does not exist`).toBe(true);
+    }
+  });
+
+  it('still states the two limits that are true today', async () => {
+    const doc = await readRepoFile('specs/architecture.md');
+
+    // The dashboard is not wired to the API.
+    expect(doc).toMatch(/dashboard[^.]*static prototype|fixtures/i);
+    expect(doc).toMatch(/wiring the dashboard/i);
+    // A run without SU2_CFD_BINARY is synthetic, and stage 8 will not pass it.
+    expect(doc).toContain('SU2_CFD_BINARY');
+    expect(doc).toMatch(/synthetic/i);
+    expect(doc).toMatch(/cannot pass the stage-8 gate|cannot pass/i);
+
+    // And it must not claim the opposite of what the repository now contains.
+    expect(doc).not.toContain('No server, database, authentication');
+    expect(doc).not.toContain('has not been built');
   });
 });

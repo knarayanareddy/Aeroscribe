@@ -35,10 +35,15 @@ export interface CfdStudyRequest {
   quantity: string;
   /** Free-form case description; the synthetic solver uses it for determinism. */
   caseDescription?: string;
-  /** Meshes for a real solver run. Required for `solver: 'su2'`. */
+  /**
+   * Meshes for a real solver run. Required for `solver: 'su2'`.
+   *
+   * Only geometry metadata lives here: level name, cell count (for the GCI
+   * refinement ratios) and the path to a config file that already contains the
+   * solver settings. Case parameters are an engineering decision, not something
+   * this adapter should guess.
+   */
   meshes?: Array<{ level: string; cells: number; path: string }>;
-  /** Solver configuration for a real run. */
-  su2?: { mach?: number; aoaDeg?: number; iterations?: number; configPath?: string };
 }
 
 export interface CfdStudyResult {

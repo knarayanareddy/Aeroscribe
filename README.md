@@ -53,15 +53,28 @@ npm run dev:api         # http://localhost:8787
 The dashboard is a prototype: create a run, approve a gate, send a stage back for revision — the
 state machine is real, the surrounding data is fixture data.
 
-The API runs a whole pipeline for real. This walks one stage and stops at its gate:
+The API runs a whole pipeline for real. This creates a run, executes stage 0, and stops at its
+gate (run ids are UUIDs, so capture the id rather than guessing it):
 
 ```bash
-curl -s localhost:8787/api/v1/runs -H 'content-type: application/json' \
-  -d '{"topic":"transonic wing drag prediction","options":{"solver":"synthetic"}}'
-curl -s -X POST localhost:8787/api/v1/runs/run-1/advance -d '{"actor":"ana"}'
-curl -s localhost:8787/api/v1/runs/run-1/evidence
-curl -s localhost:8787/api/v1/evidence/verify      # {"valid":true,...}
+RUN=$(curl -s localhost:8787/api/v1/runs -H 'content-type: application/json' \
+  -d '{"topic":"transonic wing drag prediction","options":{"solver":"synthetic"}}' \
+  | node -e "process.stdin.once('data',d=>process.stdout.write(JSON.parse(d).run.id))")
+
+curl -s -X POST "localhost:8787/api/v1/runs/$RUN/advance"          # stage 0 -> GATE-0
+curl -s -X POST "localhost:8787/api/v1/runs/$RUN/gates/GATE-0/approve" \
+  -H 'content-type: application/json' -d '{"actor":"ana"}'         # a human opens the gate
+curl -s -X POST "localhost:8787/api/v1/runs/$RUN/advance"          # stage 1 -> GATE-1
+
+curl -s "localhost:8787/api/v1/runs/$RUN/evidence"                 # two records so far
+curl -s localhost:8787/api/v1/evidence/verify                      # {"valid":true,...}
 ```
+
+`solver: "synthetic"` is what makes this work without SU2. Walk all eight gates the same way
+(`advance`, then approve GATE-n) and stage 8 refuses to package the run:
+`"blockers": ["the review council has not passed the manuscript", …, "the results come from the
+synthetic solver"]`. Set `SU2_CFD_BINARY` to a real `SU2_CFD` and ask for `"solver": "su2"` to put
+three meshes through it instead.
 
 No API key is required until you set `AEROSCRIBE_API_KEY` — and `/health` reports which mode you
 are in. Offline mode (`AEROSCRIBE_OFFLINE=1`) keeps every test and demo away from the network;
@@ -96,16 +109,26 @@ configuration as "Not configured".
 The API has its own environment: `AEROSCRIBE_API_KEY`, `AEROSCRIBE_CONTACT_EMAIL`,
 `AEROSCRIBE_OFFLINE`, `AEROSCRIBE_DATA_DIR`, `SU2_CFD_BINARY`, `AEROSCRIBE_CORS_ORIGINS`,
 `AEROSCRIBE_UPSTREAM_TIMEOUT_MS`, `AEROSCRIBE_RETRY_BASE_MS` and the server-only
-`SEMANTIC_SCHOLAR_API_KEY`. They are documented one by one in
-[`docs/BACKEND.md`](docs/BACKEND.md).
+`SEMANTIC_SCHOLAR_API_KEY`. Every one is listed with its default in
+[`services/api/.env.example`](services/api/.env.example) and explained in
+[`docs/BACKEND.md`](docs/BACKEND.md) § 9.
+
+Or run the container, which installs production dependencies only and health-checks itself:
+
+```bash
+docker build -t aeroscribe-api .
+docker run --rm -p 8787:8787 -e AEROSCRIBE_API_KEY="$(openssl rand -hex 32)" \
+  -v aeroscribe-data:/data aeroscribe-api
+```
 
 ## Deployment
 
 `.github/workflows/deploy.yml` publishes to GitHub Pages on pushes to `main`: the landing page at
 the site root and the dashboard under `/dashboard/`. It verifies typecheck and tests before
 publishing. Pull requests run the separate CI workflow (`.github/workflows/ci.yml`), which adds
-lint, format checking, a production build of both apps, and a separate job that typechecks, tests
-and runs the synthetic CFD smoke test for `services/api`.
+lint, format checking, coverage thresholds, a production build of both apps, a job that
+typechecks, tests and runs the synthetic CFD smoke test for `services/api`, and a job that builds
+the API image and waits for `/health` inside it.
 
 ## Documentation
 
