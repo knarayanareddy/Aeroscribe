@@ -39,6 +39,7 @@ export const EVIDENCE_KINDS = [
   'review-report',
   'compliance-report',
   'submission-package',
+  'doi-recheck',
 ] as const;
 
 export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
@@ -118,6 +119,16 @@ export interface DoiVerification {
    * "this DOI is the paper you meant", not a confidence score.
    */
   titleSimilarity?: number | null;
+  /**
+   * The record a provider returned when the DOI resolved but the title did not
+   * match the expected reference.
+   *
+   * Without this, a caller re-checking a stored manuscript could only tell
+   * "resolves to the wrong paper" from "no longer resolves" by parsing the
+   * reason string. The DOI *did* resolve — saying otherwise would be a lie — so
+   * the resolved title travels with the failure.
+   */
+  candidate?: { title: string; similarity: number | null; provider: PaperSource };
 }
 
 export interface SearchReport {
@@ -372,6 +383,96 @@ export interface SubmissionPackagePayload {
   submission: SubmissionPayload;
 }
 
+/* ──────────────────────────── reference re-checks ────────────────────────── */
+
+/**
+ * The standing of one stored reference at the moment it was re-checked.
+ *
+ * `fresh` and `stale` both mean the DOI resolved *now*; they differ in how old
+ * the verification recorded in the manuscript was. `broken` and `mismatch` mean
+ * it did not resolve to the expected paper — a rule violation, not a warning.
+ * `unverified` means no check was possible (offline, no DOI, invalid syntax) and
+ * is never reported as verified.
+ */
+export type RecheckStatus = 'fresh' | 'stale' | 'broken' | 'mismatch' | 'unverified';
+
+export interface RecheckResult {
+  /** The record's stable key, e.g. `ref-01`. */
+  key: string;
+  doi: string | null;
+  title: string | null;
+  status: RecheckStatus;
+  /** Why, in the reader's words. Present for everything except a plain `fresh`. */
+  reason: string | null;
+  provider: PaperSource | null;
+  titleSimilarity: number | null;
+  /** The manuscript's own generation-time verification, echoed unchanged. */
+  previousVerifiedAt: string | null;
+}
+
+export interface DoiRecheckSummary {
+  fresh: number;
+  stale: number;
+  broken: number;
+  mismatch: number;
+  unverified: number;
+  /** Every reference in the manuscript, including ones with no DOI. */
+  total: number;
+}
+
+/**
+ * One `doi-recheck` record: what every stored DOI did when it was re-resolved.
+ *
+ * The manuscript payload is never mutated by a re-check; this record is the new
+ * fact, and the registry's chain is what makes "the manuscript has not changed
+ * since" checkable.
+ */
+export interface DoiRecheckPayload {
+  stage: 'reference-recheck';
+  schemaVersion: 1;
+  runId: string;
+  checkedAt: string;
+  offline: boolean;
+  /** The staleness limit that was applied, in days. */
+  maxAgeDays: number;
+  results: RecheckResult[];
+  summary: DoiRecheckSummary;
+}
+
+/** Overall standing of a run's references, by decreasing severity. */
+export type ReferenceStanding = 'unchecked' | 'attention' | 'unverified' | 'stale' | 'current';
+
+export interface ReferenceStatusEntry {
+  key: string;
+  index: number;
+  doi: string | null;
+  title: string | null;
+  /** What the manuscript rendered as the citation line. Not re-derived. */
+  citation: string;
+  /** The generation-time verification stored on the record, unchanged. */
+  verifiedAt: string | null;
+  verifiedProvider: PaperSource | null;
+  /** Null when this run has never been re-checked. */
+  latest: {
+    status: RecheckStatus;
+    checkedAt: string;
+    reason: string | null;
+    provider: PaperSource | null;
+    titleSimilarity: number | null;
+    seq: number;
+  } | null;
+}
+
+export interface ReferenceStatusResponse {
+  runId: string;
+  references: ReferenceStatusEntry[];
+  /** When the newest re-check ran, or null if there is none. */
+  checkedAt: string | null;
+  /** How many `doi-recheck` records this run has. */
+  rechecks: number;
+  status: ReferenceStanding;
+}
+
 /* ─────────────────────────────── verification ────────────────────────────── */
 
 export interface UnbackedClaim {
@@ -399,6 +500,7 @@ export type AuditAction =
   | 'registry.verified'
   | 'literature.searched'
   | 'doi.verified'
+  | 'doi.rechecked'
   | 'cfd.executed'
   | 'unauthorised';
 

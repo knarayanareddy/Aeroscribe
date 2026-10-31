@@ -17,6 +17,7 @@ import { RunRepository } from '../src/store/runs';
 
 let directory: string;
 let orchestrator: Orchestrator;
+let registry: EvidenceRegistry;
 let config: Config;
 
 function makeConfig(overrides: Partial<Config> = {}): Config {
@@ -31,6 +32,7 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
     corsOrigins: ['http://localhost:5174'],
     upstreamTimeoutMs: 5_000,
     retryBaseDelayMs: 1,
+    doiMaxAgeDays: 30,
     logLevel: 'silent',
     version: 'test',
     commit: 'test',
@@ -52,7 +54,7 @@ beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'aeroscribe-http-'));
   orchestrator = new Orchestrator({
     runs: new RunRepository(join(directory, 'runs')),
-    registry: new EvidenceRegistry(join(directory, 'registry.ndjson')),
+    registry: (registry = new EvidenceRegistry(join(directory, 'registry.ndjson'))),
     audit: new AuditLog(join(directory, 'audit.ndjson')),
     literature: new LiteratureService({ offline: true, providers: [] }),
     cfd: new CfdService({
@@ -308,6 +310,132 @@ describe('runs', () => {
       status: 'running',
       revisionCount: 1,
     });
+  });
+});
+
+describe('reference re-checks', () => {
+  /** A manuscript record with one DOI, written directly into the registry. */
+  async function seedManuscript(runId: string, doi: string | null): Promise<void> {
+    await registry.append({
+      kind: 'manuscript',
+      runId,
+      stageId: 5,
+      label: 'seeded manuscript for the re-check test',
+      payload: {
+        stage: 'paper-synthesis',
+        schemaVersion: 2,
+        title: 'Seeded manuscript',
+        journal: 'AIAA Journal',
+        journalId: 'aiaa-journal',
+        sections: [],
+        abstract: 'Seeded.',
+        wordCount: 1,
+        referenceCount: 1,
+        references: [
+          {
+            index: 1,
+            doi: doi ?? '',
+            citation: 'Seeded citation line.',
+            record: {
+              key: 'ref-01',
+              index: 1,
+              doi,
+              title: 'Transonic drag prediction on unstructured meshes',
+              authors: ['A. Author'],
+              year: 2024,
+              venue: 'AIAA Journal',
+              volume: null,
+              pages: null,
+              publisher: null,
+              url: null,
+              verified: {
+                verifiedAt: '2026-10-01T00:00:00.000Z',
+                provider: 'crossref',
+                titleSimilarity: 1,
+              },
+            },
+          },
+        ],
+        numbers: {},
+        generatedAt: '2026-10-01T00:00:00.000Z',
+        synthetic: true,
+      },
+    });
+  }
+
+  async function createRun(app: ReturnType<typeof makeApp>): Promise<string> {
+    const response = await post(app, '/api/v1/runs', { topic: 'transonic wing drag prediction' });
+    return ((await response.json()) as { run: { id: string } }).run.id;
+  }
+
+  it('409s when the run has no manuscript to re-check', async () => {
+    const app = makeApp();
+    const runId = await createRun(app);
+
+    const recheck = await post(app, `/api/v1/runs/${runId}/references/recheck`);
+    expect(recheck.status).toBe(409);
+    expect(((await recheck.json()) as { error: { message: string } }).error.message).toMatch(
+      /no manuscript yet/,
+    );
+
+    expect((await app.request(`/api/v1/runs/${runId}/references`)).status).toBe(409);
+    expect((await app.request('/api/v1/runs/run-unknown/references')).status).toBe(404);
+  });
+
+  it('appends one record and reports the run offline rather than verified', async () => {
+    const app = makeApp();
+    const runId = await createRun(app);
+    await seedManuscript(runId, '10.2514/1.j060001');
+
+    const before = (await registry.list({ runId })).length;
+    const response = await post(app, `/api/v1/runs/${runId}/references/recheck`);
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as {
+      record: { kind: string; seq: number; stageId: number | null };
+      summary: { total: number; unverified: number; fresh: number };
+      offline: boolean;
+    };
+    expect(body.record.kind).toBe('doi-recheck');
+    expect(body.record.stageId).toBeNull();
+    expect(body.offline).toBe(true);
+    // Offline cannot verify anything, and does not pretend otherwise.
+    expect(body.summary).toMatchObject({ total: 1, unverified: 1, fresh: 0 });
+    expect((await registry.list({ runId })).length).toBe(before + 1);
+
+    const statusResponse = await app.request(`/api/v1/runs/${runId}/references`);
+    expect(statusResponse.status).toBe(200);
+    const status = (await statusResponse.json()) as {
+      status: string;
+      rechecks: number;
+      checkedAt: string | null;
+      references: Array<{
+        key: string;
+        citation: string;
+        verifiedAt: string | null;
+        latest: { status: string; seq: number } | null;
+      }>;
+    };
+    expect(status.status).toBe('unverified');
+    expect(status.rechecks).toBe(1);
+    expect(status.checkedAt).not.toBeNull();
+    expect(status.references).toHaveLength(1);
+    expect(status.references[0]).toMatchObject({
+      key: 'ref-01',
+      citation: 'Seeded citation line.',
+      // The generation-time verification is still reported, unchanged.
+      verifiedAt: '2026-10-01T00:00:00.000Z',
+      latest: { status: 'unverified', seq: body.record.seq },
+    });
+
+    // The re-check is in the audit trail, and the registry still verifies.
+    const audit = (await (await app.request(`/api/v1/audit?runId=${runId}`)).json()) as {
+      entries: Array<{ action: string }>;
+    };
+    expect(audit.entries.some((entry) => entry.action === 'doi.rechecked')).toBe(true);
+    expect(
+      ((await (await app.request('/api/v1/evidence/verify')).json()) as { valid: boolean }).valid,
+    ).toBe(true);
   });
 });
 

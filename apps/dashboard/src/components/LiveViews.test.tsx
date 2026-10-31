@@ -166,6 +166,54 @@ describe('ManuscriptLive', () => {
     renderLive(<ManuscriptLive />, liveSource({ evidence: async () => [] }));
     await waitFor(() => expect(screen.getByTestId('manuscript-empty')).toBeVisible());
   });
+
+  it('says the run has never been re-checked, without implying the DOIs are fresh', async () => {
+    renderLive(<ManuscriptLive />);
+    await waitFor(() => expect(screen.getByTestId('citation-checks-missing')).toBeVisible());
+    expect(screen.getByTestId('citation-checks-missing')).toHaveTextContent(
+      /Never re-checked in this run/i,
+    );
+  });
+
+  it('shows the re-check verdict per reference when one exists', async () => {
+    const recheck: EvidenceRecord = {
+      ...records[0]!,
+      seq: records.length,
+      kind: 'doi-recheck',
+      stageId: null,
+      label: 'DOI re-check: 1 reference (1 fresh)',
+      payload: {
+        stage: 'reference-recheck',
+        schemaVersion: 1,
+        runId: run.id,
+        checkedAt: '2026-10-31T22:10:00.000Z',
+        offline: false,
+        maxAgeDays: 30,
+        summary: { fresh: 1, stale: 0, broken: 0, mismatch: 0, unverified: 0, total: 1 },
+        results: [
+          {
+            key: 'ref-01',
+            doi: '10.1016/j.jcp.2023.112001',
+            title: 'Adjoint-based mesh adaptation for transonic flows',
+            status: 'fresh',
+            reason: null,
+            provider: 'crossref',
+            titleSimilarity: 1,
+            previousVerifiedAt: '2026-10-01T00:00:00.000Z',
+          },
+        ],
+      },
+    };
+
+    renderLive(<ManuscriptLive />, liveSource({ evidence: async () => [...records, recheck] }));
+
+    await waitFor(() => expect(screen.getByTestId('citation-checks')).toBeVisible());
+    expect(screen.getByTestId('citation-checks-headline')).toHaveTextContent(
+      /1 reference checked: 1 fresh, 0 stale, 0 unverified/,
+    );
+    expect(screen.getByText('fresh')).toBeVisible();
+    expect(screen.getByText(/resolved to the stored paper/i)).toBeVisible();
+  });
 });
 
 describe('ReviewLive', () => {

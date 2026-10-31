@@ -91,6 +91,7 @@ Build and run:
 | `npm run start:api`                | `tsx` without watch — the deployment entry point        |
 | `npm run smoke:cfd`                | synthetic grid study, prints every intermediate number  |
 | `npm run smoke:literature`         | live Crossref/arXiv/S2 search + DOI verification        |
+| `npm run recheck -- --all`         | re-resolve stored DOIs for every run (cron entry point) |
 | `npx tsc --noEmit -p services/api` | typecheck the service on its own                        |
 | `npx vitest run services/api`      | the service test suite (no network, no solver required) |
 
@@ -251,6 +252,14 @@ Compiles a markdown wiki article from the manuscript and builds a submission
 review did not pass, compliance is not met, or the numbers are synthetic, which marks
 the run failed: a prototype must not be able to "submit" itself.
 
+Before that, it reads the newest `doi-recheck`: a `broken` or `mismatch` reference is a
+named blocker (`reference ref-01 (10.2514/1.j060001) no longer resolves: …`). When there
+is no re-check at all, the generation-time verification stands and is reported as
+`verifiedAt`; only if that timestamp is older than `AEROSCRIBE_DOI_MAX_AGE_DAYS` does the
+stage add `references have not been re-verified in this run`. The stage's
+`metrics.references` says which of the three situations the run is in:
+`generation-time only`, `re-checked`, `re-checked: problems`.
+
 ---
 
 ## 4. Evidence registry
@@ -284,8 +293,24 @@ Properties:
   payload, edited metadata, a gap in `seq`, and a hash mismatch.
 - **Serialised appends** — writes queue behind a promise chain, so 20 concurrent
   appends still produce `seq` 0…19 in order.
-- **One record per stage** — the orchestrator appends exactly one record per executed
-  stage. Nothing else in the system writes to the registry.
+- **One record per stage execution** — an executed stage appends exactly one record
+  (`stage-output` for most, `cfd-run`/`manuscript`/… for four of them). The only other
+  writer is an explicit action: a DOI re-check appends one `doi-recheck` record with
+  `stageId: null`, because it describes a fact about a run, not a stage transition.
+
+Kinds, and who writes them:
+
+| Kind                 | Written by                             | `stageId` |
+| -------------------- | -------------------------------------- | --------- |
+| `stage-output`       | stages 0 and 3                         | the stage |
+| `literature-search`  | stage 1                                | `1`       |
+| `novelty-report`     | stage 2                                | `2`       |
+| `cfd-run`            | stage 4                                | `4`       |
+| `manuscript`         | stage 5                                | `5`       |
+| `review-report`      | stage 6                                | `6`       |
+| `compliance-report`  | stage 7                                | `7`       |
+| `submission-package` | stage 8                                | `8`       |
+| `doi-recheck`        | `POST …/references/recheck` or the CLI | `null`    |
 
 The registry is the source of the `evidenceSeq` shown on every stage of the dashboard
 and the reason `GET /api/v1/evidence/verify` can exist as a cheap integrity probe.
@@ -382,6 +407,67 @@ A citation is a set of fields, not a sentence. Stage 1 therefore stores
   claims; a publication year in a reference line is metadata validated by RULE-002. Including
   it in the numeric check would force the writer to declare other people's years as results.
 
+### Re-checking a stored manuscript's DOIs (`references/recheck.ts`)
+
+A verification is a fact with a timestamp, so it is never overwritten — it is
+re-established by appending a `doi-recheck` record that points at the same references.
+
+```
+npm run recheck -- --run run-…        # 201-equivalent: prints the summary, exit 0
+npm run recheck -- --all              # every run that has a manuscript
+```
+
+`recheckRun(runId)` reads the latest `manuscript`, resolves each stored DOI through
+`verifyDoi(expectedTitle)`, and appends exactly one record:
+
+```jsonc
+{
+  "kind": "doi-recheck",
+  "stageId": null,
+  "payload": {
+    "stage": "reference-recheck",
+    "schemaVersion": 1,
+    "runId": "run-…",
+    "checkedAt": "2026-10-31T09:00:00.000Z",
+    "offline": false,
+    "maxAgeDays": 30,
+    "results": [
+      {
+        "key": "ref-01",
+        "doi": "10.2514/1.j060001",
+        "title": "…",
+        "status": "fresh",
+        "reason": "…",
+        "provider": "crossref",
+        "titleSimilarity": 0.97,
+        "previousVerifiedAt": "2026-10-01T…",
+      },
+    ],
+    "summary": { "fresh": 1, "stale": 0, "broken": 0, "mismatch": 0, "unverified": 0, "total": 1 },
+  },
+}
+```
+
+| Status       | Meaning                                                                           |
+| ------------ | --------------------------------------------------------------------------------- |
+| `fresh`      | resolved now, and the stored verification is within `AEROSCRIBE_DOI_MAX_AGE_DAYS` |
+| `stale`      | resolved now, but the stored verification is older than that limit                |
+| `broken`     | the DOI no longer resolves anywhere the service can reach                         |
+| `mismatch`   | it resolves to a different paper (title similarity below the verifier's floor)    |
+| `unverified` | no DOI, or offline mode — **offline never claims a DOI is verified**              |
+
+The classification is pure (`classifyVerification`), so every status is unit-tested
+without a network. `mismatch` carries the closest rejected record in
+`DoiVerification.candidate`, which the re-check copies into `reason` — a reviewer
+learns what the DOI now points at, not just that it changed.
+
+`GET /api/v1/runs/:id/references` joins the stored references with the newest
+re-check: per reference the generation-time `verifiedAt`/`verifiedProvider` and the
+latest `status`, plus a run-level `status` of `unchecked` (never checked),
+`attention` (broken or mismatch), `unverified` (nothing resolved), `stale` or
+`current`. `unchecked` is deliberately distinct from `current`: an absent check is
+not a passing check.
+
 Every stored payload carries a positive integer `schemaVersion` (`orchestrator.assertVersionedPayload`
 refuses to record one that does not). Adding a field does not bump it; renaming or changing the
 meaning of one does.
@@ -461,27 +547,35 @@ Base path `/api/v1`. Authentication applies to `/api/v1/*` when `AEROSCRIBE_API_
 set (`Authorization: Bearer <key>`); `/health` is always open. Errors are always
 `{ "error": { "code", "message", "details? } }`.
 
-| Method | Path                                     | Purpose                                    |
-| ------ | ---------------------------------------- | ------------------------------------------ |
-| GET    | `/health`                                | liveness + capabilities + `authRequired`   |
-| GET    | `/api/v1/capabilities`                   | literature mode, SU2 availability, storage |
-| GET    | `/api/v1/runs`                           | list runs, newest first                    |
-| POST   | `/api/v1/runs`                           | create a run (`topic` ≥ 8 chars)           |
-| GET    | `/api/v1/runs/:id`                       | one run                                    |
-| POST   | `/api/v1/runs/:id/advance`               | execute the current stage                  |
-| POST   | `/api/v1/runs/:id/gates/:gateId/approve` | approve the open gate                      |
-| POST   | `/api/v1/runs/:id/gates/:gateId/reject`  | send the stage back for revision (`note`)  |
-| GET    | `/api/v1/runs/:id/evidence?kind=`        | registry records for the run               |
-| GET    | `/api/v1/evidence/verify`                | re-hash the whole chain from disk          |
-| GET    | `/api/v1/audit?runId=&limit=`            | audit trail (read-only)                    |
-| GET    | `/api/v1/literature/search?q=&limit=`    | live/offline search                        |
-| POST   | `/api/v1/literature/verify-doi`          | `{ doi, expectedTitle? }` → 200 or 422     |
-| POST   | `/api/v1/claims/verify`                  | `{ text, runId }` → claim report           |
+| Method | Path                                     | Purpose                                     |
+| ------ | ---------------------------------------- | ------------------------------------------- |
+| GET    | `/health`                                | liveness + capabilities + `authRequired`    |
+| GET    | `/api/v1/capabilities`                   | literature mode, SU2 availability, storage  |
+| GET    | `/api/v1/runs`                           | list runs, newest first                     |
+| POST   | `/api/v1/runs`                           | create a run (`topic` ≥ 8 chars)            |
+| GET    | `/api/v1/runs/:id`                       | one run                                     |
+| POST   | `/api/v1/runs/:id/advance`               | execute the current stage                   |
+| POST   | `/api/v1/runs/:id/gates/:gateId/approve` | approve the open gate                       |
+| POST   | `/api/v1/runs/:id/gates/:gateId/reject`  | send the stage back for revision (`note`)   |
+| GET    | `/api/v1/runs/:id/evidence?kind=`        | registry records for the run                |
+| GET    | `/api/v1/evidence/verify`                | re-hash the whole chain from disk           |
+| GET    | `/api/v1/audit?runId=&limit=`            | audit trail (read-only)                     |
+| GET    | `/api/v1/literature/search?q=&limit=`    | live/offline search                         |
+| POST   | `/api/v1/literature/verify-doi`          | `{ doi, expectedTitle? }` → 200 or 422      |
+| POST   | `/api/v1/claims/verify`                  | `{ text, runId }` → claim report            |
+| POST   | `/api/v1/runs/:id/references/recheck`    | re-resolve every stored DOI, one record     |
+| GET    | `/api/v1/runs/:id/references`            | stored references joined to latest re-check |
 
 Status codes used: `200`, `201`, `400` invalid request, `401` missing/wrong key, `404`
-unknown run or route, `409` gate discipline, `422` DOI did not resolve /
-unverifiable claim, `429` rate limited, `502` upstream failed after retries, `503`
-capability unavailable (e.g. SU2).
+unknown run or route, `409` gate discipline (**and** no manuscript to re-check),
+`422` DOI did not resolve / unverifiable claim, `429` rate limited, `502` upstream
+failed after retries, `503` capability unavailable (e.g. SU2).
+
+The re-check route is idempotent in effect, not in output: calling it twice appends two
+records and the newer one wins. It answers
+`201 { record, summary, checkedAt, offline }`. `GET …/references` answers
+`{ runId, references, checkedAt, rechecks, status }` and `409`s for a run without a
+manuscript, because there is nothing to join.
 
 Example — the full loop for one stage:
 
@@ -543,6 +637,7 @@ that adds, removes or retypes a field fails that test until the dashboard's mapp
 | `AEROSCRIBE_CORS_ORIGINS`        | `http://localhost:5173,http://localhost:5174` | comma-separated allowlist                                          |
 | `AEROSCRIBE_UPSTREAM_TIMEOUT_MS` | `15000`                                       | per-attempt and per-provider deadline                              |
 | `AEROSCRIBE_RETRY_BASE_MS`       | `2000`                                        | first backoff step (RULE-042)                                      |
+| `AEROSCRIBE_DOI_MAX_AGE_DAYS`    | `30`                                          | age at which a stored DOI verification is `stale` (RULE-002)       |
 | `SEMANTIC_SCHOLAR_API_KEY`       | _unset_                                       | server-side only; never sent to the browser                        |
 | `LOG_LEVEL`                      | `info`                                        | `debug` \| `info` \| `warn` \| `error` \| `silent` (RULE-053)      |
 | `AEROSCRIBE_VERSION`             | `dev`                                         | release identifier reported by `/health`                           |
@@ -717,6 +812,18 @@ Before exposing the API anywhere:
 6. `npm run smoke:cfd` on the host — it proves whether `SU2_CFD_BINARY` is usable.
 7. `npm run smoke:literature -- "your topic"` — it proves the providers are reachable
    and that DOIs actually resolve from that network.
+8. A daily DOI re-check, if you promise reviewers that stored citations still resolve:
+
+   ```cron
+   # 03:20 every day, against the same AEROSCRIBE_DATA_DIR as the service
+   20 3 * * * cd /srv/aeroscribe && AEROSCRIBE_DATA_DIR=/data npm run recheck -- --all >> /var/log/aeroscribe-recheck.log 2>&1
+   ```
+
+   There is no scheduler inside the API — a timer nobody can pause, test or explain to an
+   auditor is worse than a cron line in the operator's runbook. The CLI is also the only
+   path that writes `doi-recheck` records outside an HTTP request, and it audits with
+   `actor: "cli"`. Exit `1` means at least one DOI is `broken` or `mismatch`; alert on it
+   rather than ignoring it, or stage 8 will refuse to submit that run anyway.
 
 ---
 

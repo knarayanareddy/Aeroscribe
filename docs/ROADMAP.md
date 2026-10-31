@@ -254,7 +254,7 @@ resolve.
 
 ---
 
-## 5. A — Wire the dashboard to the API (in progress)
+## 5. A — Wire the dashboard to the API ✅ done
 
 **Why it matters.** This is the single largest credibility gap: the landing page says the agent
 API “is implemented and tested”, and the dashboard next to it cannot read a run from it.
@@ -328,11 +328,11 @@ directly; `vite.config.ts` has no proxy; `apiKey` is a server concept the browse
       `refresh()`, no polling unless a stage is `running` (then 3 s with backoff to 15 s).
 - [x] `PipelineProvider` accepts a source, exposes `status: 'loading' | 'ready' | 'error'`,
       and keeps `dispatch` only for selection.
-- [ ] Views migrated one at a time, each keeping a fixture path for tests:
+- [x] Views migrated one at a time, each keeping a fixture path for tests:
       `Pipeline`, `Dashboard`, `Literature`, `Novelty`, `CFD`, `Manuscript`, `Review`, `Wiki`,
       `Settings` (`Settings` reads `/capabilities`; “Not configured” becomes the server's answer).
-- [ ] `DataModeBadge` + empty/error states; a test that live mode with a failing fetch renders
-      the error and **not** fixture rows.
+- [x] `DataModeBadge` + empty/error states; a test that live mode with a failing fetch renders
+      the error and **not** fixture rows (`state/PipelineProvider.test.tsx`).
 - [x] `vite.config.ts` proxy + `.env.example` for the dashboard; docs: `docs/BACKEND.md` § 8
       “calling it from the browser”, README quick start with two terminals.
 - [x] Contract test in `services/api/test/contract.test.ts`: run the full 9-stage flow in-process,
@@ -345,14 +345,14 @@ directly; `vite.config.ts` has no proxy; `apiKey` is a server concept the browse
       available**”; “Known limitations” loses the first bullet, gains “the deployed Pages build
       is fixture-only unless `VITE_API_URL` is set”.
 
-**Status (in progress).** The contract, the client, the source abstraction, the proxy, the bundle
-check and the contract test are in. Five views read the API in live mode: Overview, Pipeline,
-Literature, CFD and Settings. **Four do not:** Novelty, Manuscript, Review and Wiki are still
-fixture-only, and in live mode they render a notice instead of the fixture view — the honest
-option until their mappers exist. Acceptance items 1–3 hold for the five migrated views; item 2's
-Literature/CFD clauses are fully met (DOI per reference, no tag chips, GCI numbers with the
-synthetic disclaimer); item 4 holds (unset `VITE_API_URL` ⇒ every view says fixtures); item 5
-holds (`check:bundle` is part of `npm run build`).
+**Status: done (PR #22, PR #23).** The contract, the client, the source abstraction, the proxy,
+the bundle check and the contract test are in, and all nine views read live evidence through
+mappers that refuse to invent what the payload omits: Overview, Pipeline, Literature, Novelty,
+CFD, Manuscript, Review, Wiki and Settings. The live views are tested against
+`apps/dashboard/src/api/__fixtures__/`, which the contract test writes from a real nine-stage
+run, so a view that stops understanding the server fails a test. Acceptance items 1–5 hold.
+C reuses the same route family (`…/references`), and B adds a `manuscript-render` panel to the
+Manuscript view when it lands.
 
 **Acceptance.**
 
@@ -493,15 +493,24 @@ previousVerifiedAt }], summary: { fresh, stale, broken, mismatch, unverified } }
 
 **Tasks.**
 
-- [ ] `recheck.ts` + pure `classifyVerification()` with unit tests for all five statuses.
-- [ ] `doi-recheck` kind: registry, orchestrator method, route, dashboard mapper, BACKEND § 4/§ 8.
-- [ ] Manuscript record gains `references[].verified.verifiedAt` (from P1) and the run's
+- [x] `recheck.ts` + pure `classifyVerification()` with unit tests for all five statuses.
+- [x] `doi-recheck` kind: registry, orchestrator method, route, dashboard mapper, BACKEND § 4/§ 8.
+- [x] Manuscript record gains `references[].verified.verifiedAt` (from P1) and the run's
       `references` route surfaces it.
-- [ ] Stage 8 blockers for `broken`/`mismatch`/stale; tests for each.
-- [ ] Offline mode returns `unverified` with the reason, never `fresh`; test asserts the word
-      “verified” cannot appear for an offline recheck.
-- [ ] CLI + docs (`docs/BACKEND.md` § 6, `docs/OPERATIONS.md` cron example).
-- [ ] Integrity table RULE-002 → “API (generation-time + on-demand re-check; no scheduler)”.
+- [x] Stage 8 blockers for `broken`/`mismatch`/stale; tests for each.
+- [x] Offline mode returns `unverified` with the reason, never `fresh`; test asserts the word
+      "verified" cannot appear for an offline recheck.
+- [x] CLI + docs (`docs/BACKEND.md` § 6, and the cron example in § 14 — there is no
+      `docs/OPERATIONS.md` yet; E creates it).
+- [x] Integrity table RULE-002 → “API (generation-time + on-demand re-check; no scheduler)”.
+
+**Status: done.** `services/api/src/references/recheck.ts` owns the classification and the single
+append; `POST /api/v1/runs/:id/references/recheck` and `GET /api/v1/runs/:id/references` expose it;
+`npm run recheck -- --run <id> | --all` is the cron entry point (exit `1` on `broken`/`mismatch`);
+stage 8 reads the newest record; `apps/dashboard/src/api/mappers.ts` turns the payload into a
+headline and per-reference rows, and the Manuscript view shows them. The acceptance below is
+tested in `services/api/test/recheck.test.ts`: the manuscript payload is byte-identical across a
+re-check, and exactly one record is appended.
 
 **Acceptance.** With a fake provider that resolves a DOI on the first call and 404s afterwards:
 generate a run, re-check, `GET .../references` shows `broken`, the registry verifies, the

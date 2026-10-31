@@ -19,6 +19,12 @@ export interface Config {
   upstreamTimeoutMs: number;
   /** Base delay for exponential backoff (RULE-042 wants 2s; tests use ~1ms). */
   retryBaseDelayMs: number;
+  /**
+   * How old a manuscript's generation-time DOI verification may be before a
+   * re-check reports it `stale` and stage 8 asks for a re-check. Reported, not
+   * enforced: nothing deletes a reference because it aged.
+   */
+  doiMaxAgeDays: number;
   /** Verbosity of the JSON log stream (RULE-053). */
   logLevel: LogLevel;
   /** Release identifier reported by `/health`; the build sets it. */
@@ -71,6 +77,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       .filter((origin) => origin.length > 0),
     upstreamTimeoutMs: envInt(env, 'AEROSCRIBE_UPSTREAM_TIMEOUT_MS', 15_000),
     retryBaseDelayMs: envInt(env, 'AEROSCRIBE_RETRY_BASE_MS', 2_000),
+    doiMaxAgeDays: envInt(env, 'AEROSCRIBE_DOI_MAX_AGE_DAYS', 30),
     logLevel: parseLogLevel(env.LOG_LEVEL),
     version: envString(env, 'AEROSCRIBE_VERSION', 'dev'),
     commit: envString(env, 'GIT_SHA', 'unknown'),
