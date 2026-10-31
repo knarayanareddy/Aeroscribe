@@ -171,6 +171,8 @@ beforeAll(async () => {
     corsOrigins: ['http://localhost:5174'],
     upstreamTimeoutMs: 5_000,
     retryBaseDelayMs: 1,
+    latexBinary: null,
+    latexTimeoutMs: 5_000,
     logLevel: 'silent',
     version: '0.2.0',
     commit: 'contract',

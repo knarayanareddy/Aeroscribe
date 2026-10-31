@@ -13,7 +13,8 @@ import { CfdService } from './cfd';
 import { AuditLog } from './store/audit';
 import { EvidenceRegistry } from './store/registry';
 import { RunRepository } from './store/runs';
-import { detectSu2 } from './config';
+import { detectSu2, detectLatex } from './config';
+import { LatexService } from './latex';
 import { createLogger } from './lib/logger';
 import { createShutdown } from './lib/shutdown';
 
@@ -55,6 +56,13 @@ export async function buildServer(env: NodeJS.ProcessEnv = process.env) {
   });
 
   const cfd = new CfdService({ su2, workDir: join(config.dataDir, 'cfd') });
+  // The TeX engine is probed once, like SU2: availability is a fact about this
+  // process, and a toolchain installed later is picked up on restart.
+  const latex = new LatexService({
+    latex: await detectLatex(config.latexBinary),
+    workDir: join(config.dataDir, 'manuscripts'),
+    timeoutMs: config.latexTimeoutMs,
+  });
 
   // The API key and the Semantic Scholar key are declared secret here, so a
   // message that interpolates one is masked even under an innocent field name.
@@ -65,7 +73,16 @@ export async function buildServer(env: NodeJS.ProcessEnv = process.env) {
     ),
   });
 
-  const orchestrator = new Orchestrator({ runs, registry, audit, literature, cfd, logger });
+  const orchestrator = new Orchestrator({
+    runs,
+    registry,
+    audit,
+    literature,
+    cfd,
+    latex,
+    logger,
+    doiMaxAgeDays: config.doiMaxAgeDays,
+  });
 
   const app = createApp({
     orchestrator,

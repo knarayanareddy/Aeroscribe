@@ -32,6 +32,8 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
     corsOrigins: ['http://localhost:5174'],
     upstreamTimeoutMs: 5_000,
     retryBaseDelayMs: 1,
+    latexBinary: null,
+    latexTimeoutMs: 5_000,
     doiMaxAgeDays: 30,
     logLevel: 'silent',
     version: 'test',

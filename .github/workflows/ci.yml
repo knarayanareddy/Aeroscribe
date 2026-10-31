@@ -80,6 +80,62 @@ jobs:
         env:
           AEROSCRIBE_DATA_DIR: ${{ runner.temp }}/aeroscribe-data
 
+  # Typesetting has two honest outcomes, and the suite covers both: without an
+  # engine the run records `typeset: "source-only"` and blocks stage 8; with one
+  # it records the toolchain version and a PDF whose hash the API serves. This
+  # job installs a real engine so the second path is exercised in CI rather than
+  # only on a machine that happens to have TeX.
+  latex:
+    name: LaTeX (install TeX, require a PDF)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install a TeX engine
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            texlive-latex-recommended texlive-pictures
+
+      - name: Typeset the manuscript
+        run: npm run smoke:latex -- --require-pdf
+        env:
+          LATEX_BINARY: /usr/bin/pdflatex
+          AEROSCRIBE_DATA_DIR: ${{ runner.temp }}/aeroscribe-data
+
+  # Without an engine the same script must still write the source and say why
+  # the PDF is missing — a silent success here would be a lie.
+  latex-without-engine:
+    name: LaTeX (no engine, source-only is reported)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write the source and report the blocker
+        run: npm run smoke:latex
+        env:
+          AEROSCRIBE_DATA_DIR: ${{ runner.temp }}/aeroscribe-data
+
   # The Dockerfile is the deployment artefact; building it here keeps it from
   # rotting. The runtime install is `--omit=dev`, so this also fails if a
   # package the service needs at runtime is sitting in devDependencies.

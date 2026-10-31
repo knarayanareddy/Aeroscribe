@@ -80,7 +80,20 @@ services/api/src
     ├── evidence.ts       stage 4 CFD evidence
     ├── writing.ts        stage 5 manuscript (claim-verified)
     ├── review.ts         stage 6 review council, stage 7 compliance
-    └── knowledge.ts      stage 8 wiki article + submission manifest
+    └── knowledge.ts      stage 8 wiki article, LaTeX render, submission manifest
+```
+
+The renderer sits outside `agents/` because it is a document builder, not a stage:
+
+```
+services/api/src/latex/
+├── escape.ts       escapeLatex (one pass over code points) + stripLatex (prose out)
+├── bibliography.ts BibTeX from ReferenceRecord; absent fields are omitted, not filled
+├── figures.ts      pgfplots axis + .dat from the cfd-run mesh study
+├── render.ts       renderManuscript → deterministic .tex/.bib/figure files
+├── toolchain.ts    probeLatex: `--version`, bounded, never throws
+├── compile.ts      two passes, -halt-on-error, log tail on failure
+└── index.ts        LatexService: render always, compile when a toolchain answered
 ```
 
 Build and run:
@@ -92,6 +105,7 @@ Build and run:
 | `npm run smoke:cfd`                | synthetic grid study, prints every intermediate number  |
 | `npm run smoke:literature`         | live Crossref/arXiv/S2 search + DOI verification        |
 | `npm run recheck -- --all`         | re-resolve stored DOIs for every run (cron entry point) |
+| `npm run smoke:latex`              | render a manuscript, and compile it when TeX is present |
 | `npx tsc --noEmit -p services/api` | typecheck the service on its own                        |
 | `npx vitest run services/api`      | the service test suite (no network, no solver required) |
 
@@ -160,17 +174,17 @@ only ordering that matters.
 
 Every stage is a `StageHandler` — one function, one evidence record, one gate.
 
-| #   | Stage                     | Handler (file)                                   | Reads                                                                | Writes evidence kind | Gate    |
-| --- | ------------------------- | ------------------------------------------------ | -------------------------------------------------------------------- | -------------------- | ------- |
-| 0   | Topic Intelligence        | `topicIntelligence` (`agents/research.ts`)       | `run.topic`, `run.journal`                                           | `stage-output`       | GATE-0  |
-| 1   | Literature Archaeology    | `literatureArchaeology` (`agents/research.ts`)   | providers, `options.paperLimit`, `options.verifyTop`                 | `literature-search`  | GATE-1  |
-| 2   | Novelty Detection         | `noveltyDetection` (`agents/research.ts`)        | latest `literature-search`                                           | `novelty-report`     | GATE-2  |
-| 3   | Contribution Framing      | `contributionFraming` (`agents/research.ts`)     | latest `novelty-report`, latest `stage-output`                       | `stage-output`       | GATE-3  |
-| 4   | Evidence Generation (CFD) | `evidenceGeneration` (`agents/evidence.ts`)      | `CfdService`, `options.solver/quantity/meshes`                       | `cfd-run`            | GATE-4A |
-| 5   | Paper Synthesis           | `paperSynthesis` (`agents/writing.ts`)           | all prior records                                                    | `manuscript`         | GATE-5  |
-| 6   | Peer Review Council       | `peerReview` (`agents/review.ts`)                | `manuscript`, `cfd-run`                                              | `review-report`      | GATE-6  |
-| 7   | Revision & Compliance     | `complianceCheck` (`agents/review.ts`)           | `manuscript`, `review-report`, journal profile                       | `compliance-report`  | GATE-7  |
-| 8   | AeroWiki & Submission     | `knowledgeAndSubmission` (`agents/knowledge.ts`) | `manuscript`, `review-report`, `compliance-report`, `novelty-report` | `submission-package` | GATE-8  |
+| #   | Stage                     | Handler (file)                                   | Reads                                                                | Writes evidence kind                      | Gate    |
+| --- | ------------------------- | ------------------------------------------------ | -------------------------------------------------------------------- | ----------------------------------------- | ------- |
+| 0   | Topic Intelligence        | `topicIntelligence` (`agents/research.ts`)       | `run.topic`, `run.journal`                                           | `stage-output`                            | GATE-0  |
+| 1   | Literature Archaeology    | `literatureArchaeology` (`agents/research.ts`)   | providers, `options.paperLimit`, `options.verifyTop`                 | `literature-search`                       | GATE-1  |
+| 2   | Novelty Detection         | `noveltyDetection` (`agents/research.ts`)        | latest `literature-search`                                           | `novelty-report`                          | GATE-2  |
+| 3   | Contribution Framing      | `contributionFraming` (`agents/research.ts`)     | latest `novelty-report`, latest `stage-output`                       | `stage-output`                            | GATE-3  |
+| 4   | Evidence Generation (CFD) | `evidenceGeneration` (`agents/evidence.ts`)      | `CfdService`, `options.solver/quantity/meshes`                       | `cfd-run`                                 | GATE-4A |
+| 5   | Paper Synthesis           | `paperSynthesis` (`agents/writing.ts`)           | all prior records                                                    | `manuscript`                              | GATE-5  |
+| 6   | Peer Review Council       | `peerReview` (`agents/review.ts`)                | `manuscript`, `cfd-run`                                              | `review-report`                           | GATE-6  |
+| 7   | Revision & Compliance     | `complianceCheck` (`agents/review.ts`)           | `manuscript`, `review-report`, journal profile                       | `compliance-report`                       | GATE-7  |
+| 8   | AeroWiki & Submission     | `knowledgeAndSubmission` (`agents/knowledge.ts`) | `manuscript`, `review-report`, `compliance-report`, `novelty-report` | `submission-package`, `manuscript-render` | GATE-8  |
 
 `STAGE_HANDLERS` in `orchestrator.ts` is an array indexed by stage id, so adding a
 stage means changing `PIPELINE_STAGES` **and** that array — and the type system plus
@@ -246,11 +260,39 @@ blocking `review-verdict` issue when the council asked for revisions.
 
 ### Stage 8 — AeroWiki & Submission
 
-Compiles a markdown wiki article from the manuscript and builds a submission
-**manifest** — file names and SHA-256 of payloads. It is explicitly not a PDF, not a
-`.docx`, and nothing is uploaded to a journal. The stage returns `blocked` when the
-review did not pass, compliance is not met, or the numbers are synthetic, which marks
-the run failed: a prototype must not be able to "submit" itself.
+Compiles a markdown wiki article from the manuscript, **renders the LaTeX project**, and
+builds a submission **manifest** — file names and SHA-256 of payloads. Nothing is uploaded
+to a journal and no `.docx` exists. The stage returns `blocked` when the review did not
+pass, compliance is not met, the numbers are synthetic, or the PDF could not be typeset,
+which marks the run failed: a prototype must not be able to "submit" itself.
+
+The renderer mirrors the SU2 pattern — **detected, never assumed**:
+
+- The `.tex` is always produced: `manuscript.tex`, `references.bib`, and
+  `figure-1.tex`/`figure-1.dat` when the run has a mesh study. Files land in
+  `$AEROSCRIBE_DATA_DIR/manuscripts/<runId>/` and the payload records each one's
+  SHA-256 and size.
+- The PDF exists only when `LATEX_BINARY` answered `--version`. Otherwise the record says
+  `typeset: "source-only"` and stage 8 adds
+  `the manuscript PDF was not typeset (LATEX_BINARY is not set)`. A journal wants a PDF;
+  a source-only package is a legitimate **failure**, not a footnote.
+- The `.tex` header carries the run id, the template, the manuscript's own
+  `generated_at` and the SHA-256 of every input payload, so the file states its own
+  provenance.
+- **Claim verification runs on the rendered text** (`stripLatex` of the abstract,
+  sections and captions), against the same policy stage 5 used. A number that never
+  reached a record cannot reach the PDF either.
+- Templates are built on the standard `article` class (`aiaa-style`, `elsevier-style`):
+  the publisher class files are not shipped with TeX Live, and substituting a lookalike
+  would be a claim the PDF cannot support. The record names the template that was used
+  and says the layout must be checked against the journal's current guidelines.
+- Deterministic: the same record renders byte-identical files, because the header uses
+  the manuscript's timestamp rather than the wall clock.
+
+The render is its own evidence record (`manuscript-render`), produced by this stage and
+appended right after the package record. The package's `files` manifest covers the
+evidence that existed when stage 8 began; the render record is the index for the files
+themselves.
 
 Before that, it reads the newest `doi-recheck`: a `broken` or `mismatch` reference is a
 named blocker (`reference ref-01 (10.2514/1.j060001) no longer resolves: …`). When there
@@ -293,8 +335,9 @@ Properties:
   payload, edited metadata, a gap in `seq`, and a hash mismatch.
 - **Serialised appends** — writes queue behind a promise chain, so 20 concurrent
   appends still produce `seq` 0…19 in order.
-- **One record per stage execution** — an executed stage appends exactly one record
-  (`stage-output` for most, `cfd-run`/`manuscript`/… for four of them). The only other
+- **One record per stage execution, plus artefacts** — an executed stage appends
+  exactly one record (`stage-output` for most, `cfd-run`/`manuscript`/… for four of
+  them), and stage 8 appends a second one for the rendered manuscript. The only other
   writer is an explicit action: a DOI re-check appends one `doi-recheck` record with
   `stageId: null`, because it describes a fact about a run, not a stage transition.
 
@@ -310,6 +353,7 @@ Kinds, and who writes them:
 | `review-report`      | stage 6                                | `6`       |
 | `compliance-report`  | stage 7                                | `7`       |
 | `submission-package` | stage 8                                | `8`       |
+| `manuscript-render`  | stage 8, right after the package       | `8`       |
 | `doi-recheck`        | `POST …/references/recheck` or the CLI | `null`    |
 
 The registry is the source of the `evidenceSeq` shown on every stage of the dashboard
@@ -547,29 +591,33 @@ Base path `/api/v1`. Authentication applies to `/api/v1/*` when `AEROSCRIBE_API_
 set (`Authorization: Bearer <key>`); `/health` is always open. Errors are always
 `{ "error": { "code", "message", "details? } }`.
 
-| Method | Path                                     | Purpose                                     |
-| ------ | ---------------------------------------- | ------------------------------------------- |
-| GET    | `/health`                                | liveness + capabilities + `authRequired`    |
-| GET    | `/api/v1/capabilities`                   | literature mode, SU2 availability, storage  |
-| GET    | `/api/v1/runs`                           | list runs, newest first                     |
-| POST   | `/api/v1/runs`                           | create a run (`topic` ≥ 8 chars)            |
-| GET    | `/api/v1/runs/:id`                       | one run                                     |
-| POST   | `/api/v1/runs/:id/advance`               | execute the current stage                   |
-| POST   | `/api/v1/runs/:id/gates/:gateId/approve` | approve the open gate                       |
-| POST   | `/api/v1/runs/:id/gates/:gateId/reject`  | send the stage back for revision (`note`)   |
-| GET    | `/api/v1/runs/:id/evidence?kind=`        | registry records for the run                |
-| GET    | `/api/v1/evidence/verify`                | re-hash the whole chain from disk           |
-| GET    | `/api/v1/audit?runId=&limit=`            | audit trail (read-only)                     |
-| GET    | `/api/v1/literature/search?q=&limit=`    | live/offline search                         |
-| POST   | `/api/v1/literature/verify-doi`          | `{ doi, expectedTitle? }` → 200 or 422      |
-| POST   | `/api/v1/claims/verify`                  | `{ text, runId }` → claim report            |
-| POST   | `/api/v1/runs/:id/references/recheck`    | re-resolve every stored DOI, one record     |
-| GET    | `/api/v1/runs/:id/references`            | stored references joined to latest re-check |
+| Method | Path                                     | Purpose                                         |
+| ------ | ---------------------------------------- | ----------------------------------------------- |
+| GET    | `/health`                                | liveness + capabilities + `authRequired`        |
+| GET    | `/api/v1/capabilities`                   | literature mode, SU2 availability, storage      |
+| GET    | `/api/v1/runs`                           | list runs, newest first                         |
+| POST   | `/api/v1/runs`                           | create a run (`topic` ≥ 8 chars)                |
+| GET    | `/api/v1/runs/:id`                       | one run                                         |
+| POST   | `/api/v1/runs/:id/advance`               | execute the current stage                       |
+| POST   | `/api/v1/runs/:id/gates/:gateId/approve` | approve the open gate                           |
+| POST   | `/api/v1/runs/:id/gates/:gateId/reject`  | send the stage back for revision (`note`)       |
+| GET    | `/api/v1/runs/:id/evidence?kind=`        | registry records for the run                    |
+| GET    | `/api/v1/evidence/verify`                | re-hash the whole chain from disk               |
+| GET    | `/api/v1/audit?runId=&limit=`            | audit trail (read-only)                         |
+| GET    | `/api/v1/literature/search?q=&limit=`    | live/offline search                             |
+| POST   | `/api/v1/literature/verify-doi`          | `{ doi, expectedTitle? }` → 200 or 422          |
+| POST   | `/api/v1/claims/verify`                  | `{ text, runId }` → claim report                |
+| POST   | `/api/v1/runs/:id/references/recheck`    | re-resolve every stored DOI, one record         |
+| GET    | `/api/v1/runs/:id/references`            | stored references joined to latest re-check     |
+| GET    | `/api/v1/runs/:id/manuscript.tex`        | LaTeX source, `text/x-tex`, hash in a header    |
+| GET    | `/api/v1/runs/:id/manuscript.pdf`        | the typeset PDF, or `503` naming `LATEX_BINARY` |
 
 Status codes used: `200`, `201`, `400` invalid request, `401` missing/wrong key, `404`
-unknown run or route, `409` gate discipline (**and** no manuscript to re-check),
-`422` DOI did not resolve / unverifiable claim, `429` rate limited, `502` upstream
-failed after retries, `503` capability unavailable (e.g. SU2).
+unknown run or route, `409` gate discipline (**and** no manuscript to re-check, or no
+rendered manuscript yet), `422` DOI did not resolve / unverifiable claim, `429` rate
+limited, `500` an artefact on disk no longer matches its record, `502` upstream failed
+after retries (including a LaTeX engine that exited non-zero), `503` capability
+unavailable (SU2, or a PDF that was never typeset).
 
 The re-check route is idempotent in effect, not in output: calling it twice appends two
 records and the newer one wins. It answers
@@ -625,23 +673,25 @@ that adds, removes or retypes a field fails that test until the dashboard's mapp
 
 ## 9. Configuration
 
-| Variable                         | Default                                       | Meaning                                                            |
-| -------------------------------- | --------------------------------------------- | ------------------------------------------------------------------ |
-| `HOST`                           | `127.0.0.1`                                   | bind address (use `0.0.0.0` in a container)                        |
-| `PORT`                           | `8787`                                        | bind port                                                          |
-| `AEROSCRIBE_DATA_DIR`            | `./data`                                      | registry, runs, audit, CFD studies                                 |
-| `AEROSCRIBE_API_KEY`             | _unset_                                       | unset ⇒ **no authentication**; `/health` says `authRequired:false` |
-| `AEROSCRIBE_CONTACT_EMAIL`       | _unset_                                       | Crossref polite-pool `mailto`                                      |
-| `AEROSCRIBE_OFFLINE`             | `false`                                       | `true` ⇒ fixture corpus, no network                                |
-| `SU2_CFD_BINARY`                 | _unset_                                       | absolute path; availability is probed, not assumed                 |
-| `AEROSCRIBE_CORS_ORIGINS`        | `http://localhost:5173,http://localhost:5174` | comma-separated allowlist                                          |
-| `AEROSCRIBE_UPSTREAM_TIMEOUT_MS` | `15000`                                       | per-attempt and per-provider deadline                              |
-| `AEROSCRIBE_RETRY_BASE_MS`       | `2000`                                        | first backoff step (RULE-042)                                      |
-| `AEROSCRIBE_DOI_MAX_AGE_DAYS`    | `30`                                          | age at which a stored DOI verification is `stale` (RULE-002)       |
-| `SEMANTIC_SCHOLAR_API_KEY`       | _unset_                                       | server-side only; never sent to the browser                        |
-| `LOG_LEVEL`                      | `info`                                        | `debug` \| `info` \| `warn` \| `error` \| `silent` (RULE-053)      |
-| `AEROSCRIBE_VERSION`             | `dev`                                         | release identifier reported by `/health`                           |
-| `GIT_SHA`                        | `unknown`                                     | commit the image was built from, reported by `/health`             |
+| Variable                         | Default                                       | Meaning                                                                         |
+| -------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------- |
+| `HOST`                           | `127.0.0.1`                                   | bind address (use `0.0.0.0` in a container)                                     |
+| `PORT`                           | `8787`                                        | bind port                                                                       |
+| `AEROSCRIBE_DATA_DIR`            | `./data`                                      | registry, runs, audit, CFD studies                                              |
+| `AEROSCRIBE_API_KEY`             | _unset_                                       | unset ⇒ **no authentication**; `/health` says `authRequired:false`              |
+| `AEROSCRIBE_CONTACT_EMAIL`       | _unset_                                       | Crossref polite-pool `mailto`                                                   |
+| `AEROSCRIBE_OFFLINE`             | `false`                                       | `true` ⇒ fixture corpus, no network                                             |
+| `SU2_CFD_BINARY`                 | _unset_                                       | absolute path; availability is probed, not assumed                              |
+| `LATEX_BINARY`                   | _unset_                                       | absolute path to `pdflatex`; a PDF is produced only when it answers `--version` |
+| `LATEX_TIMEOUT_MS`               | `120000`                                      | wall-clock limit per engine pass (two passes)                                   |
+| `AEROSCRIBE_CORS_ORIGINS`        | `http://localhost:5173,http://localhost:5174` | comma-separated allowlist                                                       |
+| `AEROSCRIBE_UPSTREAM_TIMEOUT_MS` | `15000`                                       | per-attempt and per-provider deadline                                           |
+| `AEROSCRIBE_RETRY_BASE_MS`       | `2000`                                        | first backoff step (RULE-042)                                                   |
+| `AEROSCRIBE_DOI_MAX_AGE_DAYS`    | `30`                                          | age at which a stored DOI verification is `stale` (RULE-002)                    |
+| `SEMANTIC_SCHOLAR_API_KEY`       | _unset_                                       | server-side only; never sent to the browser                                     |
+| `LOG_LEVEL`                      | `info`                                        | `debug` \| `info` \| `warn` \| `error` \| `silent` (RULE-053)                   |
+| `AEROSCRIBE_VERSION`             | `dev`                                         | release identifier reported by `/health`                                        |
+| `GIT_SHA`                        | `unknown`                                     | commit the image was built from, reported by `/health`                          |
 
 Every variable is described in `services/api/.env.example`; copy it to `services/api/.env`
 for local work. Neither browser app reads any of them — a key in a Vite bundle is a public key.
@@ -691,12 +741,29 @@ docker run --rm -p 8787:8787 \
   aeroscribe-api
 ```
 
+A PDF needs a TeX engine in the image, which is opt-in because it costs about 250 MB:
+
+```sh
+docker build -t aeroscribe-api:tex --build-arg INSTALL_LATEX=true .
+docker run --rm -p 8787:8787 -e LATEX_BINARY=/usr/bin/pdflatex \
+  -v aeroscribe-data:/data aeroscribe-api:tex
+```
+
+Without both, the image is smaller and stage 8 says
+`the manuscript PDF was not typeset (LATEX_BINARY is not set)` — the same answer a laptop
+without TeX gives. `LATEX_BINARY` is not baked into the default image on purpose: a path to a
+binary that is not there would be reported as a toolchain that "did not answer", which is a
+worse error than an unset one.
+
 The image installs with `--omit=dev`, which is why `tsx` is listed in `dependencies`: the
 service runs its TypeScript source, and there is no compiled artifact to ship. `HOST`
 defaults to `0.0.0.0` inside the image, the health check polls `/health`, and `/data` is a
 volume — without it the evidence registry dies with the container. CI builds the image and
 waits for `/health` inside it (`api-image` job), so the Dockerfile is a tested artefact rather
-than reviewed configuration.
+than reviewed configuration. Two further CI jobs cover both outcomes: `latex` installs
+TeX Live and runs `npm run smoke:latex -- --require-pdf`, so the PDF path is exercised on every
+push instead of only where a developer happens to have TeX; `latex-without-engine` asserts the
+opposite outcome — the `.tex` is written, `typeset` is `"source-only"` and the blocker is named.
 
 Data layout under `AEROSCRIBE_DATA_DIR`:
 
@@ -706,6 +773,7 @@ audit.ndjson             append-only audit trail
 runs/<runId>.json        run state (atomic replace)
 runs/<runId>.options.json run options (survive restarts)
 cfd/study-<uuid>/        SU2 working directories: history.csv per mesh level
+manuscripts/<runId>/     manuscript.tex, references.bib, figure-N.tex|.dat, PDF when typeset
 ```
 
 ---

@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "smoke:literature": "tsx scripts/literature-smoke.ts",
     "smoke:cfd": "tsx scripts/cfd-smoke.ts",
-    "recheck": "tsx scripts/recheck.ts"
+    "recheck": "tsx scripts/recheck.ts",
+    "smoke:latex": "tsx scripts/latex-smoke.ts"
   },
   "dependencies": {
     "@aeroscribe/contract": "0.1.0",

@@ -40,6 +40,7 @@ export const EVIDENCE_KINDS = [
   'compliance-report',
   'submission-package',
   'doi-recheck',
+  'manuscript-render',
 ] as const;
 
 export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
@@ -383,6 +384,46 @@ export interface SubmissionPackagePayload {
   submission: SubmissionPayload;
 }
 
+/**
+ * One text artefact the renderer wrote, with the hash the registry can check.
+ *
+ * These live next to the PDF in the run's manuscript directory; the record is
+ * the index, so a download route never has to guess a filename.
+ */
+export interface RenderedTextFile {
+  name: string;
+  sha256: string;
+  bytes: number;
+}
+
+/**
+ * The typeset manuscript, as stage 8 rendered it.
+ *
+ * `typeset` is the honest summary: `pdf` only when a TeX toolchain was present
+ * and produced a file. `source-only` is a legitimate outcome that still ships a
+ * compilable `.tex` — and still blocks submission, because a journal asked for a
+ * PDF. Nothing in this payload is inferred: a missing PDF is `null`, not a
+ * placeholder.
+ */
+export interface ManuscriptRenderPayload {
+  stage: 'manuscript-render';
+  schemaVersion: 1;
+  runId: string;
+  /** The journal the manuscript was formatted for. */
+  journal: string;
+  /** Which preamble the renderer used, e.g. `aiaa-style`. */
+  template: string;
+  /** The source's own generation time, so re-rendering is byte-identical. */
+  generatedAt: string;
+  files: RenderedTextFile[];
+  texSha256: string;
+  pdf: { sha256: string; bytes: number } | null;
+  typeset: 'pdf' | 'source-only';
+  toolchain: { binary: string; version: string | null } | null;
+  /** Reference fields the `.bib` had to omit, because the record had none. */
+  missingBibliographyFields: string[];
+}
+
 /* ──────────────────────────── reference re-checks ────────────────────────── */
 
 /**
@@ -521,6 +562,22 @@ export interface Su2Capability {
 }
 
 /**
+ * Whether this instance can typeset a PDF.
+ *
+ * `configured` says the operator set `LATEX_BINARY`; `available` says the probe
+ * actually got a version out of it. The two are separate facts: a path that does
+ * not exist is configured but not available, and the UI must show that, not a
+ * generic "not configured".
+ */
+export interface LatexCapability {
+  configured: boolean;
+  binary: string | null;
+  available: boolean;
+  /** First line of `<binary> --version`, when the probe answered. */
+  version: string | null;
+}
+
+/**
  * What this instance can actually do.
  *
  * Every `false` here has to be visible in the UI. That is the point of the
@@ -539,6 +596,7 @@ export interface Capabilities {
     /** Deterministic placeholder physics, always available, always labelled. */
     synthetic: boolean;
   };
+  latex: LatexCapability;
   registry: { algorithm: 'sha256'; path: string };
   auth: { required: boolean };
   storage: { runsDir: string; auditPath: string };

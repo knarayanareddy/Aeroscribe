@@ -99,7 +99,10 @@ describe('SettingsLive', () => {
     renderLive(<SettingsLive />);
 
     await waitFor(() => expect(screen.getByText(/Offline corpus/i)).toBeVisible());
-    expect(screen.getByText(/Not configured/i)).toBeVisible();
+    // Both optional toolchains are reported as missing, each with its own reason.
+    await waitFor(() => expect(screen.getAllByText(/Not configured/i)).toHaveLength(2));
+    expect(screen.getByText(/SU2_CFD_BINARY is unset/i)).toBeVisible();
+    expect(screen.getByText(/LATEX_BINARY is unset/i)).toBeVisible();
     expect(screen.getByText(/AEROSCRIBE_API_KEY is unset/i)).toBeVisible();
     // ADR-0001: no model is called, and the screen says so.
     expect(screen.getByText('Not used')).toBeVisible();
@@ -152,8 +155,47 @@ describe('ManuscriptLive', () => {
     await waitFor(() => expect(screen.getByTestId('manuscript-synthetic-notice')).toBeVisible());
     expect(screen.getByText(/Abstract/i)).toBeVisible();
     expect(screen.getByText(/Source files/i)).toBeVisible();
-    // No .tex download: workstream B has not landed, and the page says so.
-    expect(screen.getByText(/Not produced yet/i)).toBeVisible();
+
+    // The recorded run has a LaTeX source and no PDF: the panel says exactly
+    // that, lists the files and offers no PDF link.
+    await waitFor(() => expect(screen.getByTestId('manuscript-render')).toBeVisible());
+    expect(screen.getByTestId('render-summary')).toHaveTextContent(/LaTeX source only/i);
+    expect(screen.getByText('manuscript.tex')).toBeVisible();
+    expect(screen.getByText('references.bib')).toBeVisible();
+    expect(screen.queryByRole('link', { name: /manuscript\.pdf/i })).toBeNull();
+  });
+
+  it('links the PDF only when the record says one was typeset', async () => {
+    const recorded = records.find((record) => record.kind === 'manuscript-render')!;
+    const typeset: EvidenceRecord = {
+      ...recorded,
+      payload: {
+        ...(recorded.payload as Record<string, unknown>),
+        typeset: 'pdf',
+        pdf: { sha256: 'f'.repeat(64), bytes: 2048 },
+        toolchain: { binary: '/usr/bin/pdflatex', version: 'pdfTeX 3.141592653' },
+      },
+    };
+
+    renderLive(<ManuscriptLive />, {
+      ...liveSource({ evidence: async () => [...records.filter((r) => r !== recorded), typeset] }),
+      artefactUrl: (runId, kind) => `http://api.test/api/v1/runs/${runId}/manuscript.${kind}`,
+    });
+
+    await waitFor(() => expect(screen.getByTestId('render-summary')).toHaveTextContent(/PDF/i));
+    const pdf = screen.getByRole('link', { name: /manuscript\.pdf/i });
+    expect(pdf).toHaveAttribute('href', 'http://api.test/api/v1/runs/run-contract/manuscript.pdf');
+    expect(screen.getByRole('link', { name: /manuscript\.tex/i })).toHaveAttribute(
+      'href',
+      'http://api.test/api/v1/runs/run-contract/manuscript.tex',
+    );
+  });
+
+  it('says downloads are unavailable in fixture mode, and never invents a link', async () => {
+    renderLive(<ManuscriptLive />);
+    await waitFor(() => expect(screen.getByTestId('manuscript-render')).toBeVisible());
+    expect(screen.queryByRole('link', { name: /manuscript\.(tex|pdf)/i })).toBeNull();
+    expect(screen.getByText(/downloads are served by the API/i)).toBeVisible();
   });
 
   it('shows the sections the payload carries', async () => {

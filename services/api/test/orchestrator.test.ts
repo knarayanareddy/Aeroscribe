@@ -158,7 +158,7 @@ describe('a full nine-stage run', () => {
     expect((await registry.verify()).valid).toBe(true);
   });
 
-  it('appends exactly one evidence record per stage', async () => {
+  it('appends one evidence record per stage, plus the typeset manuscript', async () => {
     const run = await orchestrator.createRun({ topic: 'transonic wing drag prediction' });
 
     for (let stageId = 0; stageId < STAGE_COUNT; stageId += 1) {
@@ -170,10 +170,18 @@ describe('a full nine-stage run', () => {
     }
 
     const records = await orchestrator.evidence(run.id);
-    expect(records).toHaveLength(STAGE_COUNT);
-    expect(records.map((record) => record.seq)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(records).toHaveLength(STAGE_COUNT + 1);
+    expect(records.map((record) => record.seq)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
     expect(records.every((record) => record.runId === run.id)).toBe(true);
-    expect(records.map((record) => record.stageId)).toEqual(
+
+    // Stage 8 appends its own record and the render it produced, in that order.
+    const renders = records.filter((record) => record.kind === 'manuscript-render');
+    expect(renders).toHaveLength(1);
+    expect(renders[0]!.stageId).toBe(STAGE_COUNT - 1);
+    expect(renders[0]!.seq).toBe(records.length - 1);
+
+    const stageRecords = records.filter((record) => record.kind !== 'manuscript-render');
+    expect(stageRecords.map((record) => record.stageId)).toEqual(
       PIPELINE_STAGES.map((stage) => stage.id),
     );
   });

@@ -7,27 +7,27 @@ everything still missing is planned in [`ROADMAP.md`](./ROADMAP.md).
 
 ## Summary
 
-| Area                      | Status                   | Notes                                                                                                                                             |
-| ------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Landing page              | **Implemented**          | Static site, keyboard accessible, self-hosted fonts, no third-party requests.                                                                     |
-| Researcher dashboard (UI) | **Implemented**          | Nine views, responsive down to 360 px. Fixture mode is the default build; live mode (Overview, Pipeline, Literature, CFD, Settings) is opt-in.    |
-| Pipeline state machine    | **Implemented**          | Pure reducer in `packages/pipeline`; gate approval, revision requests, run creation.                                                              |
-| Automated tests           | **Implemented**          | Vitest + Testing Library: 313 tests across 33 files, apps and API; CI enforces coverage thresholds.                                               |
-| CI / deployment           | **Implemented**          | Typecheck, lint, format check, coverage thresholds, both app builds and the API image (built and health-checked) on every PR.                     |
-| Agent runtime (backend)   | **Implemented**          | `services/api`: 9 stage handlers, orchestrator, gates, revisions, audit trail.                                                                    |
-| Literature APIs           | **Implemented**          | Crossref, arXiv and Semantic Scholar clients with DTO mapping, retries and politeness. Offline fixtures carry no DOIs.                            |
-| CFD solver adapter        | **Implemented**          | Real SU2 adapter (three-mesh study) plus a labelled synthetic benchmark for machines without it.                                                  |
-| Grid-convergence (GCI)    | **Implemented**          | Roache GCI with order estimate, Richardson extrapolation and asymptotic-range rejection.                                                          |
-| Verified registry         | **Implemented**          | Append-only NDJSON hash chain; tamper, reorder and deletion are detected.                                                                         |
-| Claim verification        | **Implemented**          | Stage 5 refuses to write a manuscript containing an unbacked number or unresolved DOI.                                                            |
-| Reference re-checks       | **Implemented**          | `references/recheck.ts` re-resolves stored DOIs on demand, appends one `doi-recheck` record, and stage 8 blocks on `broken`/`mismatch`.           |
-| HTTP API                  | **Implemented**          | Hono server: runs, gates, evidence, audit, literature, claim checks, rate limiting. `docker build` + `docker run` documented in `BACKEND.md` § 9. |
-| Persistence               | **Implemented (server)** | Runs, options, evidence and audit persist on disk and survive restarts. The dashboard reads them in live mode, per view.                          |
-| LaTeX compilation         | **Not implemented**      | No `.tex` or PDF exists yet: the manuscript view renders the record and says so (workstream B).                                                   |
-| Journal submission        | **Not implemented**      | Stage 8 builds an evidence manifest only; nothing is uploaded.                                                                                    |
-| Authentication            | **Partial**              | Single server-side bearer token; no accounts, no per-user data, off when no key is set.                                                           |
-| LLM-generated prose       | **Not implemented**      | Deliberately: the writer is mechanical so RULE-001 can be enforced exactly.                                                                       |
-| Wiki persistence          | **Not implemented**      | Wiki edits and drafts are local to the session and labelled as such.                                                                              |
+| Area                      | Status                   | Notes                                                                                                                                                                                                                                                                                     |
+| ------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Landing page              | **Implemented**          | Static site, keyboard accessible, self-hosted fonts, no third-party requests.                                                                                                                                                                                                             |
+| Researcher dashboard (UI) | **Implemented**          | Nine views, responsive down to 360 px. Fixture mode is the default build; live mode (Overview, Pipeline, Literature, CFD, Settings) is opt-in.                                                                                                                                            |
+| Pipeline state machine    | **Implemented**          | Pure reducer in `packages/pipeline`; gate approval, revision requests, run creation.                                                                                                                                                                                                      |
+| Automated tests           | **Implemented**          | Vitest + Testing Library: 436 tests across 41 files, apps and API; CI enforces coverage thresholds (77 / 66 / 70 / 79 % global, 90 / 78 / 89 / 92 % for the service).                                                                                                                     |
+| CI / deployment           | **Implemented**          | Typecheck, lint, format check, coverage thresholds, both app builds and the API image (built and health-checked) on every PR.                                                                                                                                                             |
+| Agent runtime (backend)   | **Implemented**          | `services/api`: 9 stage handlers, orchestrator, gates, revisions, audit trail.                                                                                                                                                                                                            |
+| Literature APIs           | **Implemented**          | Crossref, arXiv and Semantic Scholar clients with DTO mapping, retries and politeness. Offline fixtures carry no DOIs.                                                                                                                                                                    |
+| CFD solver adapter        | **Implemented**          | Real SU2 adapter (three-mesh study) plus a labelled synthetic benchmark for machines without it.                                                                                                                                                                                          |
+| Grid-convergence (GCI)    | **Implemented**          | Roache GCI with order estimate, Richardson extrapolation and asymptotic-range rejection.                                                                                                                                                                                                  |
+| Verified registry         | **Implemented**          | Append-only NDJSON hash chain; tamper, reorder and deletion are detected.                                                                                                                                                                                                                 |
+| Claim verification        | **Implemented**          | Stage 5 refuses to write a manuscript containing an unbacked number or unresolved DOI.                                                                                                                                                                                                    |
+| Reference re-checks       | **Implemented**          | `references/recheck.ts` re-resolves stored DOIs on demand, appends one `doi-recheck` record, and stage 8 blocks on `broken`/`mismatch`.                                                                                                                                                   |
+| HTTP API                  | **Implemented**          | Hono server: runs, gates, evidence, audit, literature, claim checks, rate limiting. `docker build` + `docker run` documented in `BACKEND.md` § 9.                                                                                                                                         |
+| Persistence               | **Implemented (server)** | Runs, options, evidence and audit persist on disk and survive restarts. The dashboard reads them in live mode, per view.                                                                                                                                                                  |
+| LaTeX compilation         | **Implemented**          | `services/api/src/latex` renders `manuscript.tex`, `references.bib` and pgfplots figures for every run that reaches stage 8; `manuscript.pdf` is compiled when `LATEX_BINARY` answers `--version`, otherwise the record says `typeset: "source-only"` and stage 8 blocks with the reason. |
+| Journal submission        | **Not implemented**      | Stage 8 builds an evidence manifest only; nothing is uploaded.                                                                                                                                                                                                                            |
+| Authentication            | **Partial**              | Single server-side bearer token; no accounts, no per-user data, off when no key is set.                                                                                                                                                                                                   |
+| LLM-generated prose       | **Not implemented**      | Deliberately: the writer is mechanical so RULE-001 can be enforced exactly.                                                                                                                                                                                                               |
+| Wiki persistence          | **Not implemented**      | Wiki edits and drafts are local to the session and labelled as such.                                                                                                                                                                                                                      |
 
 ## What each dashboard view actually does
 
@@ -101,14 +101,19 @@ stating plainly:
 ## Known limitations
 
 - The default dashboard build is static fixture data. Live mode needs a running API.
-- In live mode the manuscript view has no source download: the LaTeX renderer and PDF compile are
-  workstream B, and the page says so instead of offering a file that would not match the registry.
+- In live mode the manuscript view lists the rendered files with their sizes and SHA-256 hashes,
+  and links to `manuscript.tex` (and `manuscript.pdf` when one was typeset). In fixture mode the
+  links are absent, because the dashboard cannot serve a file the API owns.
 - In live mode a gate approval is a real server call and survives a reload. In fixture mode it is
   still local to the session, and the run list resets.
 - Wiki edits are not persisted anywhere.
 - The API rate limiter is per process, and the registry assumes a single writer.
-- No LaTeX/PDF build and no journal upload path: stage 8 assembles a submission bundle
-  (manuscript Markdown/JSON plus artefact hashes), not a typeset PDF.
+- **A PDF is not guaranteed.** Without `LATEX_BINARY` — unset on the deployed machine, and in
+  the default container image — the run records `typeset: "source-only"`, `/manuscript.pdf`
+  answers `503 capability_unavailable`, and stage 8 refuses to submit with
+  `the manuscript PDF was not typeset (LATEX_BINARY is not set)`. The `.tex` is always written.
+- No journal upload path: stage 8 assembles a submission bundle (manuscript files, the PDF when
+  one exists, and artefact hashes). Nothing is sent to a journal.
 - **DOI re-verification is on demand, never automatic.** A paper is resolved when it is
   retrieved, and a stored manuscript is only re-checked when someone runs
   `npm run recheck -- --all` or calls `POST /api/v1/runs/:id/references/recheck`. There is no

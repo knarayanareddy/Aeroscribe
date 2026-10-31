@@ -420,28 +420,47 @@ typeset: 'pdf' | 'source-only', toolchain: { binary, version } | null }`.
 
 **Tasks.**
 
-- [ ] `escape.ts` + tests (`%`, `_`, `&`, `#`, `$`, `{`, `}`, `~`, `^`, `\`, Unicode dashes,
+- [x] `escape.ts` + tests (`%`, `_`, `&`, `#`, `$`, `{`, `}`, `~`, `^`, `\`, Unicode dashes,
       a topic that is itself a LaTeX command).
-- [ ] `render.ts` producing a compilable document for both journal templates; deterministic
+- [x] `render.ts` producing a compilable document for both journal templates; deterministic
       output (same inputs ⇒ byte-identical `.tex`, asserted by hashing twice).
-- [ ] `bibliography.ts` from `ReferenceRecord`; entries never invent volume/pages (omit; add a
+      The bibliography is written inline as a `thebibliography` list, so a document compiles with
+      two `pdflatex` passes and no BibTeX run; `references.bib` is still emitted for the journal.
+- [x] `bibliography.ts` from `ReferenceRecord`; entries never invent volume/pages (omit; add a
       `% missing: volume` comment so a reviewer sees what is absent).
-- [ ] `toolchain.ts` detection (`--version`, timeout, absolute path, executable bit) and
+- [x] `toolchain.ts` detection (`--version`, timeout, absolute path, executable bit) and
       `compile.ts` (two passes, captured log, non-zero exit ⇒ `UpstreamError` with log tail,
-      missing PDF ⇒ same).
-- [ ] `LatexService` wired into `buildServer` and stage 8; new kind in `EVIDENCE_KINDS`, dashboard
+      missing PDF ⇒ same; a file that does not start with `%PDF-` ⇒ same).
+- [x] `LatexService` wired into `buildServer` and stage 8; new kind in `EVIDENCE_KINDS`, dashboard
       mapper, `docs/BACKEND.md` § 3/§ 4/§ 8/§ 9.
-- [ ] Claim verification on rendered text; test with a number that is in no record ⇒ stage fails.
-- [ ] `npm run smoke:latex` script: renders, compiles when possible, prints every intermediate.
-- [ ] Fake-binary tests (mirroring `test/su2-http.test.ts`): success, non-zero exit, timeout,
+- [x] Claim verification on rendered text; test with a number that is in no record ⇒ stage fails.
+- [x] `npm run smoke:latex` script: renders, compiles when possible, prints every intermediate.
+- [x] Fake-binary tests (mirroring `test/su2-http.test.ts`): success, non-zero exit, timeout,
       no PDF, and the `503` on the PDF endpoint when unset.
-- [ ] Dockerfile: `ARG INSTALL_LATEX=false`; when true install
-      `texlive-latex-recommended texlive-fonts-recommended texlive-publishers` and document the
-      ~600 MB cost in `docs/BACKEND.md` § 9.
-- [ ] CI: job `latex` (only on PRs touching `services/api/src/latex/**` or `packages/pipeline/src/journals.ts`,
-      plus `main`) that installs TeX Live and runs `npm run smoke:latex -- --require-pdf`.
-- [ ] Integrity table RULE-033-related rows and `IMPLEMENTATION_STATUS.md` “LaTeX compilation”
-      row → **Implemented** (source + PDF when a toolchain is present).
+- [x] Dockerfile: `ARG INSTALL_LATEX=false`; when true install
+      `texlive-latex-recommended texlive-pictures` (~250 MB, documented in `docs/BACKEND.md` § 9).
+      The publisher class files and extra fonts are not installed because the rendered template is
+      `article`-based with pgfplots; the smaller set is the one the generated source needs.
+- [x] CI: job `latex`, which installs TeX Live and runs `npm run smoke:latex -- --require-pdf`,
+      plus job `latex-without-engine`, which runs the same script with no engine and asserts the
+      source-only outcome. Both jobs run on every push rather than a path filter: the renderer also
+      depends on `packages/contract` and the pipeline's journal list, and a filter that misses one of
+      those would hide exactly the regression these jobs exist to catch.
+- [x] Integrity table RULE-030/032/033/041 rows and `IMPLEMENTATION_STATUS.md` “LaTeX compilation”
+      row → **Implemented** (source always + PDF when a toolchain is present).
+
+**Status: done.** `services/api/src/latex/` owns escaping, the two journal templates, the
+bibliography, pgfplots figures, engine detection and compilation. Stage 8 renders before it
+packages, appends one `manuscript-render` record (`texSha256`, per-file SHA-256, `pdf` or `null`,
+`typeset`, `toolchain`) and pushes `render.blocker` into the submission blockers.
+`GET /api/v1/runs/:id/manuscript.tex` and `…/manuscript.pdf` serve the recorded bytes, and the PDF
+route answers `503 capability_unavailable` when no engine was configured. `npm run smoke:latex`
+prints the whole chain, `--require-pdf` turns a missing PDF into a failure, and CI runs it both
+with and without a TeX engine. `apps/dashboard` shows the file list, sizes and hashes, and links
+the `.tex` (and the `.pdf` only when one exists). The acceptance below is tested in
+`services/api/test/latex.test.ts`, `latex-http.test.ts` and `orchestrator.test.ts`; the one thing
+this repository cannot test is a real engine's output, which the `latex` CI job covers on Linux
+with TeX Live installed.
 
 **Acceptance.**
 
@@ -947,15 +966,15 @@ contract fixtures catch what matters), any model SDK (ADR-0001).
 
 Only after the acceptance criteria hold.
 
-| File / row                             | Today                                                    | After                                                                                                     |
-| -------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `IMPLEMENTATION_STATUS.md` → dashboard | Implemented, fixture data                                | Implemented; **live against the API** when `VITE_API_URL` is set, fixtures otherwise, labelled either way |
-| → LaTeX compilation                    | Not implemented                                          | Implemented: `.tex` + BibTeX always; PDF when `LATEX_BINARY` is set, otherwise a named stage-8 blocker    |
-| → Persistence                          | Implemented (server), single writer                      | Implemented: filesystem **or** Postgres; Redis for shared limits/locks; S3 for artefacts                  |
-| → Authentication                       | Partial: one bearer token                                | OIDC accounts + roles; token mode for scripts; audit actor from the verified subject                      |
-| → CI / deployment                      | Typecheck, lint, coverage, builds, image build           | … plus image publish (GHCR, multi-arch, SBOM) and a staging deploy gated by a post-deploy smoke           |
-| → CFD solver adapter                   | Real SU2 + synthetic                                     | unchanged — this plan does not touch the solver                                                           |
-| `specs/integrity-rules.md`             | RULE-002/030/032/033/043/053/063 partial, not met or N/A | Each moves to **API** or **Process** with the file that enforces it; RULE-022 stays N/A with an ADR link  |
+| File / row                             | Today                                                    | After                                                                                                                                                                           |
+| -------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `IMPLEMENTATION_STATUS.md` → dashboard | Implemented, fixture data                                | Implemented; **live against the API** when `VITE_API_URL` is set, fixtures otherwise, labelled either way                                                                       |
+| → LaTeX compilation                    | Implemented (B, § 6)                                     | `.tex` + inline bibliography + pgfplots figures always; PDF and a toolchain version when `LATEX_BINARY` answers, otherwise `typeset: "source-only"` and a named stage-8 blocker |
+| → Persistence                          | Implemented (server), single writer                      | Implemented: filesystem **or** Postgres; Redis for shared limits/locks; S3 for artefacts                                                                                        |
+| → Authentication                       | Partial: one bearer token                                | OIDC accounts + roles; token mode for scripts; audit actor from the verified subject                                                                                            |
+| → CI / deployment                      | Typecheck, lint, coverage, builds, image build           | … plus image publish (GHCR, multi-arch, SBOM) and a staging deploy gated by a post-deploy smoke                                                                                 |
+| → CFD solver adapter                   | Real SU2 + synthetic                                     | unchanged — this plan does not touch the solver                                                                                                                                 |
+| `specs/integrity-rules.md`             | RULE-002/030/032/033/043/053/063 partial, not met or N/A | Each moves to **API** or **Process** with the file that enforces it; RULE-022 stays N/A with an ADR link                                                                        |
 
 ---
 

@@ -35,6 +35,14 @@ export interface RunSource {
   approveGate(id: string, gateId: string, actor?: string): Promise<PipelineRun>;
   requestRevision(id: string, gateId: string, actor?: string, note?: string): Promise<PipelineRun>;
   evidence(id: string): Promise<EvidenceRecord[]>;
+  /**
+   * Where a browser can fetch the rendered manuscript.
+   *
+   * Absent for the fixture source: there is no server behind it, and a link
+   * that 404s is worse than no link. `null` means "this source cannot serve the
+   * file", which the view says out loud.
+   */
+  artefactUrl?(runId: string, kind: 'tex' | 'pdf'): string | null;
   capabilities(): Promise<Capabilities | null>;
   audit(): Promise<AuditResponse | null>;
 }

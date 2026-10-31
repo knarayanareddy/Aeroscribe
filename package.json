@@ -34,6 +34,7 @@
     "start:api": "npm run start -w @aeroscribe/api",
     "smoke:literature": "npm run smoke:literature -w @aeroscribe/api --",
     "smoke:cfd": "npm run smoke:cfd -w @aeroscribe/api --",
+    "smoke:latex": "npm run smoke:latex -w @aeroscribe/api --",
     "recheck": "npm run recheck -w @aeroscribe/api --"
   },
   "devDependencies": {

@@ -27,6 +27,8 @@ import { evidenceGeneration } from './agents/evidence';
 import { paperSynthesis } from './agents/writing';
 import { complianceCheck, peerReview } from './agents/review';
 import { knowledgeAndSubmission } from './agents/knowledge';
+import type { ManuscriptRenderPayload } from '@aeroscribe/contract';
+import { LatexService, NO_LATEX, type ArtefactKind } from './latex';
 import { recheckRun, referenceStatus } from './references/recheck';
 
 /** Matches the `AEROSCRIBE_DOI_MAX_AGE_DAYS` default in `config.ts`. */
@@ -51,6 +53,12 @@ export interface OrchestratorOptions {
   audit: AuditLog;
   literature: LiteratureService;
   cfd: CfdService;
+  /**
+   * Renders and typesets the manuscript. Optional so a test that never reaches
+   * stage 8 need not describe a TeX toolchain; the default service has none,
+   * which is exactly what an unconfigured server reports.
+   */
+  latex?: LatexService;
   /**
    * Staleness limit for a manuscript's DOI verifications, in days
    * (`AEROSCRIBE_DOI_MAX_AGE_DAYS`). Reported by re-checks and stage 8.
@@ -112,6 +120,8 @@ export class Orchestrator {
   private readonly clock: () => Date;
   private readonly newRunId: () => string;
   private readonly optionsCache = new Map<string, RunOptions>();
+  /** Lazily built when a caller supplied no `latex` service. */
+  private defaultLatex?: LatexService;
   /**
    * Runs with a stage handler currently executing. A stage can take minutes
    * (a SU2 study spawns one solver process per mesh), and `advance` is an HTTP
@@ -248,6 +258,7 @@ export class Orchestrator {
         stage: runningStage,
         literature: this.options.literature,
         cfd: this.options.cfd,
+        latex: this.latex,
         doiMaxAgeDays: this.options.doiMaxAgeDays ?? DEFAULT_DOI_MAX_AGE_DAYS,
         registry: this.options.registry,
         now: this.clock,
@@ -266,6 +277,26 @@ export class Orchestrator {
         label: outcome.label,
         payload: outcome.payload,
       });
+
+      // A stage may describe an artefact as well as its transition. Appending
+      // those records here keeps the registry the only writer, and keeps the
+      // stage's `evidenceSeq` pointing at the record that summarises the stage.
+      for (const extra of outcome.extra ?? []) {
+        assertVersionedPayload(extra.payload, stage.id);
+        const extraRecord = await this.options.registry.append({
+          kind: extra.kind,
+          runId: run.id,
+          stageId: stage.id,
+          label: extra.label,
+          payload: extra.payload,
+        });
+        await this.options.audit.record({
+          action: 'evidence.appended',
+          runId: run.id,
+          actor: 'orchestrator',
+          detail: { seq: extraRecord.seq, kind: extraRecord.kind, hash: extraRecord.hash },
+        });
+      }
 
       const gatePending: StageInfo = {
         ...runningStage,
@@ -467,6 +498,55 @@ export class Orchestrator {
     });
 
     return outcome;
+  }
+
+  private get latex(): LatexService {
+    if (!this.options.latex) {
+      this.defaultLatex ??= new LatexService({ latex: NO_LATEX });
+      this.options.latex = this.defaultLatex;
+    }
+    return this.options.latex;
+  }
+
+  /**
+   * The bytes behind a manuscript download, checked against the record.
+   *
+   * The route serves what is on disk, not a fresh render: what a reviewer
+   * downloads must be the file the registry hashed. A mismatch is a 500, because
+   * an artefact that no longer matches its record is not a client error.
+   */
+  async manuscriptArtefact(runId: string, kind: ArtefactKind) {
+    const records = await this.evidence(runId);
+    const render = records.filter((record) => record.kind === 'manuscript-render').at(-1);
+    if (!render) {
+      throw conflict(
+        'This run has no rendered manuscript yet: stage 8 renders the LaTeX source and, when a toolchain is configured, the PDF.',
+      );
+    }
+
+    const payload = render.payload as ManuscriptRenderPayload;
+    const expected = kind === 'tex' ? payload.texSha256 : payload.pdf?.sha256;
+    if (!expected) {
+      // Ask the service for the file: when there is none it raises a 503 naming
+      // the missing capability, which is the honest answer. If a file *does*
+      // exist here it was never recorded, and serving it would be worse than
+      // refusing — the fall-through below is intentional.
+      await this.latex.read(runId, kind);
+      throw conflict(
+        'The manuscript-render record says no PDF was typeset for this run, so there is nothing to download.',
+      );
+    }
+
+    const artefact = await this.latex.read(runId, kind);
+    if (artefact.sha256 !== expected) {
+      throw new ApiError(
+        500,
+        'artefact_mismatch',
+        'The file on disk does not match the hash recorded in the evidence chain.',
+        { expected, actual: artefact.sha256, kind },
+      );
+    }
+    return artefact;
   }
 
   /** The run's references joined with its newest re-check. */
