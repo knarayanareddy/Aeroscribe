@@ -11,7 +11,7 @@ import type {
 } from '@aeroscribe/contract';
 import type { LiteratureService } from '../literature';
 import { readReferences } from '../literature/reference';
-import type { EvidenceRegistry } from '../store/registry';
+import type { EvidenceStore } from '../store';
 
 /**
  * Re-checking the DOIs a stored manuscript cites.
@@ -237,7 +237,7 @@ export function manuscriptReferences(payload: unknown): ManuscriptReference[] {
 
 export interface RecheckDependencies {
   literature: LiteratureService;
-  registry: EvidenceRegistry;
+  registry: EvidenceStore;
   clock?: () => Date;
   /** `AEROSCRIBE_DOI_MAX_AGE_DAYS`; only `stale` depends on it. */
   maxAgeDays: number;

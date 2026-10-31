@@ -17,9 +17,9 @@ import {
 } from '../src/references/recheck';
 import { CfdService } from '../src/cfd';
 import { Orchestrator } from '../src/orchestrator';
-import { AuditLog } from '../src/store/audit';
-import { EvidenceRegistry } from '../src/store/registry';
-import { RunRepository } from '../src/store/runs';
+import { FilesystemAuditStore } from '../src/store';
+import { FilesystemEvidenceStore } from '../src/store';
+import { FilesystemRunStore } from '../src/store';
 
 /**
  * DOI re-checking.
@@ -31,11 +31,11 @@ import { RunRepository } from '../src/store/runs';
  */
 
 let directory: string;
-let registry: EvidenceRegistry;
+let registry: FilesystemEvidenceStore;
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'aeroscribe-recheck-'));
-  registry = new EvidenceRegistry(join(directory, 'registry.ndjson'));
+  registry = new FilesystemEvidenceStore(join(directory, 'registry.ndjson'));
 });
 
 afterEach(async () => {
@@ -417,9 +417,9 @@ describe('the acceptance path', () => {
     };
 
     const orchestrator = new Orchestrator({
-      runs: new RunRepository(join(directory, 'runs')),
+      runs: new FilesystemRunStore(join(directory, 'runs')),
       registry,
-      audit: new AuditLog(join(directory, 'audit.ndjson')),
+      audit: new FilesystemAuditStore(join(directory, 'audit.ndjson')),
       literature: new LiteratureService({ offline: false, providers: [provider] }),
       cfd: new CfdService({
         su2: { available: false, binary: null },

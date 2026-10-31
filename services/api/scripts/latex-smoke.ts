@@ -22,7 +22,7 @@ import type {
 import { DEFAULT_JOURNAL_TARGET } from '@aeroscribe/pipeline';
 import { loadConfig, detectLatex } from '../src/config';
 import { LatexService } from '../src/latex';
-import { EvidenceRegistry } from '../src/store/registry';
+import { createStores } from '../src/store';
 
 interface Args {
   runId: string | null;
@@ -114,7 +114,7 @@ async function storedRun(
   runId: string,
   dataDir: string,
 ): Promise<{ manuscript: ManuscriptPayload; cfd: CfdEvidencePayload | null }> {
-  const registry = new EvidenceRegistry(join(dataDir, 'registry.ndjson'));
+  const registry = createStores({ dataDir, store: 'filesystem' }).evidence;
   const records = await registry.list({ runId });
   const manuscript = records.filter((record) => record.kind === 'manuscript').at(-1);
   if (!manuscript) {

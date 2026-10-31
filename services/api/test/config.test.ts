@@ -34,6 +34,14 @@ describe('loadConfig', () => {
     expect(config.version).toBe('dev');
     expect(config.commit).toBe('unknown');
     expect(isAbsolute(config.dataDir)).toBe(true);
+    expect(config.store).toBe('filesystem');
+  });
+
+  it('refuses a store backend it cannot implement', () => {
+    // A typo must stop the process, not quietly leave it on the filesystem.
+    expect(() => loadConfig({ AEROSCRIBE_STORE: 'postgres' })).toThrow(/AEROSCRIBE_STORE/);
+    expect(() => loadConfig({ AEROSCRIBE_STORE: 'postgres' })).toThrow(/filesystem/);
+    expect(loadConfig({ AEROSCRIBE_STORE: ' Filesystem ' }).store).toBe('filesystem');
   });
 
   it('reads LOG_LEVEL leniently and ignores an unknown one', () => {

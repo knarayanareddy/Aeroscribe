@@ -8,9 +8,7 @@ import {
   type PipelineState,
   type StageInfo,
 } from '@aeroscribe/pipeline';
-import type { AuditAction, AuditLog } from './store/audit';
-import type { EvidenceKind, EvidenceRegistry } from './store/registry';
-import type { RunRepository } from './store/runs';
+import type { AuditAction, AuditStore, EvidenceKind, EvidenceStore, RunStore } from './store';
 import type { CfdService } from './cfd';
 import type { LiteratureService } from './literature';
 import { ApiError, conflict, notFound } from './errors';
@@ -48,9 +46,9 @@ export const STAGE_HANDLERS: readonly StageHandler[] = [
 ];
 
 export interface OrchestratorOptions {
-  runs: RunRepository;
-  registry: EvidenceRegistry;
-  audit: AuditLog;
+  runs: RunStore;
+  registry: EvidenceStore;
+  audit: AuditStore;
   literature: LiteratureService;
   cfd: CfdService;
   /**

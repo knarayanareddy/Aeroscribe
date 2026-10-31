@@ -6,7 +6,7 @@ import { ApiError, badRequest, payloadTooLarge, unauthorized } from '../errors';
 import { silentLogger, type Logger } from '../lib/logger';
 import { bindRunId, runIdFromPath, runWithRequestScope, scopeFields } from '../lib/requestContext';
 import type { Orchestrator } from '../orchestrator';
-import { EVIDENCE_KINDS, type EvidenceKind } from '../store/registry';
+import { EVIDENCE_KINDS, type EvidenceKind, type Stores } from '../store';
 import { buildPolicy, verifyClaims } from '../claims/verify';
 import { RateLimiter } from './rateLimit';
 
@@ -14,6 +14,13 @@ export interface AppDependencies {
   orchestrator: Orchestrator;
   config: Config;
   capabilities: () => Promise<Capabilities>;
+  /**
+   * The configured stores, so `/health` can say which backend is in use and
+   * whether it is reachable. Optional: a unit test that injects an orchestrator
+   * need not describe a deployment, and `/health` then omits the field rather
+   * than inventing one.
+   */
+  stores?: Stores;
   /** Exposed so tests can drive the limiter's clock. */
   rateLimiter?: RateLimiter;
   /**
@@ -53,6 +60,7 @@ export function createApp({
   orchestrator,
   config,
   capabilities,
+  stores,
   rateLimiter = new RateLimiter({ limit: 60, windowMs: 60_000 }),
   logger = silentLogger(),
 }: AppDependencies): Hono {
@@ -162,17 +170,32 @@ export function createApp({
     return next();
   });
 
+  /**
+   * Liveness, plus what the process is actually backed by.
+   *
+   * The store probe is the only check here that can fail for a reason the
+   * operator can fix (an unwritable data directory today, an unreachable
+   * database once another adapter exists), so it decides the status code: a
+   * service that cannot persist anything is not healthy, and a `200` would tell
+   * a load balancer to keep sending it work.
+   */
   app.get('/health', async (context) => {
     const caps = await capabilities();
-    return context.json({
-      status: 'ok',
-      service: '@aeroscribe/api',
-      version: config.version,
-      commit: config.commit,
-      logLevel: config.logLevel,
-      capabilities: caps,
-      authRequired: caps.auth.required,
-    });
+    const store = stores ? await stores.probe() : null;
+    const healthy = store === null || store.ok;
+    return context.json(
+      {
+        status: healthy ? 'ok' : 'degraded',
+        service: '@aeroscribe/api',
+        version: config.version,
+        commit: config.commit,
+        logLevel: config.logLevel,
+        capabilities: caps,
+        authRequired: caps.auth.required,
+        ...(store ? { store } : {}),
+      },
+      healthy ? 200 : 503,
+    );
   });
 
   app.get('/api/v1/capabilities', async (context) => context.json(await capabilities()));

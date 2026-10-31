@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { UpstreamError } from '../errors';
-import { hashBytes } from '../store/registry';
+import { hashBytes } from '../store';
 
 /**
  * Compile `manuscript.tex` with the configured engine.

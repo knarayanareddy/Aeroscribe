@@ -10,9 +10,9 @@ import { computeGci } from '../src/cfd/gci';
 import { createApp } from '../src/http/app';
 import { LiteratureService } from '../src/literature';
 import { Orchestrator } from '../src/orchestrator';
-import { AuditLog } from '../src/store/audit';
-import { EvidenceRegistry } from '../src/store/registry';
-import { RunRepository } from '../src/store/runs';
+import { FilesystemAuditStore } from '../src/store';
+import { FilesystemEvidenceStore } from '../src/store';
+import { FilesystemRunStore } from '../src/store';
 
 /**
  * The SU2 path, driven entirely over HTTP.
@@ -63,9 +63,9 @@ function buildServer() {
     workDir: join(directory, 'cfd'),
   });
   const orchestrator = new Orchestrator({
-    runs: new RunRepository(join(directory, 'runs')),
-    registry: new EvidenceRegistry(join(directory, 'registry.ndjson')),
-    audit: new AuditLog(join(directory, 'audit.ndjson')),
+    runs: new FilesystemRunStore(join(directory, 'runs')),
+    registry: new FilesystemEvidenceStore(join(directory, 'registry.ndjson')),
+    audit: new FilesystemAuditStore(join(directory, 'audit.ndjson')),
     literature,
     cfd,
     newRunId: () => 'run-su2',
@@ -84,6 +84,7 @@ function buildServer() {
     retryBaseDelayMs: 1,
     latexBinary: null,
     latexTimeoutMs: 5_000,
+    store: 'filesystem',
     logLevel: 'silent',
     version: 'test',
     commit: 'test',

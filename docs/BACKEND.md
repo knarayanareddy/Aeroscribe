@@ -47,7 +47,9 @@ services/api/src
 │   ├── app.ts            Hono routes, CORS, rate limit, bearer auth, error mapping
 │   └── rateLimit.ts      fixed-window limiter (60 req/min per key)
 ├── store/
-│   ├── registry.ts       append-only NDJSON hash chain + verify()
+│   ├── ports.ts          RunStore, EvidenceStore, AuditStore interfaces
+│   ├── index.ts          createStores(): the only place an adapter is chosen
+│   ├── evidence.ts       append-only NDJSON hash chain + verify()
 │   ├── runs.ts           <runId>.json and <runId>.options.json (atomic writes)
 │   └── audit.ts          append-only NDJSON audit trail + read()
 ├── lib/
@@ -306,7 +308,7 @@ stage add `references have not been re-verified in this run`. The stage's
 
 ## 4. Evidence registry
 
-`store/registry.ts`, one NDJSON line per record, append-only.
+`store/evidence.ts`, one NDJSON line per record, append-only.
 
 ```jsonc
 {
@@ -593,7 +595,7 @@ set (`Authorization: Bearer <key>`); `/health` is always open. Errors are always
 
 | Method | Path                                     | Purpose                                         |
 | ------ | ---------------------------------------- | ----------------------------------------------- |
-| GET    | `/health`                                | liveness + capabilities + `authRequired`        |
+| GET    | `/health`                                | liveness, capabilities, `authRequired`, `store` |
 | GET    | `/api/v1/capabilities`                   | literature mode, SU2 availability, storage      |
 | GET    | `/api/v1/runs`                           | list runs, newest first                         |
 | POST   | `/api/v1/runs`                           | create a run (`topic` ≥ 8 chars)                |
@@ -678,6 +680,7 @@ that adds, removes or retypes a field fails that test until the dashboard's mapp
 | `HOST`                           | `127.0.0.1`                                   | bind address (use `0.0.0.0` in a container)                                     |
 | `PORT`                           | `8787`                                        | bind port                                                                       |
 | `AEROSCRIBE_DATA_DIR`            | `./data`                                      | registry, runs, audit, CFD studies                                              |
+| `AEROSCRIBE_STORE`               | `filesystem`                                  | storage adapter; `filesystem` is the only one implemented (ROADMAP § 8)         |
 | `AEROSCRIBE_API_KEY`             | _unset_                                       | unset ⇒ **no authentication**; `/health` says `authRequired:false`              |
 | `AEROSCRIBE_CONTACT_EMAIL`       | _unset_                                       | Crossref polite-pool `mailto`                                                   |
 | `AEROSCRIBE_OFFLINE`             | `false`                                       | `true` ⇒ fixture corpus, no network                                             |
@@ -765,6 +768,25 @@ TeX Live and runs `npm run smoke:latex -- --require-pdf`, so the PDF path is exe
 push instead of only where a developer happens to have TeX; `latex-without-engine` asserts the
 opposite outcome — the `.tex` is written, `typeset` is `"source-only"` and the blocker is named.
 
+### Storage adapters
+
+The API writes three things — runs, the evidence chain and the audit trail — through the
+ports in `services/api/src/store/ports.ts`. One factory (`createStores`) picks the adapter
+from `AEROSCRIBE_STORE`, and no route or stage ever sees a concrete class. `filesystem` is
+the only adapter that exists: each port method has one implementation in
+`store/{runs,evidence,audit}.ts`, and `services/api/test/store-contract.test.ts` runs the
+same scenarios against whatever the factory returns, so a second adapter inherits the tests
+rather than the assumptions.
+
+`/health` reports `store: { backend, ok, detail }` and answers `503` when the probe fails.
+The probe is a real write, not a configuration read: a data directory that cannot hold a
+file means no run, no evidence record and no audit line can be saved. `ok:false` is the
+honest answer, and a `200` would tell a load balancer to keep sending work here.
+
+`AEROSCRIBE_STORE=postgres` is rejected at boot with one sentence rather than silently
+falling back to disk. That adapter, plus Redis for the rate limit and object storage for
+artefacts, is ROADMAP § 8 (D2–D4) and is not built.
+
 Data layout under `AEROSCRIBE_DATA_DIR`:
 
 ```
@@ -812,9 +834,9 @@ run look successful while its numbers were not what the operator asked for.
 | RULE-002 | every DOI resolved for this run             | `literature/index.ts` `verifyDoi`, `claims/verify.ts`, stage 6 |
 | RULE-004 | AI use disclosure present                   | `agents/writing.ts` section, stage 6 check `RULE-004`          |
 | RULE-013 | rate limiting                               | `http/rateLimit.ts` (60/min default)                           |
-| RULE-041 | checksums for computed artefacts; valid GCI | `store/registry.ts` hash chain, `cfd/gci.ts` validity gates    |
+| RULE-041 | checksums for computed artefacts; valid GCI | `store/evidence.ts` hash chain, `cfd/gci.ts` validity gates    |
 | RULE-042 | retry with exponential backoff              | `literature/http.ts` `backoffDelay` / `fetchWithRetry`         |
-| RULE-043 | append-only evidence                        | `store/registry.ts` (no update/delete API exists), `verify()`  |
+| RULE-043 | append-only evidence                        | `store/evidence.ts` (no update/delete API exists), `verify()`  |
 
 ---
 

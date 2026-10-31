@@ -11,13 +11,17 @@ import { RateLimiter } from '../src/http/rateLimit';
 import { createLogger } from '../src/lib/logger';
 import { LiteratureService } from '../src/literature';
 import { Orchestrator } from '../src/orchestrator';
-import { AuditLog } from '../src/store/audit';
-import { EvidenceRegistry } from '../src/store/registry';
-import { RunRepository } from '../src/store/runs';
+import {
+  FilesystemAuditStore,
+  FilesystemEvidenceStore,
+  FilesystemRunStore,
+  createStores,
+  type Stores,
+} from '../src/store';
 
 let directory: string;
 let orchestrator: Orchestrator;
-let registry: EvidenceRegistry;
+let registry: FilesystemEvidenceStore;
 let config: Config;
 
 function makeConfig(overrides: Partial<Config> = {}): Config {
@@ -34,6 +38,7 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
     retryBaseDelayMs: 1,
     latexBinary: null,
     latexTimeoutMs: 5_000,
+    store: 'filesystem',
     doiMaxAgeDays: 30,
     logLevel: 'silent',
     version: 'test',
@@ -42,22 +47,23 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
   };
 }
 
-function makeApp(overrides: Partial<Config> = {}, rateLimiter?: RateLimiter) {
+function makeApp(overrides: Partial<Config> = {}, rateLimiter?: RateLimiter, stores?: Stores) {
   config = makeConfig(overrides);
   return createApp({
     orchestrator,
     config,
     capabilities: () => describeCapabilities(config),
     ...(rateLimiter ? { rateLimiter } : {}),
+    ...(stores ? { stores } : {}),
   });
 }
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'aeroscribe-http-'));
   orchestrator = new Orchestrator({
-    runs: new RunRepository(join(directory, 'runs')),
-    registry: (registry = new EvidenceRegistry(join(directory, 'registry.ndjson'))),
-    audit: new AuditLog(join(directory, 'audit.ndjson')),
+    runs: new FilesystemRunStore(join(directory, 'runs')),
+    registry: (registry = new FilesystemEvidenceStore(join(directory, 'registry.ndjson'))),
+    audit: new FilesystemAuditStore(join(directory, 'audit.ndjson')),
     literature: new LiteratureService({ offline: true, providers: [] }),
     cfd: new CfdService({
       su2: { available: false, binary: null },
@@ -96,6 +102,45 @@ describe('health and capabilities', () => {
     expect(body.authRequired).toBe(false);
     expect(body.capabilities.cfd.su2.available).toBe(false);
     expect(body.capabilities.literature.mode).toBe('offline');
+  });
+
+  it('reports the store backend and probes it on every call', async () => {
+    const stores = createStores({ dataDir: directory, store: 'filesystem' });
+    const app = makeApp({}, undefined, stores);
+
+    const response = await app.request('/health');
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.status).toBe('ok');
+    expect(body.store).toMatchObject({ backend: 'filesystem', ok: true });
+
+    const capabilities = await (await app.request('/api/v1/capabilities')).json();
+    expect(capabilities.storage.backend).toBe('filesystem');
+  });
+
+  it('answers 503 when the store cannot be written', async () => {
+    // The probe is the only health check an operator can fix, so it decides the
+    // status code: a process that cannot persist anything is not healthy.
+    const stores = createStores({ dataDir: directory, store: 'filesystem' });
+    const failing: Stores = {
+      ...stores,
+      probe: async () => ({
+        backend: 'filesystem',
+        ok: false,
+        detail: 'the data directory /nowhere is not writable: EACCES',
+      }),
+    };
+    const app = makeApp({}, undefined, failing);
+
+    const response = await app.request('/health');
+    expect(response.status).toBe(503);
+    const body = await response.json();
+    expect(body.status).toBe('degraded');
+    expect(body.store.ok).toBe(false);
+    expect(body.store.detail).toMatch(/EACCES/);
+    // The rest of the report is still there: a checker needs to see what else
+    // the process knows while the store is down.
+    expect(body.capabilities.auth.required).toBe(false);
   });
 
   it('is public even when auth is required, and says auth is required', async () => {

@@ -9,14 +9,14 @@ import { ApiError } from '../src/errors';
 import { LiteratureService } from '../src/literature';
 import { Orchestrator, assertVersionedPayload } from '../src/orchestrator';
 import { createLogger } from '../src/lib/logger';
-import { AuditLog } from '../src/store/audit';
-import { EvidenceRegistry } from '../src/store/registry';
-import { RunRepository } from '../src/store/runs';
+import { FilesystemAuditStore } from '../src/store';
+import { FilesystemEvidenceStore } from '../src/store';
+import { FilesystemRunStore } from '../src/store';
 
 let directory: string;
-let registry: EvidenceRegistry;
-let runs: RunRepository;
-let audit: AuditLog;
+let registry: FilesystemEvidenceStore;
+let runs: FilesystemRunStore;
+let audit: FilesystemAuditStore;
 let orchestrator: Orchestrator;
 let ids: string[];
 let nowMs: number;
@@ -24,9 +24,9 @@ let nowMs: number;
 function build(dataDir = directory): Orchestrator {
   // Same instances as the test body, so assertions see what the orchestrator wrote.
   if (dataDir === directory) {
-    runs = new RunRepository(join(dataDir, 'runs'));
-    registry = new EvidenceRegistry(join(dataDir, 'registry.ndjson'));
-    audit = new AuditLog(join(dataDir, 'audit.ndjson'));
+    runs = new FilesystemRunStore(join(dataDir, 'runs'));
+    registry = new FilesystemEvidenceStore(join(dataDir, 'registry.ndjson'));
+    audit = new FilesystemAuditStore(join(dataDir, 'audit.ndjson'));
   }
   return new Orchestrator({
     runs,
