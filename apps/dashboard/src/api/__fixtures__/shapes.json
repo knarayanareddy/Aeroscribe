@@ -488,6 +488,62 @@
       "status": "string"
     }
   },
+  "advance-8": {
+    "blocked": {
+      "reason": "string"
+    },
+    "evidenceSeq": "number",
+    "run": {
+      "createdAt": "string",
+      "currentStage": "number",
+      "id": "string",
+      "journal": "string",
+      "noveltyScore": "number",
+      "paperTitle": "string",
+      "stages": {
+        "array": {
+          "agentsActive": {
+            "array": "string"
+          },
+          "completedAt": "string",
+          "evidenceSeq": "number",
+          "gateApproved": "boolean",
+          "gateId": "string",
+          "id": "number",
+          "metrics": {
+            "journal": "string",
+            "keywordFit": "string",
+            "keywordsMatched": "number"
+          },
+          "name": "string",
+          "shortName": "string",
+          "startedAt": "string",
+          "status": "string"
+        }
+      },
+      "status": "string",
+      "topic": "string",
+      "updatedAt": "string"
+    },
+    "stage": {
+      "agentsActive": {
+        "array": "string"
+      },
+      "completedAt": "string",
+      "evidenceSeq": "number",
+      "gateId": "string",
+      "id": "number",
+      "metrics": {
+        "blockers": "number",
+        "files": "number",
+        "status": "string"
+      },
+      "name": "string",
+      "shortName": "string",
+      "startedAt": "string",
+      "status": "string"
+    }
+  },
   "run": {
     "run": {
       "createdAt": "string",

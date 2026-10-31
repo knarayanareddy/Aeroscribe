@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { mockContradictions, mockResearchGaps } from '../data/mockData';
+import { usePipeline } from '../state/pipelineContext';
+import NoveltyLive from './NoveltyLive';
 
 const riskStyles: Record<string, string> = {
   low: 'border-emerald-200 bg-emerald-50 text-emerald-700',
@@ -10,8 +12,13 @@ const riskStyles: Record<string, string> = {
 const sortedGaps = [...mockResearchGaps].sort((a, b) => b.noveltyScore - a.noveltyScore);
 
 export default function NoveltyView() {
+  const { mode } = usePipeline();
   const [selectedGapId, setSelectedGapId] = useState(sortedGaps[0]?.id ?? '');
   const selectedGap = sortedGaps.find((gap) => gap.id === selectedGapId) ?? sortedGaps[0];
+
+  // Fixture-only view: in live mode it refuses rather than showing invented
+  // novelty scores next to a run that has none.
+  if (mode === 'live') return <NoveltyLive />;
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">

@@ -1,7 +1,14 @@
-import { render, screen } from '@testing-library/react';
+import { render as renderRaw, screen } from '@testing-library/react';
+import { PipelineProvider } from '../state/PipelineProvider';
+import { createFixtureSource } from '../state/fixtureSource';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import WikiView from './WikiView';
+
+/** These tests exercise the fixture view, so render it the way the app does. */
+function render(ui: React.ReactElement) {
+  return renderRaw(<PipelineProvider source={createFixtureSource()}>{ui}</PipelineProvider>);
+}
 
 describe('WikiView', () => {
   it('creates a new draft article and says it is local to the session', async () => {

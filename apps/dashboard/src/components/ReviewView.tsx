@@ -1,6 +1,8 @@
 import { reviewStats, severityBreakdown, type ReviewComment } from '@aeroscribe/pipeline';
 import { useId, useState } from 'react';
 import { mockReviewComments } from '../data/mockData';
+import { usePipeline } from '../state/pipelineContext';
+import ReviewLive from './ReviewLive';
 
 type SeverityFilter = 'all' | ReviewComment['severity'];
 
@@ -30,6 +32,13 @@ export default function ReviewView({ initialComments = mockReviewComments }: Rev
   const [respondingTo, setRespondingTo] = useState<string | null>(null);
   const [responseText, setResponseText] = useState('');
   const responseId = useId();
+
+  const { mode } = usePipeline();
+
+  // Live mode is read-only, and it is a different component: the fixture view
+  // can resolve comments because they are invented; the server's cannot be
+  // resolved by a click.
+  if (mode === 'live') return <ReviewLive />;
 
   const stats = reviewStats(comments);
   const filtered = comments.filter(

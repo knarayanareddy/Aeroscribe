@@ -1,6 +1,8 @@
 import { formatNumber } from '@aeroscribe/pipeline';
 import { useMemo, useState } from 'react';
 import { manuscriptSectionsRun002, mockPipelineRuns } from '../data/mockData';
+import { usePipeline } from '../state/pipelineContext';
+import ManuscriptLive from './ManuscriptLive';
 
 const TARGET_WORDS = 10_000;
 const REFERENCE_COUNT = 68;
@@ -62,6 +64,8 @@ export default function ManuscriptView() {
   const [showLatex, setShowLatex] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
+  const { mode } = usePipeline();
+
   const run = mockPipelineRuns.find((candidate) => candidate.id === 'run-002');
   const sections = manuscriptSectionsRun002;
   const activeSection = sections.find((section) => section.id === activeSectionId) ?? sections[0];
@@ -77,6 +81,10 @@ export default function ManuscriptView() {
       ),
     [run?.paperTitle, sections],
   );
+
+  // Live mode: the API's manuscript, or a notice. Never this fixture document.
+  // The branch sits after every hook so the hook order never changes.
+  if (mode === 'live') return <ManuscriptLive />;
 
   const abstractWords = sections.find((section) => section.id === 'abstract')?.wordCount ?? 0;
   const uncertaintyCount = sections

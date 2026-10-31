@@ -6,6 +6,7 @@ import type {
 } from '@aeroscribe/contract';
 import type { PipelineRun } from '@aeroscribe/pipeline';
 import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import auditFixture from '../api/__fixtures__/audit.json';
 import capabilitiesFixture from '../api/__fixtures__/capabilities.json';
@@ -15,6 +16,10 @@ import CFDLive from './CFDLive';
 import DataModeBadge from './DataModeBadge';
 import FixtureOnlyNotice from './FixtureOnlyNotice';
 import LiteratureLive from './LiteratureLive';
+import ManuscriptLive from './ManuscriptLive';
+import NoveltyLive from './NoveltyLive';
+import ReviewLive from './ReviewLive';
+import WikiLive from './WikiLive';
 import SettingsLive from './SettingsLive';
 import { PipelineProvider } from '../state/PipelineProvider';
 import type { RunSource } from '../state/source';
@@ -104,10 +109,9 @@ describe('SettingsLive', () => {
     renderLive(<SettingsLive />);
 
     await waitFor(() => expect(screen.getByText(/Audit trail/i)).toBeVisible());
-    const button = screen.getByRole('button', { name: /Show entries/i });
-    button.click();
+    await userEvent.click(screen.getByRole('button', { name: /Show entries/i }));
 
-    await waitFor(() => expect(screen.getByText('run.created')).toBeVisible());
+    await waitFor(() => expect(screen.getAllByText('gate.approved').length).toBeGreaterThan(0));
   });
 
   it('says nothing can be reported when capabilities are missing', () => {
@@ -119,6 +123,81 @@ describe('SettingsLive', () => {
     // The provider resolves capabilities asynchronously; the empty state is
     // rendered until (and unless) they arrive.
     expect(screen.getByText(/did not return capabilities/i)).toBeVisible();
+  });
+});
+
+describe('NoveltyLive', () => {
+  it('reports term coverage and refuses to score it', async () => {
+    renderLive(<NoveltyLive />);
+
+    await waitFor(() =>
+      expect(screen.getByText(/Terms no verified abstract mentions/i)).toBeVisible(),
+    );
+    // The API records coverage only. The page text explains that no score is
+    // computed; what must not exist is a numeric badge or a risk label.
+    expect(screen.queryByText(/competitor risk/i)).toBeNull();
+    expect(screen.queryByText(/^\d\.\d$/)).toBeNull();
+  });
+
+  it('says a run has no novelty record instead of fabricating gaps', async () => {
+    renderLive(<NoveltyLive />, liveSource({ evidence: async () => [] }));
+    await waitFor(() => expect(screen.getByTestId('novelty-empty')).toBeVisible());
+  });
+});
+
+describe('ManuscriptLive', () => {
+  it('renders the recorded manuscript and flags a synthetic result', async () => {
+    renderLive(<ManuscriptLive />);
+
+    await waitFor(() => expect(screen.getByTestId('manuscript-synthetic-notice')).toBeVisible());
+    expect(screen.getByText(/Abstract/i)).toBeVisible();
+    expect(screen.getByText(/Source files/i)).toBeVisible();
+    // No .tex download: workstream B has not landed, and the page says so.
+    expect(screen.getByText(/Not produced yet/i)).toBeVisible();
+  });
+
+  it('shows the sections the payload carries', async () => {
+    renderLive(<ManuscriptLive />);
+    await waitFor(() => expect(screen.getAllByText(/Sections/i).length).toBeGreaterThan(0));
+    expect(screen.getAllByRole('article').length).toBeGreaterThan(3);
+  });
+
+  it('says a run has no manuscript record', async () => {
+    renderLive(<ManuscriptLive />, liveSource({ evidence: async () => [] }));
+    await waitFor(() => expect(screen.getByTestId('manuscript-empty')).toBeVisible());
+  });
+});
+
+describe('ReviewLive', () => {
+  it('shows the verdict and the failed checks, and offers no resolve button', async () => {
+    renderLive(<ReviewLive />);
+
+    await waitFor(() => expect(screen.getByText(/Verdict:/i)).toBeVisible());
+    expect(screen.getByText(/Revise/i)).toBeVisible();
+    expect(screen.queryByRole('button', { name: /resolve/i })).toBeNull();
+    expect(screen.getByText(/not editable here/i)).toBeVisible();
+  });
+
+  it('says a run has no review record', async () => {
+    renderLive(<ReviewLive />, liveSource({ evidence: async () => [] }));
+    await waitFor(() => expect(screen.getByTestId('review-empty')).toBeVisible());
+  });
+});
+
+describe('WikiLive', () => {
+  it('renders the article from the submission package, read-only', async () => {
+    renderLive(<WikiLive />);
+
+    await waitFor(() =>
+      expect(screen.getByText(/produce text the registry never hashed/i)).toBeVisible(),
+    );
+    expect(screen.getByRole('heading', { level: 1 })).toBeVisible();
+    expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  it('says a run has no wiki article', async () => {
+    renderLive(<WikiLive />, liveSource({ evidence: async () => [] }));
+    await waitFor(() => expect(screen.getByTestId('wiki-empty')).toBeVisible());
   });
 });
 

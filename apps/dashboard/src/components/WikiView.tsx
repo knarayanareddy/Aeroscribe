@@ -1,7 +1,9 @@
 import type { WikiArticle } from '@aeroscribe/pipeline';
-import { useId, useState, type ReactNode } from 'react';
+import { useId, useState } from 'react';
 import { mockWikiArticles } from '../data/mockData';
-import { parseWikiMarkdown, type InlineToken } from '../lib/wikiMarkdown';
+import { usePipeline } from '../state/pipelineContext';
+import WikiLive from './WikiLive';
+import Markdown from './Markdown';
 
 interface ArticleBody {
   body: string;
@@ -67,56 +69,6 @@ The Humphrey cycle (constant-volume combustion) achieves thermal efficiencies of
   },
 };
 
-function renderInline(tokens: InlineToken[]): ReactNode[] {
-  return tokens.map((token, index) => {
-    if (token.type === 'strong') return <strong key={index}>{token.value}</strong>;
-    if (token.type === 'em') return <em key={index}>{token.value}</em>;
-    if (token.type === 'code') {
-      return (
-        <code
-          key={index}
-          className="rounded bg-slate-100 px-1 py-0.5 font-mono text-xs text-slate-700"
-        >
-          {token.value}
-        </code>
-      );
-    }
-    return <span key={index}>{token.value}</span>;
-  });
-}
-
-function Markdown({ source }: { source: string }) {
-  return (
-    <div className="space-y-2">
-      {parseWikiMarkdown(source).map((block, index) => {
-        if (block.type === 'heading') {
-          return (
-            <h3 key={index} className="mt-5 mb-2 text-base font-bold text-slate-900">
-              {block.text}
-            </h3>
-          );
-        }
-        if (block.type === 'list') {
-          return (
-            <ul key={index} className="my-2 ml-2 list-disc space-y-1 pl-4">
-              {block.items.map((item, itemIndex) => (
-                <li key={itemIndex} className="text-sm text-slate-700">
-                  {renderInline(item)}
-                </li>
-              ))}
-            </ul>
-          );
-        }
-        return (
-          <p key={index} className="my-2 text-sm leading-relaxed text-slate-700">
-            {renderInline(block.tokens)}
-          </p>
-        );
-      })}
-    </div>
-  );
-}
-
 export default function WikiView() {
   const [articles, setArticles] = useState<WikiArticle[]>(mockWikiArticles);
   const [contentById, setContentById] = useState<Record<string, ArticleBody>>(articleContent);
@@ -128,6 +80,10 @@ export default function WikiView() {
 
   const searchId = useId();
   const editorId = useId();
+
+  const { mode } = usePipeline();
+
+  if (mode === 'live') return <WikiLive />;
 
   const selected = articles.find((article) => article.id === selectedId) ?? articles[0];
   const content = selected ? contentById[selected.id] : undefined;

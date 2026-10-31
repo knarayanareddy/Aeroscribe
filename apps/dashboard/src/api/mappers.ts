@@ -261,8 +261,26 @@ export function toLiveReview(payload: ReviewPayload): LiveReview {
 
 /* ──────────────────────────────────── wiki ───────────────────────────────── */
 
-export function isWikiPayload(payload: unknown): payload is WikiPayload {
-  return isObject(payload) && payload['stage'] === 'aerowiki-submission' && 'markdown' in payload;
+/** A wiki article payload, validated field by field rather than by `as`. */
+export function isWikiArticle(value: unknown): value is WikiPayload {
+  return (
+    isObject(value) &&
+    value['stage'] === 'aerowiki-submission' &&
+    typeof value['title'] === 'string' &&
+    typeof value['markdown'] === 'string'
+  );
+}
+
+/**
+ * The wiki article inside a `submission-package` record.
+ *
+ * Stage 8 writes the article and the manifest in one append, so the article
+ * arrives nested. A package whose `wiki` does not validate yields `null` —
+ * reported as missing, never coerced into something renderable.
+ */
+export function wikiFromPackage(payload: unknown): WikiPayload | null {
+  if (!isObject(payload)) return null;
+  return isWikiArticle(payload['wiki']) ? payload['wiki'] : null;
 }
 
 /** Markdown is rendered as text: the app has no HTML-injection path. */
