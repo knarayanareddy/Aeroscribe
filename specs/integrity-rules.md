@@ -19,8 +19,9 @@ The rules below were written for a backend that did not exist. It exists now, in
 still only a sentence.
 
 Legend: **API** = the service refuses to violate it · **UI** = visible in the prototype
-only · **Partial** = enforced in some paths · **N/A** = the rule assumes infrastructure
-this repository deliberately does not have.
+only · **Adopted** = a convention the code follows · **Partial** = enforced in some paths but
+not all · **Not met** = nothing enforces it · **Process** = a human workflow, not enforceable
+by code · **N/A** = the rule assumes infrastructure this repository deliberately does not have.
 
 | Rule                                        | Status         | Where                                                                                                                                                                                            |
 | ------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
