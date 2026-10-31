@@ -11,6 +11,8 @@ interface S2Paper {
   externalIds?: { DOI?: string } | null;
   citationCount?: number | null;
   url?: string | null;
+  venue?: string | null;
+  journal?: { name?: string | null; volume?: string | null; pages?: string | null } | null;
 }
 
 export function mapS2Paper(paper: S2Paper): Paper | null {
@@ -29,6 +31,12 @@ export function mapS2Paper(paper: S2Paper): Paper | null {
     url: paper.url ?? (doi ? `https://doi.org/${doi}` : null),
     abstract: paper.abstract ?? null,
     citationCount: typeof paper.citationCount === 'number' ? paper.citationCount : null,
+    // S2 reports a free-text `venue` and sometimes a structured journal; the
+    // structured one wins because it can carry volume and pages.
+    containerTitle: paper.journal?.name ?? paper.venue ?? null,
+    volume: paper.journal?.volume ?? null,
+    pages: paper.journal?.pages ?? null,
+    publisher: null,
   };
 }
 
@@ -40,7 +48,7 @@ export interface SemanticScholarOptions extends RetryOptions {
 }
 
 const DEFAULT_BASE = 'https://api.semanticscholar.org/graph/v1';
-const FIELDS = 'paperId,title,abstract,year,authors,externalIds,citationCount,url';
+const FIELDS = 'paperId,title,abstract,year,authors,externalIds,citationCount,url,venue,journal';
 
 /**
  * Semantic Scholar Graph API client.

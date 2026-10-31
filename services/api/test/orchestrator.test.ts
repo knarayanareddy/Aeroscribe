@@ -7,7 +7,8 @@ import { PIPELINE_STAGES, STAGE_COUNT } from '@aeroscribe/pipeline';
 import { CfdService } from '../src/cfd';
 import { ApiError } from '../src/errors';
 import { LiteratureService } from '../src/literature';
-import { Orchestrator } from '../src/orchestrator';
+import { Orchestrator, assertVersionedPayload } from '../src/orchestrator';
+import { createLogger } from '../src/lib/logger';
 import { AuditLog } from '../src/store/audit';
 import { EvidenceRegistry } from '../src/store/registry';
 import { RunRepository } from '../src/store/runs';
@@ -136,6 +137,18 @@ describe('a full nine-stage run', () => {
       'compliance-report',
       'submission-package',
     ]);
+
+    // Every record is versioned, so a reader can distinguish a renamed field
+    // from a missing one.
+    for (const record of await registry.list({ runId: created.id })) {
+      const payload = record.payload as { schemaVersion?: unknown };
+      expect(
+        typeof payload.schemaVersion === 'number' &&
+          Number.isInteger(payload.schemaVersion) &&
+          payload.schemaVersion >= 1,
+        `record ${record.seq} (${record.kind}) has no schemaVersion`,
+      ).toBe(true);
+    }
 
     const final = await orchestrator.getRun(created.id);
     expect(final.stages.slice(0, 8).every((stage) => stage.status === 'completed')).toBe(true);
@@ -363,6 +376,103 @@ describe('failure handling', () => {
     // A failed stage never appended evidence, so the registry still verifies.
     expect(await registry.list({ runId: run.id })).toHaveLength(4);
     expect((await registry.verify()).valid).toBe(true);
+  });
+});
+
+describe('stage logging', () => {
+  it('pairs every stage start with an end that names the evidence it wrote', async () => {
+    const lines: Array<Record<string, unknown>> = [];
+    const logged = new Orchestrator({
+      runs,
+      registry,
+      audit,
+      literature: new LiteratureService({ offline: true, providers: [] }),
+      cfd: new CfdService({
+        su2: { available: false, binary: null },
+        workDir: join(directory, 'cfd'),
+      }),
+      newRunId: () => 'run-logged',
+      defaultOptions: { paperLimit: 3, verifyTop: 0 },
+      logger: createLogger({
+        level: 'debug',
+        sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),
+      }),
+    });
+
+    const run = await logged.createRun({ topic: 'transonic wing drag prediction' });
+    const advanced = await logged.advance(run.id);
+
+    const start = lines.find((line) => line.event === 'stage.start');
+    const end = lines.find((line) => line.event === 'stage.end');
+    expect(start).toMatchObject({ run_id: run.id, stage_id: 0, stage: 'Topic Intelligence' });
+    expect(end).toMatchObject({
+      run_id: run.id,
+      stage_id: 0,
+      status: 'gate_pending',
+      evidence_seq: advanced.evidenceSeq,
+      evidence_kind: 'stage-output',
+    });
+    // A start/end pair per executed stage, no more.
+    expect(lines.filter((line) => line.event === 'stage.start')).toHaveLength(1);
+    expect(lines.filter((line) => line.event === 'stage.end')).toHaveLength(1);
+  });
+
+  it('logs a failed stage with its error and still marks the run failed', async () => {
+    const lines: Array<Record<string, unknown>> = [];
+    const broken = new Orchestrator({
+      runs,
+      registry,
+      audit,
+      literature: new LiteratureService({ offline: true, providers: [] }),
+      cfd: {
+        run: async () => {
+          throw new ApiError(503, 'capability_unavailable', 'SU2 is not installed.');
+        },
+        describe: () => ({ su2: { available: false, binary: null }, offline: true }),
+      } as unknown as CfdService,
+      newRunId: () => 'run-logged-failure',
+      logger: createLogger({
+        level: 'debug',
+        sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),
+      }),
+    });
+
+    const run = await broken.createRun({ topic: 'transonic wing drag prediction' });
+    for (let stageId = 0; stageId < 4; stageId += 1) {
+      await broken.advance(run.id);
+      await broken.approveGate(run.id, PIPELINE_STAGES[stageId]!.gateId);
+    }
+    await expect(broken.advance(run.id)).rejects.toMatchObject({ status: 503 });
+
+    const failure = lines.find((line) => line.event === 'stage.failed');
+    expect(failure).toMatchObject({
+      run_id: run.id,
+      stage_id: 4,
+      code: 'capability_unavailable',
+      status: 503,
+    });
+    expect(lines.some((line) => line.event === 'stage.end' && line.stage_id === 4)).toBe(false);
+  });
+});
+
+describe('payload versioning', () => {
+  it('accepts a positive integer version', () => {
+    expect(() => assertVersionedPayload({ schemaVersion: 1 }, 0)).not.toThrow();
+    expect(() => assertVersionedPayload({ schemaVersion: 2, anything: true }, 5)).not.toThrow();
+  });
+
+  it('rejects a payload that would enter the registry unversioned', () => {
+    for (const payload of [
+      {},
+      { schemaVersion: 0 },
+      { schemaVersion: 1.5 },
+      { schemaVersion: '2' },
+      null,
+      'text',
+      42,
+    ]) {
+      expect(() => assertVersionedPayload(payload, 3)).toThrow(/schemaVersion/);
+    }
   });
 });
 

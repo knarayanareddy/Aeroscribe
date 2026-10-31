@@ -1,0 +1,18 @@
+{
+  "name": "@aeroscribe/contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The wire contract between services/api and its clients: response shapes and evidence payloads",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@aeroscribe/pipeline": "0.1.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

@@ -7,20 +7,11 @@ import {
   type NumericToken,
 } from './extract';
 
-export interface UnbackedClaim {
-  token: string;
-  value: number;
-  context: string;
-  reason: string;
-}
+// Report shapes are the wire contract: `/api/v1/claims/verify` returns this and
+// the dashboard renders `unbacked`.
+import type { ClaimReport, UnbackedClaim } from '@aeroscribe/contract';
 
-export interface ClaimReport {
-  ok: boolean;
-  checked: number;
-  unbacked: UnbackedClaim[];
-  allowedDois: string[];
-  observedDois: string[];
-}
+export type { UnbackedClaim, ClaimReport };
 
 export interface ClaimPolicy {
   /** Numbers that may be quoted, taken from evidence payloads. */

@@ -45,6 +45,12 @@ export default tseslint.config(
     rules: { 'no-console': 'off' },
   },
   {
+    // Node scripts run outside the bundler: they may print, and they read env.
+    files: ['scripts/**/*.mjs', 'scripts/**/*.js'],
+    languageOptions: { globals: { ...globals.node } },
+    rules: { 'no-console': 'off' },
+  },
+  {
     files: ['**/*.test.{ts,tsx}', 'vitest.setup.ts'],
     rules: {
       'react-refresh/only-export-components': 'off',

@@ -1,27 +1,17 @@
 import { canonicalJson, sha256 } from '../lib/canonical';
 import type { StageHandler, StageOutcome } from './types';
-import type { ManuscriptPayload } from './writing';
-import type { CompliancePayload, ReviewPayload } from './review';
-import type { NoveltyPayload } from './research';
+import type {
+  CompliancePayload,
+  ManuscriptPayload,
+  NoveltyPayload,
+  ReviewPayload,
+  SubmissionPayload,
+  WikiPayload,
+} from '@aeroscribe/contract';
 
-export interface WikiPayload {
-  stage: 'aerowiki-submission';
-  title: string;
-  slug: string;
-  markdown: string;
-  relatedRunIds: string[];
-  generatedAt: string;
-}
-
-export interface SubmissionPayload {
-  stage: 'aerowiki-submission';
-  journal: string;
-  status: 'ready' | 'blocked';
-  blockers: string[];
-  files: Array<{ name: string; sha256: string; bytes: number | null }>;
-  note: string;
-  packagedAt: string;
-}
+// The payload shapes are the wire contract; re-exported so the stage catalogue
+// and the tests keep importing them from the agent that produces them.
+export type { SubmissionPayload, WikiPayload };
 
 function slugify(value: string): string {
   return value
@@ -77,6 +67,7 @@ export const knowledgeAndSubmission: StageHandler = async (context): Promise<Sta
 
   const wiki: WikiPayload = {
     stage: 'aerowiki-submission',
+    schemaVersion: 1,
     title: manuscript.title,
     slug: slugify(manuscript.title),
     markdown,
@@ -102,6 +93,7 @@ export const knowledgeAndSubmission: StageHandler = async (context): Promise<Sta
 
   const submission: SubmissionPayload = {
     stage: 'aerowiki-submission',
+    schemaVersion: 1,
     journal: manuscript.journal,
     status: blockers.length === 0 ? 'ready' : 'blocked',
     blockers,
@@ -117,7 +109,9 @@ export const knowledgeAndSubmission: StageHandler = async (context): Promise<Sta
       submission.status === 'ready'
         ? 'Manifest ready; all reviews and compliance checks passed.'
         : `Submission blocked: ${blockers.join('; ')}.`,
-    payload: { wiki, submission },
+    // Composite payload: the version covers the envelope, and each part carries
+    // its own so a reader can track them independently.
+    payload: { schemaVersion: 1, wiki, submission },
     metrics: {
       status: submission.status,
       files: files.length,

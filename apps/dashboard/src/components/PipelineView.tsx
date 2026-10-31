@@ -1,14 +1,7 @@
-import {
-  STAGE_COUNT,
-  createRun,
-  formatRelativeTime,
-  runProgress,
-  type PipelineRun,
-  type StageInfo,
-} from '@aeroscribe/pipeline';
+import { STAGE_COUNT, formatRelativeTime, runProgress, type StageInfo } from '@aeroscribe/pipeline';
 import { useId, useState } from 'react';
 import { journalProfiles, mockAgentLogs } from '../data/mockData';
-import { useActiveRun, usePipeline } from '../state/pipelineContext';
+import { usePipeline } from '../state/pipelineContext';
 import type { View } from './Sidebar';
 
 interface PipelineViewProps {
@@ -86,8 +79,19 @@ function StageSummary({ stage }: { stage: StageInfo }) {
 }
 
 export default function PipelineView({ onNavigate }: PipelineViewProps) {
-  const { state, dispatch } = usePipeline();
-  const activeRun = useActiveRun();
+  const {
+    runs,
+    activeRun,
+    createRun,
+    advance,
+    approveGate,
+    requestRevision,
+    selectRun,
+    busy,
+    mode,
+    error,
+    status,
+  } = usePipeline();
 
   const [showNewRun, setShowNewRun] = useState(false);
   const [newTopic, setNewTopic] = useState('');
@@ -102,7 +106,7 @@ export default function PipelineView({ onNavigate }: PipelineViewProps) {
 
   const runLogs = activeRun ? mockAgentLogs.filter((log) => log.runId === activeRun.id) : [];
 
-  const handleCreate = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleCreate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const topic = newTopic.trim();
 
@@ -111,12 +115,16 @@ export default function PipelineView({ onNavigate }: PipelineViewProps) {
       return;
     }
 
-    const run: PipelineRun = createRun({ id: `run-${Date.now()}`, topic, journal: newJournal });
-    dispatch({ type: 'createRun', run });
-    setNewTopic('');
-    setFormError(null);
-    setShowNewRun(false);
-    setExpandedStage(0);
+    try {
+      await createRun({ topic, journal: newJournal });
+      setNewTopic('');
+      setFormError(null);
+      setShowNewRun(false);
+      setExpandedStage(0);
+    } catch (caught) {
+      // The server's sentence, not a rewrite of it.
+      setFormError(caught instanceof Error ? caught.message : String(caught));
+    }
   };
 
   return (
@@ -125,29 +133,51 @@ export default function PipelineView({ onNavigate }: PipelineViewProps) {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Pipeline manager</h1>
           <p className="mt-1 text-slate-500">
-            {STAGE_COUNT} stages, each ending at a human decision gate · illustrative data
+            {STAGE_COUNT} stages, each ending at a human decision gate
+            {mode === 'fixtures' ? ' · illustrative data' : ''}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowNewRun((open) => !open)}
-          aria-expanded={showNewRun}
-          aria-controls="new-run-form"
-          className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
-        >
-          <svg
-            className="h-4 w-4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2.5}
-            viewBox="0 0 24 24"
-            aria-hidden="true"
+        <div className="flex flex-wrap gap-2">
+          {mode === 'live' && activeRun && activeRun.status !== 'gate_pending' && (
+            <button
+              type="button"
+              onClick={() => void advance(activeRun.id)}
+              disabled={busy || activeRun.status === 'completed'}
+              className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+            >
+              {busy ? 'Running stage…' : 'Run next stage'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowNewRun((open) => !open)}
+            aria-expanded={showNewRun}
+            aria-controls="new-run-form"
+            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
           >
-            <path d="M12 4v16m8-8H4" strokeLinecap="round" />
-          </svg>
-          New pipeline run
-        </button>
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2.5}
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path d="M12 4v16m8-8H4" strokeLinecap="round" />
+            </svg>
+            New pipeline run
+          </button>
+        </div>
       </div>
+
+      {status === 'error' && error && (
+        <p
+          role="alert"
+          className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+        >
+          {error}
+        </p>
+      )}
 
       {showNewRun && (
         <form
@@ -219,7 +249,7 @@ export default function PipelineView({ onNavigate }: PipelineViewProps) {
         </form>
       )}
 
-      {state.runs.length === 0 || !activeRun ? (
+      {runs.length === 0 || !activeRun ? (
         <p className="rounded-xl border border-dashed border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
           No pipeline runs. Create one to walk through the {STAGE_COUNT} stages and their gates.
         </p>
@@ -230,17 +260,17 @@ export default function PipelineView({ onNavigate }: PipelineViewProps) {
               id="runs-list-heading"
               className="text-sm font-semibold uppercase tracking-wider text-slate-600"
             >
-              Runs ({state.runs.length})
+              Runs ({runs.length})
             </h2>
             <ul className="space-y-3">
-              {state.runs.map((run) => {
+              {runs.map((run) => {
                 const isActive = run.id === activeRun.id;
                 return (
                   <li key={run.id}>
                     <button
                       type="button"
                       onClick={() => {
-                        dispatch({ type: 'selectRun', runId: run.id });
+                        selectRun(run.id);
                         setExpandedStage(run.currentStage);
                       }}
                       aria-pressed={isActive}
@@ -409,12 +439,9 @@ export default function PipelineView({ onNavigate }: PipelineViewProps) {
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      dispatch({
-                                        type: 'approveGate',
-                                        runId: activeRun.id,
-                                        stageId: stage.id,
-                                      });
-                                      setExpandedStage(stage.id + 1);
+                                      void approveGate(activeRun.id, stage.gateId ?? '').then(() =>
+                                        setExpandedStage(stage.id + 1),
+                                      );
                                     }}
                                     className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-700"
                                   >
@@ -423,12 +450,9 @@ export default function PipelineView({ onNavigate }: PipelineViewProps) {
                                   <button
                                     type="button"
                                     onClick={() =>
-                                      dispatch({
-                                        type: 'requestRevision',
-                                        runId: activeRun.id,
-                                        stageId: stage.id,
-                                      })
+                                      void requestRevision(activeRun.id, stage.gateId ?? '')
                                     }
+                                    disabled={busy}
                                     className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50"
                                   >
                                     ✕ Send back for revision

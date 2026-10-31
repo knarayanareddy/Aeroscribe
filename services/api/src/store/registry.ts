@@ -11,18 +11,13 @@ import { GENESIS_HASH, canonicalJson, hashEquals, hashPayload, sha256 } from '..
  * be declared here but no stage ever wrote them, which made a `kind=` filter
  * look like a empty result set rather than a kind that does not exist.
  */
-export const EVIDENCE_KINDS = [
-  'stage-output',
-  'literature-search',
-  'cfd-run',
-  'novelty-report',
-  'manuscript',
-  'review-report',
-  'compliance-report',
-  'submission-package',
-] as const;
+// The kind list is part of the wire contract: the dashboard filters evidence by
+// it and the HTTP layer validates `?kind=` against it, so it is defined once.
+import { EVIDENCE_KINDS } from '@aeroscribe/contract';
+import type { EvidenceKind, EvidenceRecord, RegistryVerification } from '@aeroscribe/contract';
 
-export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
+export { EVIDENCE_KINDS };
+export type { EvidenceKind, EvidenceRecord, RegistryVerification };
 
 /**
  * One immutable entry in the evidence registry.
@@ -31,21 +26,8 @@ export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
  * hash chain: changing, reordering, inserting or deleting a record breaks the
  * chain at that point and every later link. This is the mechanism behind
  * RULE-041 (checksum every computed artefact) and RULE-043 (append-only).
+ * The shape itself is the wire contract — see `EvidenceRecord` there.
  */
-export interface EvidenceRecord {
-  seq: number;
-  id: string;
-  kind: EvidenceKind;
-  runId: string;
-  stageId: number | null;
-  label: string;
-  createdAt: string;
-  payload: unknown;
-  payloadHash: string;
-  prevHash: string;
-  hash: string;
-}
-
 export interface AppendEvidenceInput {
   kind: EvidenceKind;
   runId: string;
@@ -54,15 +36,6 @@ export interface AppendEvidenceInput {
   payload: unknown;
   /** Overrides the clock; used by tests to make chains reproducible. */
   createdAt?: string;
-}
-
-export interface VerificationResult {
-  valid: boolean;
-  records: number;
-  head: string;
-  /** First `seq` whose linkage or digest does not recompute, if any. */
-  brokenAt?: number;
-  reason?: string;
 }
 
 interface HashedFields {
@@ -184,7 +157,7 @@ export class EvidenceRegistry {
    * Recompute the whole chain from disk and report the first inconsistency.
    * Detects edited payloads, edited metadata, reordered and deleted records.
    */
-  async verify(): Promise<VerificationResult> {
+  async verify(): Promise<RegistryVerification> {
     let onDisk: EvidenceRecord[];
     try {
       onDisk = await this.readAll();

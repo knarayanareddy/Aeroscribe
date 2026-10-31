@@ -1,6 +1,8 @@
 import { useId, useState } from 'react';
 import { mockPapers } from '../data/mockData';
 import { allTags, filterPapers } from '../lib/literature';
+import { usePipeline } from '../state/pipelineContext';
+import LiteratureLive from './LiteratureLive';
 
 const scoreColors = (score: number) => {
   if (score >= 9) return 'bg-emerald-50 text-emerald-700';
@@ -12,6 +14,7 @@ const scoreColors = (score: number) => {
 const scoreOptions = [0, 7, 7.5, 8, 8.5, 9];
 
 export default function LiteratureView() {
+  const { mode } = usePipeline();
   const [search, setSearch] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [minScore, setMinScore] = useState(0);
@@ -34,6 +37,10 @@ export default function LiteratureView() {
     setSelectedTags([]);
     setMinScore(0);
   };
+
+  // In live mode the fixture view must not render at all: its numbers would be
+  // indistinguishable from a run's real bibliography.
+  if (mode === 'live') return <LiteratureLive />;
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">

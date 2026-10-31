@@ -1,0 +1,27 @@
+{
+  "literature": {
+    "mode": "offline",
+    "crossref": false,
+    "arxiv": false,
+    "semanticScholar": false
+  },
+  "cfd": {
+    "su2": {
+      "configured": false,
+      "binary": null,
+      "available": false
+    },
+    "synthetic": true
+  },
+  "registry": {
+    "algorithm": "sha256",
+    "path": "/tmp/aeroscribe-contract-j5LScK/registry.ndjson"
+  },
+  "auth": {
+    "required": false
+  },
+  "storage": {
+    "runsDir": "/tmp/aeroscribe-contract-j5LScK/runs",
+    "auditPath": "/tmp/aeroscribe-contract-j5LScK/audit.ndjson"
+  }
+}

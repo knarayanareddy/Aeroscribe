@@ -1,6 +1,8 @@
 import { STAGE_COUNT } from '@aeroscribe/pipeline';
 import { useState } from 'react';
 import { integrityRules, journalProfiles } from '../data/mockData';
+import { usePipeline } from '../state/pipelineContext';
+import SettingsLive from './SettingsLive';
 
 type Tab = 'environment' | 'journals' | 'agents' | 'integrity';
 
@@ -19,33 +21,66 @@ const tabs: Array<{ id: Tab; label: string }> = [
  * component that cannot store it safely is worse than showing nothing, so this
  * view reports configuration state instead of collecting credentials.
  */
+/**
+ * The variables `services/api/src/config.ts` actually reads.
+ *
+ * Every one of these is checked against the code by `services/api/test/docs.test.ts`;
+ * a variable that is not in the config is not listed here. They are all read by
+ * the *server*, never by this bundle.
+ */
 const environmentVariables = [
   {
-    name: 'ANTHROPIC_API_KEY',
-    purpose: 'Agent runtime (orchestrator, writers, reviewers)',
-    status: 'Not configured',
+    name: 'AEROSCRIBE_API_KEY',
+    purpose: 'Require a bearer token on /api/*',
+    status: 'Server-side',
+  },
+  { name: 'SU2_CFD_BINARY', purpose: 'Enable a real SU2 run at stage 4', status: 'Server-side' },
+  {
+    name: 'AEROSCRIBE_OFFLINE',
+    purpose: 'Use the bundled literature corpus',
+    status: 'Server-side',
   },
   {
     name: 'SEMANTIC_SCHOLAR_API_KEY',
-    purpose: 'Literature harvesting and reranking',
-    status: 'Not configured',
+    purpose: 'Raise the Semantic Scholar rate limit',
+    status: 'Server-side',
   },
   {
-    name: 'DATABASE_URL',
-    purpose: 'Pipeline state and evidence registry',
-    status: 'Not connected',
-  },
-  {
-    name: 'OBJECT_STORAGE_URL',
-    purpose: 'CFD artefacts and manuscript bundles',
-    status: 'Not connected',
+    name: 'AEROSCRIBE_DATA_DIR',
+    purpose: 'Runs, evidence registry and audit trail',
+    status: 'On disk',
   },
 ];
 
-const modelRouting = [
-  { role: 'Orchestration', model: 'claude-sonnet-4-5', stages: 'Stages 0–8' },
-  { role: 'Writing and review', model: 'claude-opus-4-5', stages: 'Stages 5–6' },
-  { role: 'Classification and reranking', model: 'claude-haiku-3-5', stages: 'Stages 1–2' },
+/**
+ * No model is called (see docs/adr/0001-deterministic-writer.md).
+ *
+ * This used to list three Claude deployments and their stages. They never
+ * existed in this codebase, and pretending they did made the prototype look
+ * further along than it is — so the table now lists the handlers that actually
+ * run.
+ */
+const stageHandlers = [
+  { role: 'Topic and journal targeting', handler: 'topicIntelligence', stages: 'Stage 0' },
+  {
+    role: 'Literature search and DOI resolution',
+    handler: 'literatureArchaeology',
+    stages: 'Stage 1',
+  },
+  { role: 'Term coverage analysis', handler: 'noveltyDetection', stages: 'Stage 2' },
+  { role: 'Contribution framing', handler: 'contributionFraming', stages: 'Stage 3' },
+  { role: 'Solver execution and GCI', handler: 'evidenceGeneration', stages: 'Stage 4' },
+  { role: 'Manuscript assembly', handler: 'paperSynthesis', stages: 'Stage 5' },
+  {
+    role: 'Rule-based review and compliance',
+    handler: 'peerReview, complianceCheck',
+    stages: 'Stages 6–7',
+  },
+  {
+    role: 'Wiki article and package manifest',
+    handler: 'knowledgeAndSubmission',
+    stages: 'Stage 8',
+  },
 ];
 
 const agentTimeouts = [
@@ -62,7 +97,10 @@ const contextBudget = [
 ];
 
 export default function SettingsView() {
+  const { mode } = usePipeline();
   const [activeTab, setActiveTab] = useState<Tab>('environment');
+
+  if (mode === 'live') return <SettingsLive />;
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
@@ -156,12 +194,13 @@ export default function SettingsView() {
           </section>
 
           <section className="rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
-            <h2 className="mb-1 font-semibold text-slate-800">Model routing</h2>
+            <h2 className="mb-1 font-semibold text-slate-800">Stage handlers</h2>
             <p className="mb-4 text-xs text-slate-500">
-              Fixed profiles in the prototype; will move behind the API.
+              Deterministic functions in <code>services/api/src/agents</code>. No language model is
+              called, so there are no tokens, costs or model versions to report.
             </p>
             <ul className="space-y-2">
-              {modelRouting.map((route) => (
+              {stageHandlers.map((route) => (
                 <li
                   key={route.role}
                   className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-100 p-3"
@@ -171,7 +210,7 @@ export default function SettingsView() {
                     <p className="text-xs text-slate-500">{route.stages}</p>
                   </div>
                   <code className="rounded bg-slate-100 px-2 py-1 font-mono text-xs text-slate-700">
-                    {route.model}
+                    {route.handler}
                   </code>
                 </li>
               ))}

@@ -1,5 +1,6 @@
 import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { parseLogLevel, type LogLevel } from './lib/logger';
 
 export interface Config {
   host: string;
@@ -18,6 +19,12 @@ export interface Config {
   upstreamTimeoutMs: number;
   /** Base delay for exponential backoff (RULE-042 wants 2s; tests use ~1ms). */
   retryBaseDelayMs: number;
+  /** Verbosity of the JSON log stream (RULE-053). */
+  logLevel: LogLevel;
+  /** Release identifier reported by `/health`; the build sets it. */
+  version: string;
+  /** Commit the running image was built from, or `unknown`. */
+  commit: string;
 }
 
 function envString(env: NodeJS.ProcessEnv, key: string, fallback = ''): string {
@@ -64,32 +71,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       .filter((origin) => origin.length > 0),
     upstreamTimeoutMs: envInt(env, 'AEROSCRIBE_UPSTREAM_TIMEOUT_MS', 15_000),
     retryBaseDelayMs: envInt(env, 'AEROSCRIBE_RETRY_BASE_MS', 2_000),
+    logLevel: parseLogLevel(env.LOG_LEVEL),
+    version: envString(env, 'AEROSCRIBE_VERSION', 'dev'),
+    commit: envString(env, 'GIT_SHA', 'unknown'),
   };
 }
 
-export interface Su2Capability {
-  configured: boolean;
-  binary: string | null;
-  /** True only when the binary is configured *and* executable on this machine. */
-  available: boolean;
-}
-
-export interface Capabilities {
-  literature: {
-    mode: 'live' | 'offline';
-    crossref: boolean;
-    arxiv: boolean;
-    semanticScholar: boolean;
-  };
-  cfd: {
-    su2: Su2Capability;
-    /** Deterministic placeholder physics, always available, always labelled. */
-    synthetic: boolean;
-  };
-  registry: { algorithm: 'sha256'; path: string };
-  auth: { required: boolean };
-  storage: { runsDir: string; auditPath: string };
-}
+// The capabilities shape is the wire contract: the dashboard renders every
+// boolean in it, so it is defined once and consumed on both sides.
+export type { Capabilities, Su2Capability } from '@aeroscribe/contract';
+import type { Capabilities, Su2Capability } from '@aeroscribe/contract';
 
 /** Probe the machine for optional external tools. Never throws. */
 export async function detectSu2(binary: string | null): Promise<Su2Capability> {

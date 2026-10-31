@@ -1,0 +1,98 @@
+{
+  "runs": [
+    {
+      "id": "run-contract",
+      "topic": "transonic wing drag prediction at Mach 0.85",
+      "journal": "AIAA Journal",
+      "status": "running",
+      "createdAt": "2026-10-31T17:38:37.118Z",
+      "updatedAt": "2026-10-31T17:38:37.118Z",
+      "currentStage": 0,
+      "noveltyScore": 0,
+      "paperTitle": "Pending…",
+      "stages": [
+        {
+          "id": 0,
+          "name": "Topic Intelligence",
+          "shortName": "Topic",
+          "status": "running",
+          "agentsActive": ["TopicIntelligenceAgent"],
+          "gateId": "GATE-0",
+          "metrics": {}
+        },
+        {
+          "id": 1,
+          "name": "Literature Archaeology",
+          "shortName": "Literature",
+          "status": "pending",
+          "agentsActive": [],
+          "gateId": "GATE-1",
+          "metrics": {}
+        },
+        {
+          "id": 2,
+          "name": "Novelty Detection",
+          "shortName": "Novelty",
+          "status": "pending",
+          "agentsActive": [],
+          "gateId": "GATE-2",
+          "metrics": {}
+        },
+        {
+          "id": 3,
+          "name": "Contribution Framing",
+          "shortName": "Framing",
+          "status": "pending",
+          "agentsActive": [],
+          "gateId": "GATE-3",
+          "metrics": {}
+        },
+        {
+          "id": 4,
+          "name": "Evidence Generation (CFD)",
+          "shortName": "CFD",
+          "status": "pending",
+          "agentsActive": [],
+          "gateId": "GATE-4A",
+          "metrics": {}
+        },
+        {
+          "id": 5,
+          "name": "Paper Synthesis",
+          "shortName": "Writing",
+          "status": "pending",
+          "agentsActive": [],
+          "gateId": "GATE-5",
+          "metrics": {}
+        },
+        {
+          "id": 6,
+          "name": "Peer Review Council",
+          "shortName": "Review",
+          "status": "pending",
+          "agentsActive": [],
+          "gateId": "GATE-6",
+          "metrics": {}
+        },
+        {
+          "id": 7,
+          "name": "Revision & Compliance",
+          "shortName": "Revision",
+          "status": "pending",
+          "agentsActive": [],
+          "gateId": "GATE-7",
+          "metrics": {}
+        },
+        {
+          "id": 8,
+          "name": "AeroWiki & Submission",
+          "shortName": "Submit",
+          "status": "pending",
+          "agentsActive": [],
+          "gateId": "GATE-8",
+          "metrics": {}
+        }
+      ]
+    }
+  ]
+}

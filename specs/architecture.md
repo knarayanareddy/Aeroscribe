@@ -11,6 +11,7 @@ aeroscribe/
 │   ├── landing-page/          Vite + React 19 static marketing site
 │   └── dashboard/             Vite + React 19 prototype researcher dashboard
 ├── packages/
+│   ├── contract/              Wire types shared by services/api and the dashboard
 │   ├── pipeline/              Domain types, stage catalogue, reducer, stats, formatting
 │   └── ui/                    The cn() class-name helper (currently the only shared UI utility)
 ├── services/

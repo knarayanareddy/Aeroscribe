@@ -8,21 +8,11 @@ import type { StageHandler, StageOutcome } from './types';
 import type { ManuscriptPayload } from './writing';
 import type { CfdEvidencePayload } from './evidence';
 
-export interface ReviewCommentRecord {
-  id: string;
-  section: string;
-  severity: 'major' | 'minor';
-  comment: string;
-}
+import type { CompliancePayload, ReviewCommentRecord, ReviewPayload } from '@aeroscribe/contract';
 
-export interface ReviewPayload {
-  stage: 'peer-review-council';
-  manuscriptTitle: string;
-  verdict: 'pass' | 'revise';
-  comments: ReviewCommentRecord[];
-  checks: Array<{ id: string; description: string; passed: boolean }>;
-  reviewedAt: string;
-}
+// The payload shapes are the wire contract; re-exported so the stage catalogue
+// and the tests keep importing them from the agent that produces them.
+export type { ReviewCommentRecord, ReviewPayload, CompliancePayload };
 
 function words(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
@@ -139,6 +129,7 @@ export const peerReview: StageHandler = async (context): Promise<StageOutcome> =
 
   const payload: ReviewPayload = {
     stage: 'peer-review-council',
+    schemaVersion: 1,
     manuscriptTitle: manuscript.title,
     verdict: comments.some((comment) => comment.severity === 'major') ? 'revise' : 'pass',
     comments,
@@ -162,19 +153,6 @@ export const peerReview: StageHandler = async (context): Promise<StageOutcome> =
     },
   };
 };
-
-export interface CompliancePayload {
-  stage: 'revision-compliance';
-  journal: string;
-  journalId: string;
-  compliant: boolean;
-  wordCount: number;
-  abstractWords: number;
-  abstractWordLimit: number;
-  missingSections: string[];
-  issues: Array<{ rule: string; severity: 'major' | 'minor'; detail: string }>;
-  checkedAt: string;
-}
 
 /** Stage 7 — journal compliance and revision packaging. */
 export const complianceCheck: StageHandler = async (context): Promise<StageOutcome> => {
@@ -229,6 +207,7 @@ export const complianceCheck: StageHandler = async (context): Promise<StageOutco
 
   const payload: CompliancePayload = {
     stage: 'revision-compliance',
+    schemaVersion: 1,
     journal: journal.name,
     journalId: journal.id,
     compliant: issues.every((issue) => issue.severity !== 'major'),

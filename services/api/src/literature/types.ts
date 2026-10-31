@@ -1,17 +1,10 @@
-export type PaperSource = 'crossref' | 'arxiv' | 'semantic-scholar' | 'fixture';
+import type { DoiVerification, Paper, PaperSource, SearchReport } from '@aeroscribe/contract';
 
-export interface Paper {
-  /** Stable id, `source:externalId`. */
-  id: string;
-  source: PaperSource;
-  title: string;
-  authors: string[];
-  year: number | null;
-  doi: string | null;
-  url: string | null;
-  abstract: string | null;
-  citationCount: number | null;
-}
+// The wire types live in `@aeroscribe/contract` so the dashboard and the server
+// cannot disagree about them; re-exported here so server modules keep importing
+// from one place. `LiteratureProvider` and the DOI helpers below are
+// server-only: no client ever speaks to a provider.
+export type { DoiVerification, Paper, PaperSource, SearchReport };
 
 export interface LiteratureProvider {
   readonly name: PaperSource;
@@ -20,29 +13,6 @@ export interface LiteratureProvider {
   search(query: string, limit: number, options?: { signal?: AbortSignal }): Promise<Paper[]>;
   /** Resolve a DOI to its metadata. Returns `null` when the DOI is unknown. */
   resolveDoi(doi: string, options?: { signal?: AbortSignal }): Promise<Paper | null>;
-}
-
-export interface DoiVerification {
-  doi: string;
-  normalised: string;
-  verified: boolean;
-  reason?: string;
-  provider?: PaperSource;
-  paper?: Paper;
-  checkedAt: string;
-}
-
-export interface SearchReport {
-  query: string;
-  papers: Paper[];
-  /** Providers that failed, with the reason. Never silently dropped. */
-  errors: Array<{ provider: PaperSource; message: string }>;
-  /**
-   * True when the result came from the bundled fixture corpus instead of live
-   * registries. Clients must show this: offline hits are illustrative only.
-   */
-  offline: boolean;
-  executedAt: string;
 }
 
 /** DOIs are `10.<registrant>/<suffix>`; anything else is rejected before a request. */

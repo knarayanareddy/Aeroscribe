@@ -1,0 +1,612 @@
+{
+  "capabilities": {
+    "auth": {
+      "required": "boolean"
+    },
+    "cfd": {
+      "su2": {
+        "available": "boolean",
+        "binary": "null",
+        "configured": "boolean"
+      },
+      "synthetic": "boolean"
+    },
+    "literature": {
+      "arxiv": "boolean",
+      "crossref": "boolean",
+      "mode": "string",
+      "semanticScholar": "boolean"
+    },
+    "registry": {
+      "algorithm": "string",
+      "path": "string"
+    },
+    "storage": {
+      "auditPath": "string",
+      "runsDir": "string"
+    }
+  },
+  "runs": {
+    "runs": {
+      "array": {
+        "createdAt": "string",
+        "currentStage": "number",
+        "id": "string",
+        "journal": "string",
+        "noveltyScore": "number",
+        "paperTitle": "string",
+        "stages": {
+          "array": {
+            "agentsActive": {
+              "array": "string"
+            },
+            "gateId": "string",
+            "id": "number",
+            "metrics": {},
+            "name": "string",
+            "shortName": "string",
+            "status": "string"
+          }
+        },
+        "status": "string",
+        "topic": "string",
+        "updatedAt": "string"
+      }
+    }
+  },
+  "advance-0": {
+    "blocked": "null",
+    "evidenceSeq": "number",
+    "run": {
+      "createdAt": "string",
+      "currentStage": "number",
+      "id": "string",
+      "journal": "string",
+      "noveltyScore": "number",
+      "paperTitle": "string",
+      "stages": {
+        "array": {
+          "agentsActive": {
+            "array": "string"
+          },
+          "completedAt": "string",
+          "evidenceSeq": "number",
+          "gateId": "string",
+          "id": "number",
+          "metrics": {
+            "journal": "string",
+            "keywordFit": "string",
+            "keywordsMatched": "number"
+          },
+          "name": "string",
+          "shortName": "string",
+          "startedAt": "string",
+          "status": "string"
+        }
+      },
+      "status": "string",
+      "topic": "string",
+      "updatedAt": "string"
+    },
+    "stage": {
+      "agentsActive": {
+        "array": "string"
+      },
+      "completedAt": "string",
+      "evidenceSeq": "number",
+      "gateId": "string",
+      "id": "number",
+      "metrics": {
+        "journal": "string",
+        "keywordFit": "string",
+        "keywordsMatched": "number"
+      },
+      "name": "string",
+      "shortName": "string",
+      "startedAt": "string",
+      "status": "string"
+    }
+  },
+  "advance-1": {
+    "blocked": "null",
+    "evidenceSeq": "number",
+    "run": {
+      "createdAt": "string",
+      "currentStage": "number",
+      "id": "string",
+      "journal": "string",
+      "noveltyScore": "number",
+      "paperTitle": "string",
+      "stages": {
+        "array": {
+          "agentsActive": {
+            "array": "string"
+          },
+          "completedAt": "string",
+          "evidenceSeq": "number",
+          "gateApproved": "boolean",
+          "gateId": "string",
+          "id": "number",
+          "metrics": {
+            "journal": "string",
+            "keywordFit": "string",
+            "keywordsMatched": "number"
+          },
+          "name": "string",
+          "shortName": "string",
+          "startedAt": "string",
+          "status": "string"
+        }
+      },
+      "status": "string",
+      "topic": "string",
+      "updatedAt": "string"
+    },
+    "stage": {
+      "agentsActive": {
+        "array": "string"
+      },
+      "completedAt": "string",
+      "evidenceSeq": "number",
+      "gateId": "string",
+      "id": "number",
+      "metrics": {
+        "papersFound": "number",
+        "papersRejected": "number",
+        "papersVerified": "number",
+        "providerErrors": "number"
+      },
+      "name": "string",
+      "shortName": "string",
+      "startedAt": "string",
+      "status": "string"
+    }
+  },
+  "advance-2": {
+    "blocked": "null",
+    "evidenceSeq": "number",
+    "run": {
+      "createdAt": "string",
+      "currentStage": "number",
+      "id": "string",
+      "journal": "string",
+      "noveltyScore": "number",
+      "paperTitle": "string",
+      "stages": {
+        "array": {
+          "agentsActive": {
+            "array": "string"
+          },
+          "completedAt": "string",
+          "evidenceSeq": "number",
+          "gateApproved": "boolean",
+          "gateId": "string",
+          "id": "number",
+          "metrics": {
+            "journal": "string",
+            "keywordFit": "string",
+            "keywordsMatched": "number"
+          },
+          "name": "string",
+          "shortName": "string",
+          "startedAt": "string",
+          "status": "string"
+        }
+      },
+      "status": "string",
+      "topic": "string",
+      "updatedAt": "string"
+    },
+    "stage": {
+      "agentsActive": {
+        "array": "string"
+      },
+      "completedAt": "string",
+      "evidenceSeq": "number",
+      "gateId": "string",
+      "id": "number",
+      "metrics": {
+        "confidence": "string",
+        "gaps": "number",
+        "verifiedReferences": "number"
+      },
+      "name": "string",
+      "shortName": "string",
+      "startedAt": "string",
+      "status": "string"
+    }
+  },
+  "advance-3": {
+    "blocked": "null",
+    "evidenceSeq": "number",
+    "run": {
+      "createdAt": "string",
+      "currentStage": "number",
+      "id": "string",
+      "journal": "string",
+      "noveltyScore": "number",
+      "paperTitle": "string",
+      "stages": {
+        "array": {
+          "agentsActive": {
+            "array": "string"
+          },
+          "completedAt": "string",
+          "evidenceSeq": "number",
+          "gateApproved": "boolean",
+          "gateId": "string",
+          "id": "number",
+          "metrics": {
+            "journal": "string",
+            "keywordFit": "string",
+            "keywordsMatched": "number"
+          },
+          "name": "string",
+          "shortName": "string",
+          "startedAt": "string",
+          "status": "string"
+        }
+      },
+      "status": "string",
+      "topic": "string",
+      "updatedAt": "string"
+    },
+    "stage": {
+      "agentsActive": {
+        "array": "string"
+      },
+      "completedAt": "string",
+      "evidenceSeq": "number",
+      "gateId": "string",
+      "id": "number",
+      "metrics": {
+        "gaps": "number",
+        "position": "string",
+        "verifiedReferences": "number"
+      },
+      "name": "string",
+      "shortName": "string",
+      "startedAt": "string",
+      "status": "string"
+    }
+  },
+  "advance-4": {
+    "blocked": "null",
+    "evidenceSeq": "number",
+    "run": {
+      "createdAt": "string",
+      "currentStage": "number",
+      "id": "string",
+      "journal": "string",
+      "noveltyScore": "number",
+      "paperTitle": "string",
+      "stages": {
+        "array": {
+          "agentsActive": {
+            "array": "string"
+          },
+          "completedAt": "string",
+          "evidenceSeq": "number",
+          "gateApproved": "boolean",
+          "gateId": "string",
+          "id": "number",
+          "metrics": {
+            "journal": "string",
+            "keywordFit": "string",
+            "keywordsMatched": "number"
+          },
+          "name": "string",
+          "shortName": "string",
+          "startedAt": "string",
+          "status": "string"
+        }
+      },
+      "status": "string",
+      "topic": "string",
+      "updatedAt": "string"
+    },
+    "stage": {
+      "agentsActive": {
+        "array": "string"
+      },
+      "completedAt": "string",
+      "evidenceSeq": "number",
+      "gateId": "string",
+      "id": "number",
+      "metrics": {
+        "apparentOrder": "number",
+        "fineGciPercent": "number",
+        "gciValid": "string",
+        "solver": "string"
+      },
+      "name": "string",
+      "shortName": "string",
+      "startedAt": "string",
+      "status": "string"
+    }
+  },
+  "advance-5": {
+    "blocked": "null",
+    "evidenceSeq": "number",
+    "run": {
+      "createdAt": "string",
+      "currentStage": "number",
+      "id": "string",
+      "journal": "string",
+      "noveltyScore": "number",
+      "paperTitle": "string",
+      "stages": {
+        "array": {
+          "agentsActive": {
+            "array": "string"
+          },
+          "completedAt": "string",
+          "evidenceSeq": "number",
+          "gateApproved": "boolean",
+          "gateId": "string",
+          "id": "number",
+          "metrics": {
+            "journal": "string",
+            "keywordFit": "string",
+            "keywordsMatched": "number"
+          },
+          "name": "string",
+          "shortName": "string",
+          "startedAt": "string",
+          "status": "string"
+        }
+      },
+      "status": "string",
+      "topic": "string",
+      "updatedAt": "string"
+    },
+    "stage": {
+      "agentsActive": {
+        "array": "string"
+      },
+      "completedAt": "string",
+      "evidenceSeq": "number",
+      "gateId": "string",
+      "id": "number",
+      "metrics": {
+        "claimsChecked": "number",
+        "references": "number",
+        "words": "number"
+      },
+      "name": "string",
+      "shortName": "string",
+      "startedAt": "string",
+      "status": "string"
+    }
+  },
+  "advance-6": {
+    "blocked": "null",
+    "evidenceSeq": "number",
+    "run": {
+      "createdAt": "string",
+      "currentStage": "number",
+      "id": "string",
+      "journal": "string",
+      "noveltyScore": "number",
+      "paperTitle": "string",
+      "stages": {
+        "array": {
+          "agentsActive": {
+            "array": "string"
+          },
+          "completedAt": "string",
+          "evidenceSeq": "number",
+          "gateApproved": "boolean",
+          "gateId": "string",
+          "id": "number",
+          "metrics": {
+            "journal": "string",
+            "keywordFit": "string",
+            "keywordsMatched": "number"
+          },
+          "name": "string",
+          "shortName": "string",
+          "startedAt": "string",
+          "status": "string"
+        }
+      },
+      "status": "string",
+      "topic": "string",
+      "updatedAt": "string"
+    },
+    "stage": {
+      "agentsActive": {
+        "array": "string"
+      },
+      "completedAt": "string",
+      "evidenceSeq": "number",
+      "gateId": "string",
+      "id": "number",
+      "metrics": {
+        "checksPassed": "number",
+        "checksTotal": "number",
+        "majorComments": "number",
+        "verdict": "string"
+      },
+      "name": "string",
+      "shortName": "string",
+      "startedAt": "string",
+      "status": "string"
+    }
+  },
+  "advance-7": {
+    "blocked": "null",
+    "evidenceSeq": "number",
+    "run": {
+      "createdAt": "string",
+      "currentStage": "number",
+      "id": "string",
+      "journal": "string",
+      "noveltyScore": "number",
+      "paperTitle": "string",
+      "stages": {
+        "array": {
+          "agentsActive": {
+            "array": "string"
+          },
+          "completedAt": "string",
+          "evidenceSeq": "number",
+          "gateApproved": "boolean",
+          "gateId": "string",
+          "id": "number",
+          "metrics": {
+            "journal": "string",
+            "keywordFit": "string",
+            "keywordsMatched": "number"
+          },
+          "name": "string",
+          "shortName": "string",
+          "startedAt": "string",
+          "status": "string"
+        }
+      },
+      "status": "string",
+      "topic": "string",
+      "updatedAt": "string"
+    },
+    "stage": {
+      "agentsActive": {
+        "array": "string"
+      },
+      "completedAt": "string",
+      "evidenceSeq": "number",
+      "gateId": "string",
+      "id": "number",
+      "metrics": {
+        "compliant": "string",
+        "issues": "number",
+        "wordCount": "number"
+      },
+      "name": "string",
+      "shortName": "string",
+      "startedAt": "string",
+      "status": "string"
+    }
+  },
+  "run": {
+    "run": {
+      "createdAt": "string",
+      "currentStage": "number",
+      "id": "string",
+      "journal": "string",
+      "noveltyScore": "number",
+      "paperTitle": "string",
+      "stages": {
+        "array": {
+          "agentsActive": {
+            "array": "string"
+          },
+          "completedAt": "string",
+          "evidenceSeq": "number",
+          "gateApproved": "boolean",
+          "gateId": "string",
+          "id": "number",
+          "metrics": {
+            "journal": "string",
+            "keywordFit": "string",
+            "keywordsMatched": "number"
+          },
+          "name": "string",
+          "shortName": "string",
+          "startedAt": "string",
+          "status": "string"
+        }
+      },
+      "status": "string",
+      "topic": "string",
+      "updatedAt": "string"
+    }
+  },
+  "evidence": {
+    "records": {
+      "array": {
+        "createdAt": "string",
+        "hash": "string",
+        "id": "string",
+        "kind": "string",
+        "label": "string",
+        "payload": {
+          "generatedAt": "string",
+          "journalId": "string",
+          "keywordFit": "number",
+          "matchedKeywords": "empty-array",
+          "requestedJournal": "string",
+          "schemaVersion": "number",
+          "stage": "string",
+          "targetJournal": "string",
+          "topic": "string",
+          "topicNumbers": {
+            "array": "number"
+          },
+          "unmatchedKeywords": {
+            "array": "string"
+          }
+        },
+        "payloadHash": "string",
+        "prevHash": "string",
+        "runId": "string",
+        "seq": "number",
+        "stageId": "number"
+      }
+    }
+  },
+  "audit": {
+    "entries": {
+      "array": {
+        "action": "string",
+        "actor": "string",
+        "at": "string",
+        "detail": {
+          "journal": "string",
+          "topic": "string"
+        },
+        "runId": "string"
+      }
+    },
+    "malformed": "number"
+  },
+  "registry": {
+    "head": "string",
+    "records": "number",
+    "valid": "boolean"
+  },
+  "literature-search": {
+    "errors": "empty-array",
+    "executedAt": "string",
+    "offline": "boolean",
+    "papers": {
+      "array": {
+        "abstract": "string",
+        "authors": {
+          "array": "string"
+        },
+        "citationCount": "number",
+        "containerTitle": "string",
+        "doi": "string",
+        "id": "string",
+        "pages": "string",
+        "publisher": "string",
+        "source": "string",
+        "title": "string",
+        "url": "string",
+        "volume": "string",
+        "year": "number"
+      }
+    },
+    "query": "string"
+  },
+  "claims": {
+    "allowedDois": {
+      "array": "string"
+    },
+    "checked": "number",
+    "observedDois": "empty-array",
+    "ok": "boolean",
+    "unbacked": "empty-array"
+  }
+}

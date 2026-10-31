@@ -8,6 +8,7 @@ import { describeCapabilities } from '../src/config';
 import { CfdService } from '../src/cfd';
 import { createApp } from '../src/http/app';
 import { RateLimiter } from '../src/http/rateLimit';
+import { createLogger } from '../src/lib/logger';
 import { LiteratureService } from '../src/literature';
 import { Orchestrator } from '../src/orchestrator';
 import { AuditLog } from '../src/store/audit';
@@ -30,6 +31,9 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
     corsOrigins: ['http://localhost:5174'],
     upstreamTimeoutMs: 5_000,
     retryBaseDelayMs: 1,
+    logLevel: 'silent',
+    version: 'test',
+    commit: 'test',
     ...overrides,
   };
 }
@@ -357,6 +361,76 @@ describe('literature and claims', () => {
       text: 'The drag is 0.5.',
     });
     expect(unknownRun.status).toBe(404);
+  });
+});
+
+describe('request correlation and logs', () => {
+  function appWithLogs(overrides: Partial<Config> = {}) {
+    const lines: Array<Record<string, unknown>> = [];
+    const logger = createLogger({
+      level: 'debug',
+      sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),
+    });
+    const app = createApp({
+      orchestrator,
+      config: makeConfig(overrides),
+      capabilities: () => describeCapabilities(config),
+      logger,
+    });
+    return { app, lines };
+  }
+
+  it('echoes an inbound request id and logs it with the outcome', async () => {
+    const { app, lines } = appWithLogs();
+    const response = await app.request('/health', { headers: { 'x-request-id': 'abc-123' } });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('x-request-id')).toBe('abc-123');
+    const request = lines.find((line) => line.event === 'http.request');
+    expect(request).toMatchObject({
+      request_id: 'abc-123',
+      method: 'GET',
+      path: '/health',
+      status: 200,
+    });
+  });
+
+  it('generates a request id when the caller sends none', async () => {
+    const { app } = appWithLogs();
+    const response = await app.request('/health');
+    expect(response.headers.get('x-request-id')).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('binds the run id from the path to every line of that request', async () => {
+    const { app, lines } = appWithLogs();
+    await app.request('/api/v1/runs/run-1');
+
+    // The route 404s (no such run) but the correlation happened before dispatch.
+    expect(lines.some((line) => line.run_id === 'run-1')).toBe(true);
+  });
+
+  it('logs a rejected request once, at warn, with the path but no credential', async () => {
+    const { app, lines } = appWithLogs({ apiKey: 'secret' });
+    await app.request('/api/v1/runs', { headers: { authorization: 'Bearer nope' } });
+
+    const rejected = lines.filter((line) => line.event === 'http.unauthorised');
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]).toMatchObject({ path: '/api/v1/runs' });
+    expect(JSON.stringify(rejected[0])).not.toContain('nope');
+  });
+
+  it('never writes a configured secret into a log line', async () => {
+    const { app, lines } = appWithLogs({ apiKey: 'super-secret-key-123' });
+    await app.request('/api/v1/runs', { headers: { authorization: 'Bearer wrong-token' } });
+
+    expect(JSON.stringify(lines)).not.toContain('super-secret-key-123');
+  });
+
+  it('reports the release and log level in /health', async () => {
+    const { app } = appWithLogs({ version: '1.2.3', commit: 'abc1234' });
+    const body = await (await app.request('/health')).json();
+
+    expect(body).toMatchObject({ version: '1.2.3', commit: 'abc1234', logLevel: 'silent' });
   });
 });
 

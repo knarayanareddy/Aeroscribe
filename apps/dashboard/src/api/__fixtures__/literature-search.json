@@ -1,0 +1,38 @@
+{
+  "query": "transonic wing drag",
+  "papers": [
+    {
+      "id": "crossref:10.1016/j.jcp.2023.112001",
+      "source": "crossref",
+      "title": "Adjoint-based mesh adaptation for transonic flows",
+      "authors": ["C. Author"],
+      "year": 2023,
+      "doi": "10.1016/j.jcp.2023.112001",
+      "url": "https://doi.org/10.1016/j.jcp.2023.112001",
+      "abstract": "Mesh adaptation for transonic wing computations.",
+      "citationCount": 40,
+      "containerTitle": "Journal of Computational Physics",
+      "volume": "491",
+      "pages": "112001",
+      "publisher": "Elsevier"
+    },
+    {
+      "id": "crossref:10.2514/1.j060001",
+      "source": "crossref",
+      "title": "Transonic drag prediction on unstructured meshes",
+      "authors": ["A. Author", "B. Author"],
+      "year": 2024,
+      "doi": "10.2514/1.j060001",
+      "url": "https://doi.org/10.2514/1.j060001",
+      "abstract": "A transonic wing drag study on unstructured meshes.",
+      "citationCount": 12,
+      "containerTitle": "AIAA Journal",
+      "volume": "62",
+      "pages": "1201-1215",
+      "publisher": "AIAA"
+    }
+  ],
+  "errors": [],
+  "offline": false,
+  "executedAt": "2026-10-31T17:38:37.199Z"
+}

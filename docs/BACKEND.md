@@ -52,7 +52,10 @@ services/api/src
 │   └── audit.ts          append-only NDJSON audit trail + read()
 ├── lib/
 │   ├── canonical.ts      canonical JSON + sha256 helpers (stable key order)
-│   └── atomic.ts         writeJsonAtomic / readJson
+│   ├── atomic.ts         writeJsonAtomic / readJson
+│   ├── logger.ts         JSON-lines logger with key and value redaction
+│   ├── requestContext.ts AsyncLocalStorage scope: request_id, run_id, subject
+│   └── shutdown.ts       SIGTERM drain with a deadline
 ├── literature/
 │   ├── types.ts          Paper, SearchReport, DoiVerification, DOI normalisation
 │   ├── http.ts           fetchWithRetry (backoff, Retry-After), RequestSpacer
@@ -60,6 +63,7 @@ services/api/src
 │   ├── arxiv.ts          export.arxiv.org/api/query (Atom) → Paper
 │   ├── semanticscholar.ts api.semanticscholar.org/graph/v1 → Paper
 │   ├── fixtures.ts       offline corpus (no DOIs, by design)
+│   ├── reference.ts      ReferenceRecord: structured, timestamped references
 │   └── index.ts          LiteratureService: fan-out, dedupe, rank, verifyDoi
 ├── cfd/
 │   ├── types.ts          MeshSample, GciStudy, CfdStudyRequest/Result
@@ -348,6 +352,40 @@ Shared HTTP policy (`literature/http.ts`):
 a well-formed string is never "verified". In offline mode it returns
 `verified: false, reason: 'offline mode: no registry reachable…'`.
 
+### Structured references (`literature/reference.ts`)
+
+A citation is a set of fields, not a sentence. Stage 1 therefore stores
+`ReferenceRecord`s, and the writer renders from them:
+
+```ts
+{
+  key: 'ref-01', index: 1, doi: '10.2514/1.j060001',
+  title: '…', authors: ['A. Author', 'B. Author'], year: 2024,
+  venue: 'AIAA Journal', volume: '62', pages: '1201-1215', publisher: 'AIAA',
+  url: 'https://doi.org/…',
+  verified: { verifiedAt: '2026-10-31T10:00:00.000Z', provider: 'crossref', titleSimilarity: 1 }
+}
+```
+
+- **Absent stays absent.** arXiv reports no volume or pages, so those are `null`; nothing is
+  derived from the DOI or the year. `missingFields()` lists what a citation style would have
+  to leave out, which is what the future AIAA formatter reports rather than fills in.
+- **The venue fallback is a fact, not a guess.** `venue` falls back to `arXiv preprint` only
+  because that is where an arXiv record is published.
+- **Verification is timestamped.** `verified.verifiedAt` is the moment the DOI resolved, taken
+  from the literature service's clock — the input a later re-check compares against.
+- **Payload versions.** `literature-search` and `manuscript` are at `schemaVersion: 2`;
+  `readReferences()` upgrades a v1 payload (`{index, citation, doi}`) to records with
+  `legacy: true` and every unprovable field `null`. It never mines the citation string for a
+  title.
+- **The verifier reads the prose, not the bibliography.** RULE-001 governs quantitative
+  claims; a publication year in a reference line is metadata validated by RULE-002. Including
+  it in the numeric check would force the writer to declare other people's years as results.
+
+Every stored payload carries a positive integer `schemaVersion` (`orchestrator.assertVersionedPayload`
+refuses to record one that does not). Adding a field does not bump it; renaming or changing the
+meaning of one does.
+
 The offline corpus (`literature/fixtures.ts`) exists so tests and demos never touch the
 network. **Every fixture paper has `doi: null` by design**, which is what makes an
 offline run unable to cite anything.
@@ -456,6 +494,39 @@ curl -s 'localhost:8787/api/v1/runs/run-1/evidence?kind=stage-output'
 curl -s localhost:8787/api/v1/evidence/verify
 ```
 
+### Calling it from the browser
+
+The dashboard talks to exactly these routes, through one client
+(`apps/dashboard/src/api/client.ts`) whose types come from `packages/contract`. Two rules:
+
+**The mode is a build decision, not a toggle.** `VITE_API_URL` unset ⇒ fixture mode, and the
+built bundle contains no API address at all. Set ⇒ live mode, and a badge at the top of every
+screen says which one you are looking at. There is no runtime switch that could turn demo data
+into something that looks live.
+
+**No secret ever reaches the bundle.** In development, point `VITE_API_URL=` (empty) at the Vite
+dev server and let it proxy: `VITE_API_PROXY_TARGET` says where the API is, and
+`AEROSCRIBE_API_KEY` (deliberately _not_ `VITE_`-prefixed) is injected as a bearer header by the
+dev server. `scripts/check-bundle-secrets.mjs` runs at the end of `npm run build` and fails if a
+secret value, or a non-`VITE_` environment read in client code, made it into `dist/`.
+
+```bash
+# terminal 1
+AEROSCRIBE_DATA_DIR=./data npm run dev:api        # http://127.0.0.1:8787
+
+# terminal 2 — live mode through the proxy
+printf 'VITE_API_URL=\n' > apps/dashboard/.env.local
+npm run dev:dashboard                              # http://localhost:5174
+```
+
+Without `apps/dashboard/.env.local` the dashboard is fixture mode, which is what the deployed
+Pages build is: it has no API to talk to, so it says so.
+
+`services/api/test/contract.test.ts` drives a real nine-stage run through these routes and compares
+the shape of every response with `apps/dashboard/src/api/__fixtures__/shapes.json`. A server change
+that adds, removes or retypes a field fails that test until the dashboard's mappers are updated;
+`RECORD_FIXTURES=1` re-records the capture.
+
 ---
 
 ## 9. Configuration
@@ -473,9 +544,42 @@ curl -s localhost:8787/api/v1/evidence/verify
 | `AEROSCRIBE_UPSTREAM_TIMEOUT_MS` | `15000`                                       | per-attempt and per-provider deadline                              |
 | `AEROSCRIBE_RETRY_BASE_MS`       | `2000`                                        | first backoff step (RULE-042)                                      |
 | `SEMANTIC_SCHOLAR_API_KEY`       | _unset_                                       | server-side only; never sent to the browser                        |
+| `LOG_LEVEL`                      | `info`                                        | `debug` \| `info` \| `warn` \| `error` \| `silent` (RULE-053)      |
+| `AEROSCRIBE_VERSION`             | `dev`                                         | release identifier reported by `/health`                           |
+| `GIT_SHA`                        | `unknown`                                     | commit the image was built from, reported by `/health`             |
 
 Every variable is described in `services/api/.env.example`; copy it to `services/api/.env`
 for local work. Neither browser app reads any of them — a key in a Vite bundle is a public key.
+
+### Logs
+
+One JSON object per line on stdout; `jq` is the intended reader.
+
+```json
+{
+  "ts": "2026-10-31T10:00:00.000Z",
+  "level": "info",
+  "event": "stage.end",
+  "request_id": "…",
+  "run_id": "run-…",
+  "stage_id": 4,
+  "stage": "Evidence Generation",
+  "status": "gate_pending",
+  "evidence_seq": 4,
+  "evidence_kind": "cfd-run"
+}
+```
+
+- `request_id` comes from the inbound `x-request-id` (or a generated UUID) and is echoed on the
+  response, so a user's screenshot of the header identifies the four log lines behind it.
+- `run_id` is bound from the request path (`/api/v1/runs/<id>/…`), which is what makes a stage
+  failure searchable without knowing the request.
+- Events: `http.request`, `http.error`, `http.unauthorised`, `http.rate_limited`, `stage.start`,
+  `stage.end`, `stage.failed`.
+- **Redaction is built in.** Keys named like credentials (`authorization`, `api-key`, `token`,
+  `password`, …) are masked at any depth, and the configured secrets (`AEROSCRIBE_API_KEY`,
+  `SEMANTIC_SCHOLAR_API_KEY`) are masked by value — a message that interpolates one is caught
+  even under an innocent field name.
 
 ### Running it
 
@@ -570,6 +674,9 @@ run look successful while its numbers were not what the operator asked for.
 | `test/config.test.ts`       | env parsing, SU2 detection, capability reporting, on-disk wiring, `startServer` |
 | `test/shutdown.test.ts`     | SIGTERM drain, single exit, deadline exit code                                  |
 | `test/docs.test.ts`         | `docs/BACKEND.md` routes/env/stages and `specs/architecture.md` match the code  |
+| `test/reference.test.ts`    | structured references, absent fields, v1 payload upgrade, key ordering          |
+| `test/logger.test.ts`       | level filtering, redaction (key and value), scope propagation                   |
+| `test/integrity.test.ts`    | no model SDK, no `console.*`, integrity-table citations resolve                 |
 
 The suite is hermetic: no network, no solver, temporary data directories, and fake
 binaries written into `os.tmpdir()`. `npm run smoke:*` is the by-hand equivalent that

@@ -18,6 +18,11 @@ export interface CrossrefItem {
   'is-referenced-by-count'?: number;
   URL?: string;
   type?: string;
+  'container-title'?: string[];
+  volume?: string;
+  issue?: string;
+  page?: string;
+  publisher?: string;
 }
 
 /** Crossref abstracts arrive as JATS XML fragments; flatten them to text. */
@@ -64,7 +69,20 @@ export function mapCrossrefItem(item: CrossrefItem): Paper | null {
     abstract: stripJats(item.abstract),
     citationCount:
       typeof item['is-referenced-by-count'] === 'number' ? item['is-referenced-by-count'] : null,
+    // Crossref reports these as strings; whitespace and empty values are
+    // normalised to null so a citation style can tell "absent" from "blank".
+    containerTitle: cleanText(item['container-title']?.[0]),
+    volume: cleanText(item.volume),
+    pages: cleanText(item.page),
+    publisher: cleanText(item.publisher),
   };
+}
+
+/** Trim a provider string, mapping empty and whitespace-only values to null. */
+function cleanText(value: string | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.replace(/\s+/g, ' ').trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 export interface CrossrefOptions extends RetryOptions {
@@ -116,7 +134,8 @@ export class CrossrefClient {
     const params = new URLSearchParams({
       query,
       rows: String(Math.min(Math.max(limit, 1), 100)),
-      select: 'DOI,title,author,issued,abstract,is-referenced-by-count,URL,type',
+      select:
+        'DOI,title,author,issued,abstract,is-referenced-by-count,URL,type,container-title,volume,page,publisher',
     });
     if (this.options.contactEmail) params.set('mailto', this.options.contactEmail);
 

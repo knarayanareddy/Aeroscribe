@@ -1,26 +1,11 @@
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
-export type AuditAction =
-  | 'run.created'
-  | 'run.advanced'
-  | 'stage.blocked'
-  | 'gate.approved'
-  | 'gate.rejected'
-  | 'evidence.appended'
-  | 'registry.verified'
-  | 'literature.searched'
-  | 'doi.verified'
-  | 'cfd.executed'
-  | 'unauthorised';
+// The audit entry is served over HTTP (`GET /api/v1/audit`), so its shape lives
+// in the contract; the append-only file format is this module's business.
+import type { AuditAction, AuditEntry } from '@aeroscribe/contract';
 
-export interface AuditEntry {
-  at: string;
-  action: AuditAction;
-  runId: string | null;
-  actor: string;
-  detail?: Record<string, unknown>;
-}
+export type { AuditAction, AuditEntry };
 
 /**
  * Append-only audit trail (NDJSON).

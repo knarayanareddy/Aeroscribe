@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PIPELINE_STAGES, createRun, type PipelineRun } from '@aeroscribe/pipeline';
 import { CfdService } from '../src/cfd';
 import { UnverifiableClaimError } from '../src/errors';
-import { LiteratureService } from '../src/literature';
+import { LiteratureService, type ReferenceRecord } from '../src/literature';
 import { peerReview } from '../src/agents/review';
 import { evidenceGeneration } from '../src/agents/evidence';
 import {
@@ -157,6 +157,102 @@ describe('literature archaeology', () => {
     expect(payload.rejected.length).toBe(payload.papersFound);
     expect(payload.rejected[0]!.reason).toMatch(/offline corpus entries have no DOI/i);
     expect(outcome.metrics.papersVerified).toBe(0);
+  });
+});
+
+describe('literature archaeology — structured references', () => {
+  /** A provider that returns one resolvable record per DOI, with full metadata. */
+  const provider = {
+    name: 'crossref' as const,
+    requiresNetwork: true,
+    async search(query: string) {
+      return [
+        {
+          id: 'crossref:10.2514/1.j060001',
+          source: 'crossref' as const,
+          title: 'Transonic drag prediction on unstructured meshes',
+          authors: ['A. Author', 'B. Author'],
+          year: 2024,
+          doi: '10.2514/1.j060001',
+          url: null,
+          abstract: 'transonic wing drag',
+          citationCount: 3,
+          containerTitle: 'AIAA Journal',
+          volume: '62',
+          pages: '1201-1215',
+          publisher: 'AIAA',
+          query,
+        },
+      ];
+    },
+    async resolveDoi(doi: string) {
+      const [found] = await provider.search('');
+      return found ? { ...found, doi } : null;
+    },
+  };
+
+  it('records a verified reference as structured fields, not just a citation string', async () => {
+    const live = new LiteratureService({ offline: false, providers: [provider] });
+    const outcome = await literatureArchaeology({
+      ...context(1, { paperLimit: 1, verifyTop: 1 }),
+      literature: live,
+    });
+
+    const payload = outcome.payload as {
+      schemaVersion: number;
+      references: ReferenceRecord[];
+      papers: Array<{ title: string }>;
+    };
+
+    expect(payload.schemaVersion).toBe(2);
+    expect(payload.references).toHaveLength(1);
+    expect(payload.references[0]).toMatchObject({
+      key: 'ref-01',
+      index: 1,
+      title: 'Transonic drag prediction on unstructured meshes',
+      doi: '10.2514/1.j060001',
+      venue: 'AIAA Journal',
+      volume: '62',
+      pages: '1201-1215',
+      publisher: 'AIAA',
+      verified: { provider: 'crossref', titleSimilarity: 1 },
+    });
+    // Verification carries its own timestamp — the moment the DOI resolved,
+    // taken from the literature service's clock, not the stage's.
+    expect(payload.references[0]!.verified.verifiedAt).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/);
+    // The provider record is still available for display (abstracts, counts).
+    expect(payload.papers[0]!.title).toMatch(/Transonic drag/);
+  });
+
+  it('renders the citation from those fields and nothing else', async () => {
+    const live = new LiteratureService({ offline: false, providers: [provider] });
+    // Stage 0 declares the numbers that belong to the research question itself.
+    const topic = await topicIntelligence(context(0));
+    await appendFake('stage-output', topic.payload, 0);
+
+    const found = await literatureArchaeology({
+      ...context(1, { paperLimit: 1, verifyTop: 1 }),
+      literature: live,
+    });
+    await appendFake('literature-search', found.payload, 1);
+    await appendFake('novelty-report', { gapCount: 0, verifiedReferences: 1 }, 2);
+    const framing = await contributionFraming(context(3));
+    await appendFake('stage-output', framing.payload, 3);
+    const evidence = await evidenceGeneration(context(4));
+    await appendFake('cfd-run', evidence.payload, 4);
+
+    const manuscript = await paperSynthesis(context(5));
+    const payload = manuscript.payload as {
+      schemaVersion: number;
+      references: Array<{ citation: string; doi: string; record: ReferenceRecord }>;
+    };
+
+    expect(payload.schemaVersion).toBe(2);
+    expect(payload.references[0]!.citation).toBe(
+      '[1] A. Author, B. Author (2024). Transonic drag prediction on unstructured meshes. AIAA Journal. doi:10.2514/1.j060001',
+    );
+    // The line and the record cannot drift: the record is stored beside it.
+    expect(payload.references[0]!.record.venue).toBe('AIAA Journal');
   });
 });
 

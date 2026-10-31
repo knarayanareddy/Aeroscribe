@@ -16,7 +16,7 @@
   "scripts": {
     "dev:landing": "npm run dev -w @aeroscribe/landing-page",
     "dev:dashboard": "npm run dev -w @aeroscribe/dashboard",
-    "build": "npm run build -w @aeroscribe/landing-page && npm run build -w @aeroscribe/dashboard",
+    "build": "npm run build -w @aeroscribe/landing-page && npm run build -w @aeroscribe/dashboard && npm run check:bundle",
     "build:landing": "npm run build -w @aeroscribe/landing-page",
     "build:dashboard": "npm run build -w @aeroscribe/dashboard",
     "preview:landing": "npm run preview -w @aeroscribe/landing-page",
@@ -25,6 +25,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
+    "check:bundle": "node scripts/check-bundle-secrets.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

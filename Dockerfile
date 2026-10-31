@@ -29,6 +29,7 @@ ENV NODE_ENV=production \
 COPY package.json package-lock.json ./
 COPY apps/landing-page/package.json apps/landing-page/
 COPY apps/dashboard/package.json apps/dashboard/
+COPY packages/contract/package.json packages/contract/
 COPY packages/pipeline/package.json packages/pipeline/
 COPY packages/ui/package.json packages/ui/
 COPY services/api/package.json services/api/
@@ -39,6 +40,7 @@ COPY services/api/package.json services/api/
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
 COPY tsconfig.base.json ./
+COPY packages/contract packages/contract
 COPY packages/pipeline packages/pipeline
 COPY services/api services/api
 
