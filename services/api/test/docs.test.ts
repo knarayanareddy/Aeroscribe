@@ -220,3 +220,56 @@ describe('specs/architecture.md matches the repository', () => {
     expect(doc).not.toContain('has not been built');
   });
 });
+
+describe('the plan stays attached to the repository', () => {
+  const planPath = 'docs/ROADMAP.md';
+
+  it('links only to documents that exist', async () => {
+    const { access } = await import('node:fs/promises');
+    const plan = await readRepoFile(planPath);
+    const links = Array.from(plan.matchAll(/\]\((?!https?:)([^)#]+)(?:#[^)]*)?\)/g), (m) => m[1]!);
+
+    expect(links.length).toBeGreaterThan(3);
+    for (const link of links) {
+      const target = resolve(root, 'docs', link);
+      const info = await access(target).then(
+        () => true,
+        () => false,
+      );
+      expect(info, `${link} is linked from ${planPath} but does not exist`).toBe(true);
+    }
+  });
+
+  it('points every file:line reference at a line that exists', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const plan = await readRepoFile(planPath);
+
+    // A plan that cites line numbers is useful only while they are true; an
+    // acceptance criterion built on a stale citation is worse than none.
+    const refs = Array.from(
+      plan.matchAll(/`([A-Za-z0-9_][A-Za-z0-9_./-]*\.(?:ts|tsx|md|json|yml)):(\d+)`/g),
+      (m) => ({ file: m[1]!, line: Number(m[2]) }),
+    );
+    expect(refs.length).toBeGreaterThan(5);
+
+    for (const { file, line } of refs) {
+      const source = await readFile(resolve(root, file), 'utf8').catch(() => null);
+      if (source === null) continue; // the plan also names files it intends to add
+      const total = source.split('\n').length;
+      expect(line, `${file}:${line} points past the end of the file (${total} lines)`).toBeLessThan(
+        total + 1,
+      );
+    }
+  });
+
+  it('names every workstream in the summary table exactly once', async () => {
+    const plan = await readRepoFile(planPath);
+    const summary = plan.slice(plan.indexOf('## 0. Summary'), plan.indexOf('## 1. Ground truth'));
+    const ids = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
+
+    for (const id of ids) {
+      const occurrences = summary.match(new RegExp(`\\*\\*${id}\\*\\*`, 'g')) ?? [];
+      expect(occurrences, `workstream ${id} is missing from the summary table`).toHaveLength(1);
+    }
+  });
+});

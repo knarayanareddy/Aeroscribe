@@ -2,7 +2,8 @@
 
 Last reviewed: 2026-10-31. This file is the honest answer to "what actually works?".
 If a marketing page, a screenshot or an archived design document disagrees with this table,
-this table is correct. The backend is mapped step by step in [`BACKEND.md`](./BACKEND.md).
+this table is correct. The backend is mapped step by step in [`BACKEND.md`](./BACKEND.md), and
+everything still missing is planned in [`ROADMAP.md`](./ROADMAP.md).
 
 ## Summary
 
@@ -11,7 +12,7 @@ this table is correct. The backend is mapped step by step in [`BACKEND.md`](./BA
 | Landing page              | **Implemented**          | Static site, keyboard accessible, self-hosted fonts, no third-party requests.                                                                     |
 | Researcher dashboard (UI) | **Implemented**          | Nine views over fixture data, responsive down to 360 px.                                                                                          |
 | Pipeline state machine    | **Implemented**          | Pure reducer in `packages/pipeline`; gate approval, revision requests, run creation.                                                              |
-| Automated tests           | **Implemented**          | Vitest + Testing Library: 267 tests across 30 files, apps and API; CI enforces coverage thresholds.                                               |
+| Automated tests           | **Implemented**          | Vitest + Testing Library: 270 tests across 30 files, apps and API; CI enforces coverage thresholds.                                               |
 | CI / deployment           | **Implemented**          | Typecheck, lint, format check, coverage thresholds, both app builds and the API image (built and health-checked) on every PR.                     |
 | Agent runtime (backend)   | **Implemented**          | `services/api`: 9 stage handlers, orchestrator, gates, revisions, audit trail.                                                                    |
 | Literature APIs           | **Implemented**          | Crossref, arXiv and Semantic Scholar clients with DTO mapping, retries and politeness. Offline fixtures carry no DOIs.                            |
