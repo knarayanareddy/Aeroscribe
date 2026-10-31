@@ -1,0 +1,24 @@
+# Only what the API image needs; the web apps are built and deployed separately.
+**/node_modules
+**/dist
+**/coverage
+**/.vite
+**/*.tsbuildinfo
+**/.turbo
+
+# Repository and CI metadata
+.git
+.github
+
+# Runtime state: never bake an evidence registry into an image
+data
+site
+
+# Tests, logs and local secrets
+**/*.test.ts
+**/*.test.tsx
+**/test
+**/*.log
+.env
+.env.*
+!.env.example
