@@ -1,0 +1,938 @@
+# Remaining work — plan and checklist
+
+This is the execution plan for the eight gaps listed in
+[`IMPLEMENTATION_STATUS.md`](./IMPLEMENTATION_STATUS.md) and
+[`../specs/integrity-rules.md`](../specs/integrity-rules.md). It is a **plan**, not a status
+report: nothing below is built until its checklist is ticked and its acceptance criteria are
+demonstrated against the running code.
+
+Two rules for using this document:
+
+1. A workstream is done when its **acceptance** block is true of the repository, not when its
+   checkboxes are ticked. Checkboxes track effort; acceptance tracks truth.
+2. Every PR that touches this plan updates the plan, [`IMPLEMENTATION_STATUS.md`](./IMPLEMENTATION_STATUS.md)
+   and [`../specs/integrity-rules.md`](../specs/integrity-rules.md) in the same change. The
+   enforcement table is the promise; a table that lags the code is the defect this project
+   keeps fixing.
+
+---
+
+## 0. Summary
+
+| #   | Gap                                    | Workstream | Milestone | Size\*  | Depends on |
+| --- | -------------------------------------- | ---------- | --------- | ------- | ---------- |
+| 1   | Dashboard ↔ API wiring                 | **A**      | M1        | 5–6 d   | P1         |
+| 2   | LaTeX / PDF typesetting                | **B**      | M2        | 4–6 d   | P1, G3     |
+| 3   | Per-manuscript DOI re-verification     | **C**      | M3        | 2–3 d   | P1         |
+| 4   | Postgres / Redis / S3                  | **D**      | M4        | 8–10 d  | —          |
+| 5   | Staging environment + image publishing | **E**      | M5        | 3–5 d   | D, A       |
+| 6   | Accounts                               | **F**      | M6        | 5–7 d   | D, A       |
+| 7   | RULE-030 / 032 / 033                   | **G**      | M2–M3     | 4–5 d   | P1, B      |
+| 8   | RULE-053 structured logging            | **H**      | M0        | 1.5–2 d | —          |
+| —   | RULE-022 (N/A by design)               | **I**      | M0        | 0.5 d   | —          |
+
+\* Engineering days for one experienced engineer, including tests and documentation, ±40 %.
+Sequential total ≈ **35–45 days**. With one engineer working A/B/C before D/E/F, a usable
+live-dashboard demo lands in ~3 weeks; the service-grade stack lands ~5 weeks after that.
+
+**If only three things get done, do A, B, C.** They convert claims the project already makes
+(“the dashboard is implemented”, “a manuscript is produced”) into things a stranger can click.
+
+---
+
+## 1. Ground truth: where each gap actually is
+
+Every row names the code that would have to change. Nothing here is inferred from prose.
+
+| Gap                   | Current state, verified in code                                                                                                                                                                                                                              | Consequence today                                                                                      |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Dashboard wiring      | `apps/dashboard/src/state/PipelineProvider.tsx:16` seeds `useReducer` from `mockData`; every view imports `../data/mockData` directly; `apps/dashboard/vite.config.ts` has no proxy                                                                          | The only way to see a real run is `curl`. The UI is a clickable prototype.                             |
+| LaTeX / PDF           | `apps/dashboard/src/components/ManuscriptView.tsx:31` builds a `.tex` string in the browser; stage 8 (`services/api/src/agents/knowledge.ts:42`) packages evidence hashes and states “Manifest only: no PDF or .docx is compiled by this service” (line 109) | No server-side source of truth for the manuscript, no bibliography, no PDF anywhere.                   |
+| DOI re-verification   | `services/api/src/literature/index.ts:150` verifies at retrieval; `ManuscriptPayload.references` (`agents/writing.ts:26`) keeps only `{ index, citation, doi }` — no timestamp, no provider                                                                  | A DOI that resolves in March and 404s in June is still presented as verified by the stored manuscript. |
+| Postgres / Redis / S3 | `store/registry.ts:88` states “single writer”; `store/runs.ts:13` writes one JSON file per run; `http/rateLimit.ts:16` and `orchestrator.ts` in-flight set are per-process; CFD artefacts stay on local disk (`cfd/su2.ts:184`)                              | One API instance, one disk. No horizontal scale, no shared rate limit, no durable artefact store.      |
+| Staging / publishing  | `.github/workflows/deploy.yml` publishes static apps to Pages only; `Dockerfile` is built by CI but pushed nowhere                                                                                                                                           | There is no environment where the API runs, so “deploy” means “static site”.                           |
+| Accounts              | `http/app.ts:104` compares one bearer token; `actor` in the audit trail is **whatever the client sends** (`app.ts:160`)                                                                                                                                      | The audit trail can attribute an approval to any name. Multi-user use is impossible.                   |
+| RULE-030              | `agents/writing.ts:134` assembles sections in one pass; no plan artefact                                                                                                                                                                                     | “Hierarchical generation” is unimplemented; the rule is prose.                                         |
+| RULE-032              | `agents/writing.ts:166` `formatCitation` emits `[n] authors (year). title. doi:…`                                                                                                                                                                            | Not AIAA format; compliance only checks the `[n]` prefix (`agents/review.ts:213`).                     |
+| RULE-033              | No figure code anywhere in `services/api`                                                                                                                                                                                                                    | Figures are absent, not wrong; pgfplots is unimplemented.                                              |
+| RULE-053              | `http/app.ts:75` uses Hono's text logger behind `enableLogging`                                                                                                                                                                                              | No JSON, no `request_id`, no `run_id`; incidents cannot be reconstructed by machine.                   |
+| RULE-022              | No model client in `services/api/package.json`                                                                                                                                                                                                               | Correctly N/A — but nothing stops a future contributor from adding one without telemetry.              |
+
+---
+
+## 2. Order, dependencies, critical path
+
+```
+M0  P1 structured references ─┬──────────────────────────────────────────────┐
+    H  structured logging    │                                              │
+    I  RULE-022 decision     │                                              │
+                             ▼                                              │
+M1  A  dashboard wiring  ────────────────────────────────┐                  │
+                             │                            │                  │
+M2  B  LaTeX/PDF  ◄── G3 figures                          │                  │
+                             │                            │                  │
+M3  C  DOI recheck   G1 plan   G2 AIAA citations           │                  │
+                                                           │                  │
+M4  D1 ports ─► D2 Postgres ─┬── D3 Redis ── D4 S3 ◄───────┘                  │
+                              │                                               │
+M5  E  publish image + staging ◄──────────────────────────────────────────────┘
+                              │
+M6  F  accounts (OIDC)  ◄─────┘
+```
+
+- **P1 first.** Three workstreams (B bibliography, C recheck, G2 citations) need structured
+  reference metadata that the payload does not carry today. Building any of them first means
+  parsing the display string back into fields — the exact fragility this project avoids.
+- **H before A.** Once the dashboard talks to a server, the first question in every bug report
+  is “which request, which run?”. Text logs cannot answer it.
+- **D before E/F**, because a deploy with one disk and no accounts is a demo, and F needs a
+  users table. D1 (ports) is a pure refactor and can land any time.
+- **Critical path:** P1 → A → D2 → E → F. Everything else can run in parallel with one of those.
+
+Deliberate ordering choice: **A before D**. Wiring the dashboard against the filesystem store
+is no harder than against Postgres, it delivers the visible win early, and it exercises the HTTP
+contract that D must then preserve.
+
+---
+
+## 3. The honesty contract (every PR, no exceptions)
+
+The repository's value is that its labels are true. Copy this list into every PR description.
+
+- [ ] **No silent fallback.** Every degraded path is explicit in code, in `/health` or
+      `/api/v1/capabilities`, and in the UI. Switching from live to fixture data because a
+      request failed is a defect, not a convenience.
+- [ ] **New capability is observable.** If it can be unavailable, `describeCapabilities()`
+      reports it and a test asserts both states.
+- [ ] **New evidence kind has a producer.** Added to `EVIDENCE_KINDS`
+      (`services/api/src/store/registry.ts`), written by exactly one place, mapped in the
+      dashboard, listed in `docs/BACKEND.md` § 4, and covered by `services/api/test/docs.test.ts`.
+- [ ] **Every number on screen is traceable.** Either it came from the API in this render, or
+      the cell says “not recorded”. No placeholders, no demo values in live mode.
+- [ ] **Rules table updated.** `specs/integrity-rules.md` says what is enforced _now_, and
+      `docs/IMPLEMENTATION_STATUS.md` changes the affected row in the same PR.
+- [ ] **Payload changes are versioned.** Any change to an evidence payload bumps
+      `schemaVersion`; readers tolerate older records (see §4.2).
+- [ ] **Coverage thresholds never go down.** If a workstream cannot meet them, that is a review
+      finding, not a config edit.
+- [ ] **No secret in a browser bundle.** `node scripts/check-bundle-secrets.mjs` runs in CI
+      after `npm run build`.
+- [ ] **Full gate green:** `npm run typecheck && npm run lint && npm run format:check &&
+npm run coverage && npm run build`, plus `npx vitest run services/api` and the smoke
+      scripts that the change touches.
+- [ ] **New dependency justified** in the PR: what it does, why not 50 lines of our own, licence,
+      and `npm audit --omit=dev` clean.
+
+---
+
+## 4. Foundations — milestone M0
+
+### 4.1 P1 — Structured reference records
+
+**Why.** `ManuscriptPayload.references` is `{ index, citation, doi }` (`agents/writing.ts:26`).
+A bibliography, an AIAA formatter and a re-check all need title/authors/year/venue/volume/pages
+as data. Today the only place those exist is the `citation` string, and re-parsing a display
+string is how wrong references happen.
+
+**Design.**
+
+```ts
+// services/api/src/literature/types.ts
+export interface ReferenceRecord {
+  key: string; // stable, e.g. `ref-01`
+  index: number; // 1-based, matches the manuscript
+  doi: string | null;
+  title: string;
+  authors: string[];
+  year: number | null;
+  venue: string | null; // journal or preprint server
+  volume: string | null;
+  pages: string | null;
+  publisher: string | null;
+  url: string | null;
+  verified: {
+    verifiedAt: string;
+    provider: PaperSource | null;
+    titleSimilarity: number | null; // null when the provider returned no title
+  };
+}
+```
+
+**Tasks.**
+
+- [ ] Add `volume`, `pages`, `publisher`, `containerTitle` to `literature/types.ts:Paper`, mapped
+      from Crossref (`crossref.ts`) and left `null` for arXiv/S2 where the field is absent.
+- [ ] Add `toReferenceRecord(paper, verification)` in a new `services/api/src/literature/reference.ts`.
+- [ ] Stage 1 emits `references: ReferenceRecord[]`; keep `rejected` and `providerErrors` as-is.
+- [ ] Stage 5 consumes `ReferenceRecord`; keep the rendered `citation` string in the payload for
+      display and for the existing claim policy.
+- [ ] Typed accessors so that old records (`references: {index,citation,doi}[]`) still read:
+      `readReferences(record): ReferenceRecord[]` that upgrades v1 on the fly and marks
+      `verified.verifiedAt: null` for legacy records.
+- [ ] Tests: Crossref mapping with volume/pages; `toReferenceRecord` with a null year; legacy
+      payload upgrade; stage 5 output still passes claim verification.
+- [ ] Docs: `docs/BACKEND.md` § 6 describes the record; § 3 stage 1 row updated.
+
+**Acceptance.** A run's `literature-search` record carries every field above; the manuscript's
+`references[]` carries the same records; a v1 record written before this change still renders in
+the dashboard.
+
+**Size.** 1.5–2 days.
+
+### 4.2 Payload versioning policy
+
+- [ ] Add `schemaVersion: number` to every payload interface, starting at `2` for the payloads
+      P1 touches; absent means `1`.
+- [ ] `docs/BACKEND.md` § 4 gains a short “Payload evolution” subsection: additive fields do not
+      bump the version; renames and semantic changes do; readers never fail on an unknown field.
+- [ ] A test asserts every payload interface in `agents/*.ts` declares `schemaVersion`.
+
+### 4.3 H — RULE-053 structured logging
+
+**Why.** `http/app.ts:75` logs `--> GET /health 200 1ms` through Hono. A stage that fails at 03:00
+leaves no machine-readable trace of which run, which stage, which solver invocation.
+
+**Design.**
+
+- `services/api/src/lib/logger.ts` — ~80 lines, no dependency: levels
+  (`debug|info|warn|error`), JSON lines to stdout, `child({ ... })` bindings, redaction of
+  `authorization`, `apiKey`, `AEROSCRIBE_API_KEY`, `SEMANTIC_SCHOLAR_API_KEY`, `password`, `token`.
+- `services/api/src/lib/requestContext.ts` — `AsyncLocalStorage<{ requestId; runId? }>` so the
+  orchestrator and stage handlers log with the run id without threading a logger through every
+  signature.
+- `http/app.ts` middleware: honour an inbound `x-request-id` or generate a UUID, echo it on the
+  response, log one line on completion with `status`, `duration_ms`, `method`, `path`, `subject`.
+- Error path logs `error` with `name`, `code`, `run_id`, `stage_id`, and the message; the response
+  body is unchanged.
+- `describeCapabilities()` / `/health` add `version` (from `package.json`) and `commit`
+  (build arg, `unknown` when not set).
+
+**Tasks.**
+
+- [ ] Logger + tests (level filtering, redaction, child bindings, non-serialisable values).
+- [ ] Request context + middleware; `LOG_LEVEL` in `config.ts` and `.env.example`.
+- [ ] Wire into orchestrator stage transitions (`stage.start`, `stage.end`, `gate.approve`) and
+      the shutdown helper.
+- [ ] Replace `enableLogging` text logger; keep the flag name working.
+- [ ] Tests: request id echo; error log contains the run id; redaction never prints a key.
+- [ ] `docs/BACKEND.md` § 9 (`LOG_LEVEL`) and § 10 (log shape); integrity table RULE-053 → **API**.
+
+**Acceptance.** Running a full 9-stage synthetic run with `LOG_LEVEL=info | jq` yields one JSON
+object per line; `jq 'select(.event=="stage.end") | .run_id'` prints the run id; a request with
+`x-request-id: abc` logs `request_id: "abc"` and echoes the header; `grep -i secret` over the log
+is empty.
+
+**Size.** 1.5–2 days.
+
+### 4.4 I — Close RULE-022 honestly
+
+- [ ] `docs/adr/0001-deterministic-writer.md`: why every stage handler is a deterministic
+      function, what RULE-022 would require the day a model is introduced (per-invocation tokens,
+      cost, prompt hash, model id, consent), and why building that plumbing now would be fiction.
+- [ ] A test that fails if a known model SDK appears in any `package.json`
+      (`openai`, `@anthropic-ai/sdk`, `@google/generative-ai`, `langchain`, …), with a comment
+      pointing at the ADR.
+- [ ] Integrity table: RULE-022 stays **N/A**, with a link to the ADR.
+
+**Size.** 0.5 day.
+
+---
+
+## 5. A — Wire the dashboard to the API
+
+**Why it matters.** This is the single largest credibility gap: the landing page says the agent
+API “is implemented and tested”, and the dashboard next to it cannot read a run from it.
+
+**Current state.** `PipelineProvider` seeds `useReducer` from `mockData`; views import fixtures
+directly; `vite.config.ts` has no proxy; `apiKey` is a server concept the browser must never hold.
+
+**Design.**
+
+1. **Contract, not copies.** New workspace `packages/contract` holds the wire types the two
+   sides share: evidence payload interfaces (moved out of `services/api/src/agents/*`, which
+   re-exports them), request bodies, and `ApiError` shape. `PipelineRun`/`StageInfo` stay in
+   `@aeroscribe/pipeline` because they already are the shared domain type. This is what stops
+   client and server drifting apart.
+2. **One client.** `apps/dashboard/src/api/client.ts` — `createApiClient({ baseUrl, token?, fetch })`
+   with typed methods for every route in `docs/BACKEND.md` § 8. `fetch` is injected so tests need
+   no network. Errors become `ApiClientError { status, code, message }` carrying the server's own
+   message (a `409` must read “Stage 0 is waiting for GATE-0”, not “Request failed”).
+3. **Two sources behind one interface.**
+
+   ```ts
+   // apps/dashboard/src/state/source.ts
+   export interface RunSource {
+     readonly mode: 'fixtures' | 'live';
+     listRuns(): Promise<PipelineRun[]>;
+     getRun(id: string): Promise<PipelineRun>;
+     createRun(input: { topic: string; journal?: string }): Promise<PipelineRun>;
+     advance(id: string): Promise<PipelineRun>;
+     approveGate(id: string, gateId: string): Promise<PipelineRun>;
+     requestRevision(id: string, gateId: string, note?: string): Promise<PipelineRun>;
+     evidence(id: string, kind?: EvidenceKind): Promise<EvidenceRecord[]>;
+     capabilities(): Promise<Capabilities>;
+   }
+   ```
+
+   `createFixtureSource()` wraps the existing reducer semantics; `createApiSource(client)` talks
+   HTTP. The provider renders both; the mode is chosen **once, at build time**
+   (`VITE_API_URL` set ⇒ live) and shown in the UI.
+
+4. **Mapping is explicit.** `apps/dashboard/src/api/mappers.ts` converts payloads to the view
+   models. Where the API has no field, the mapper does not invent one:
+
+   | UI field                                      | API source                                                                      | Live behaviour when absent                                              |
+   | --------------------------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+   | `Paper.relevanceScore`                        | ranking score computed in `literature/index.ts:rankPapers`, currently discarded | expose it in the payload (small server change)                          |
+   | `Paper.tags`                                  | none                                                                            | tags column and filter hidden, with “tags are fixture-only” note        |
+   | `Paper.journal`                               | `venue` (P1)                                                                    | “venue not recorded”                                                    |
+   | `ResearchGap.noveltyScore` / `competitorRisk` | none (stage 2 emits term coverage)                                              | gap list shows uncovered/covered terms; no numeric score, no risk badge |
+   | `CFDResult`                                   | `cfd-run` payload (complete)                                                    | —                                                                       |
+   | `ReviewItem` severity                         | `review-report` payload (complete)                                              | —                                                                       |
+
+   Each row above is a **decision to display less**, not to synthesise more.
+
+5. **No secrets in the bundle.** In development the client calls a relative `/api/...` path and
+   Vite proxies it (`server.proxy['/api'].target = VITE_API_PROXY_TARGET`) while injecting
+   `Authorization` from `AEROSCRIBE_API_KEY` **in the dev server**. A production build may point
+   at a public API URL, but only with auth disabled or behind the same-origin proxy from E; the
+   bundle never contains a token.
+6. **Honest states.** A persistent `DataModeBadge`: `Fixtures · illustrative data`,
+   `Live API · <host>`, or `API unreachable · <reason>`. Unreachable never falls back; it retries
+   on explicit action and keeps the error on screen.
+
+**Tasks.**
+
+- [ ] `packages/contract`: payload types moved, `services/api` re-exports, workspace wired into
+      `package.json`, `tsconfig`, Dockerfile manifest list.
+- [ ] Server: expose `relevance` on literature references; `GET /api/v1/runs/:id/references`
+      (shared with C) is not needed yet.
+- [ ] `apps/dashboard/src/api/{client,errors,mappers}.ts` + unit tests per mapper.
+- [ ] `apps/dashboard/src/state/{source,useResource}.ts` — abortable loads, explicit
+      `refresh()`, no polling unless a stage is `running` (then 3 s with backoff to 15 s).
+- [ ] `PipelineProvider` accepts a source, exposes `status: 'loading' | 'ready' | 'error'`,
+      and keeps `dispatch` only for selection.
+- [ ] Views migrated one at a time, each keeping a fixture path for tests:
+      `Pipeline`, `Dashboard`, `Literature`, `Novelty`, `CFD`, `Manuscript`, `Review`, `Wiki`,
+      `Settings` (`Settings` reads `/capabilities`; “Not configured” becomes the server's answer).
+- [ ] `DataModeBadge` + empty/error states; a test that live mode with a failing fetch renders
+      the error and **not** fixture rows.
+- [ ] `vite.config.ts` proxy + `.env.example` for the dashboard; docs: `docs/BACKEND.md` § 8
+      “calling it from the browser”, README quick start with two terminals.
+- [ ] Contract test in `services/api/test/contract.test.ts`: run the full 9-stage flow in-process,
+      capture every response the dashboard consumes into `apps/dashboard/src/api/__fixtures__/`,
+      and fail when the recorded shape stops matching the server. The dashboard's mapper tests
+      read those files.
+- [ ] `scripts/check-bundle-secrets.mjs`: after `npm run build`, fail if the bundle contains
+      `AEROSCRIBE_API_KEY`, a bearer token, or `SEMANTIC_SCHOLAR_API_KEY`.
+- [ ] `docs/IMPLEMENTATION_STATUS.md`: dashboard row → “Implemented (fixture data) / **live mode
+      available**”; “Known limitations” loses the first bullet, gains “the deployed Pages build
+      is fixture-only unless `VITE_API_URL` is set”.
+
+**Acceptance.**
+
+1. Terminal 1 `npm run dev:api`; terminal 2 `npm run dev:dashboard`. A run created with `curl`
+   appears in the dashboard within one refresh; expanding it shows real stage timings; approving
+   GATE-0 from the UI advances the server (verified by `GET /api/v1/runs/:id`), and a second
+   approve returns `409` and is displayed as such.
+2. The Literature view shows the same references the API recorded, with the DOI for each, and no
+   tag chips; the CFD view shows the GCI numbers from `cfd-run`, with the synthetic disclaimer
+   visible when the run is synthetic.
+3. Stopping the API and reloading shows `API unreachable` with the reason and zero fixture rows.
+4. `VITE_API_URL` unset ⇒ the built dashboard says `Fixtures · illustrative data` on every view,
+   exactly as today.
+5. `scripts/check-bundle-secrets.mjs` passes on the live build.
+
+**Risks.** Payload/view-model mismatch is the main one (mitigated by the table above and the
+contract test); bundle size grows slightly (contract types are erased at build time).
+**Rollback.** `VITE_API_URL` unset restores the current behaviour exactly.
+
+**Size.** 5–6 days, plus 0.5 for the relevance field.
+
+---
+
+## 6. B — LaTeX source and PDF typesetting
+
+**Why it matters.** “Submission package” currently means a manifest of hashes; a journal needs a
+PDF. The dashboard's client-side `.tex` is unverifiable, unversioned and cannot include a
+bibliography.
+
+**Design — mirror the SU2 pattern exactly.** The toolchain is _detected, never assumed_; the
+source is always produced; the PDF is produced only when a TeX binary exists; the absence is a
+**blocker**, not a footnote.
+
+```
+services/api/src/latex/
+├── render.ts       renderManuscript(manuscript, references, figures, journal) → { files }
+├── escape.ts       escapeLatex() — one implementation, tested against adversarial input
+├── bibliography.ts BibTeX entries from ReferenceRecord (P1)
+├── figures.ts      pgfplots sources (G3)
+├── toolchain.ts    detectLatex(binary) → { available, binary, version }
+├── compile.ts      spawn with timeout, capture log, expect a PDF
+└── index.ts        LatexService: render() always, compile() when available
+```
+
+- Template: the journal's `latexTemplate` (`packages/pipeline/src/journals.ts`) selects a
+  preamble; unknown template ⇒ structured error, no guessing.
+- Files produced: `manuscript.tex`, `references.bib`, `figure-N.tex`, `figure-N.dat`,
+  `SIAM.bst`-free (use `plainnat`/`unsrtnat` shipped with TeX Live; document the dependency).
+- Every generated `.tex` carries a header comment with the run id, generation time and the SHA-256
+  of each input payload — provenance in the artefact, not only in the registry.
+- **Claim verification runs on the rendered text**, not just on the JSON payload: strip LaTeX
+  commands, run `verifyClaims` against the same policy. Numbers in the PDF are therefore bound
+  to evidence by the same mechanism as the manuscript payload.
+- Stage 8 gains a third artefact family and one new evidence kind, `manuscript-render`
+  (writer: `knowledgeAndSubmission`), containing `{ texSha256, files, pdf: { sha256, bytes } | null,
+typeset: 'pdf' | 'source-only', toolchain: { binary, version } | null }`.
+- Stage 8 blocker added: `'the manuscript PDF was not typeset (LATEX_BINARY is not set)'`.
+  A source-only package is a legitimate stage-8 _failure_, which is the honest outcome for a
+  journal that requires a PDF.
+- Endpoints: `GET /api/v1/runs/:id/manuscript.tex` (200, `text/x-tex`) and
+  `GET /api/v1/runs/:id/manuscript.pdf` (200 `application/pdf`, or `503 capability_unavailable`
+  naming `LATEX_BINARY`). Both read from the registry, so they cannot drift from the record.
+- Config: `LATEX_BINARY` (absolute path, probed like `SU2_CFD_BINARY`), `LATEX_TIMEOUT_MS`
+  (default 120000). `describeCapabilities()` gains `latex: { available, binary, version }`.
+
+**Tasks.**
+
+- [ ] `escape.ts` + tests (`%`, `_`, `&`, `#`, `$`, `{`, `}`, `~`, `^`, `\`, Unicode dashes,
+      a topic that is itself a LaTeX command).
+- [ ] `render.ts` producing a compilable document for both journal templates; deterministic
+      output (same inputs ⇒ byte-identical `.tex`, asserted by hashing twice).
+- [ ] `bibliography.ts` from `ReferenceRecord`; entries never invent volume/pages (omit; add a
+      `% missing: volume` comment so a reviewer sees what is absent).
+- [ ] `toolchain.ts` detection (`--version`, timeout, absolute path, executable bit) and
+      `compile.ts` (two passes, captured log, non-zero exit ⇒ `UpstreamError` with log tail,
+      missing PDF ⇒ same).
+- [ ] `LatexService` wired into `buildServer` and stage 8; new kind in `EVIDENCE_KINDS`, dashboard
+      mapper, `docs/BACKEND.md` § 3/§ 4/§ 8/§ 9.
+- [ ] Claim verification on rendered text; test with a number that is in no record ⇒ stage fails.
+- [ ] `npm run smoke:latex` script: renders, compiles when possible, prints every intermediate.
+- [ ] Fake-binary tests (mirroring `test/su2-http.test.ts`): success, non-zero exit, timeout,
+      no PDF, and the `503` on the PDF endpoint when unset.
+- [ ] Dockerfile: `ARG INSTALL_LATEX=false`; when true install
+      `texlive-latex-recommended texlive-fonts-recommended texlive-publishers` and document the
+      ~600 MB cost in `docs/BACKEND.md` § 9.
+- [ ] CI: job `latex` (only on PRs touching `services/api/src/latex/**` or `packages/pipeline/src/journals.ts`,
+      plus `main`) that installs TeX Live and runs `npm run smoke:latex -- --require-pdf`.
+- [ ] Integrity table RULE-033-related rows and `IMPLEMENTATION_STATUS.md` “LaTeX compilation”
+      row → **Implemented** (source + PDF when a toolchain is present).
+
+**Acceptance.**
+
+1. With `LATEX_BINARY=/usr/bin/pdflatex`, a synthetic run produces `manuscript.pdf`, the record
+   states `typeset: "pdf"` with the toolchain version, and the PDF opens.
+2. Without it, the same run writes `manuscript.tex` (downloadable, compiles by hand on the
+   reviewer's machine), `/manuscript.pdf` answers `503`, and stage 8 reports the blocker.
+3. A generated `.tex` containing a topic with `_` and `%` fails to be produced only if escaping
+   is broken — the escaping test suite is the guard.
+4. `git diff` after regenerating the same run twice shows no changes (determinism).
+
+**Risks.** TeX Live size in the image (mitigated: opt-in build arg, separate CI job); template
+fidelity (we ship a _credible_ AIAA-style layout, not a publisher-certified class — the record
+says which template was used and the note says it must be checked against the journal's current
+guidelines).
+
+**Size.** 4–6 days (excluding G3).
+
+---
+
+## 7. C — DOI re-verification for a stored manuscript
+
+**Why.** A verification is a fact with a timestamp. Today it is only recorded implicitly at
+generation time, so a manuscript stores “doi:…” with no evidence of when or where it resolved.
+RULE-002 is enforced once and never again.
+
+**Design — never mutate, always append.**
+
+- `services/api/src/references/recheck.ts`:
+  `recheckRun(runId, { literature, registry, clock })` reads the manuscript record, takes
+  `ReferenceRecord[]` (P1), resolves each DOI through `LiteratureService.verifyDoi` with the
+  expected title, and appends **one** `doi-recheck` evidence record:
+  `{ runId, checkedAt, offline, results: [{ doi, status, reason?, provider?, titleSimilarity?,
+previousVerifiedAt }], summary: { fresh, stale, broken, mismatch, unverified } }`.
+- Statuses: `fresh` (verified now and previously), `stale` (last verified older than
+  `AEROSCRIBE_DOI_MAX_AGE_DAYS`, default 30 — reported, not a failure), `broken` (no longer
+  resolves), `mismatch` (resolves to a different title, similarity < 0.6), `unverified`
+  (offline mode — never reported as verified).
+- Endpoints:
+  - `POST /api/v1/runs/:id/references/recheck` → `{ record, summary }` (201).
+  - `GET /api/v1/runs/:id/references` → `{ references, checkedAt, rechecks, status }`, joining
+    P1 records with the latest re-check.
+- Stage 8 reads the latest re-check: any `broken`/`mismatch` adds a blocker; a missing re-check
+  adds the blocker “references have not been re-verified in this run” only when the manuscript is
+  older than the max age — otherwise the generation-time verification stands and is labelled
+  `verifiedAt`.
+- CLI `npm run recheck -- --run <id> | --all`, so a cron on the host from E can drive it without
+  a queue. Documented as the only supported scheduling mechanism (no hidden background timers).
+
+**Tasks.**
+
+- [ ] `recheck.ts` + pure `classifyVerification()` with unit tests for all five statuses.
+- [ ] `doi-recheck` kind: registry, orchestrator method, route, dashboard mapper, BACKEND § 4/§ 8.
+- [ ] Manuscript record gains `references[].verified.verifiedAt` (from P1) and the run's
+      `references` route surfaces it.
+- [ ] Stage 8 blockers for `broken`/`mismatch`/stale; tests for each.
+- [ ] Offline mode returns `unverified` with the reason, never `fresh`; test asserts the word
+      “verified” cannot appear for an offline recheck.
+- [ ] CLI + docs (`docs/BACKEND.md` § 6, `docs/OPERATIONS.md` cron example).
+- [ ] Integrity table RULE-002 → “API (generation-time + on-demand re-check; no scheduler)”.
+
+**Acceptance.** With a fake provider that resolves a DOI on the first call and 404s afterwards:
+generate a run, re-check, `GET .../references` shows `broken`, the registry verifies, the
+manuscript payload is byte-identical to before the re-check, and exactly one new record exists.
+
+**Size.** 2–3 days (after P1).
+
+---
+
+## 8. D — Postgres, Redis, S3
+
+**Why.** Three separate limitations, three separate fixes, one shared prerequisite (ports).
+
+| Limitation                                         | Today                                                | Fixed by                                       |
+| -------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------- |
+| One writer (registry file, `store/registry.ts:88`) | two API instances corrupt the chain                  | **D2** Postgres + unique `seq` + advisory lock |
+| Per-process rate limit and in-flight guard         | double budget and double stage runs across instances | **D3** Redis                                   |
+| Artefacts on local disk (`cfd/su2.ts:184`)         | lost on redeploy; not shareable                      | **D4** S3                                      |
+
+**D1 — ports (0.5–1 d).** `services/api/src/store/ports.ts` with `RunStore`, `EvidenceStore`,
+`AuditStore`, `BlobStore` interfaces. Existing classes implement them unchanged; `Orchestrator`
+and `createApp` depend on the interfaces. No behaviour change, all tests untouched. This is the
+PR that makes D2–D4 reviewable.
+
+**D2 — Postgres (4–5 d).**
+
+```
+runs(id text primary key, doc jsonb not null, created_at timestamptz, updated_at timestamptz,
+     owner_sub text null)
+run_options(run_id text primary key references runs(id), doc jsonb not null)
+evidence(seq bigint primary key, id uuid not null unique, kind text not null,
+         run_id text null, stage_id int null, label text, payload jsonb not null,
+         payload_hash text not null, prev_hash text not null, hash text not null,
+         created_at timestamptz not null default now())
+audit(id bigserial primary key, at timestamptz not null, action text not null,
+      run_id text null, actor text not null, detail jsonb)
+schema_migrations(version text primary key, applied_at timestamptz not null)
+```
+
+- Append is a transaction: `SELECT pg_advisory_xact_lock(hashtext('aeroscribe.evidence'))`, read
+  head hash, insert with `seq = head + 1` and the computed `hash`. The lock is what replaces the
+  in-process queue; the unique `seq` is the backstop.
+- Append-only is enforced **in the database**, not by convention:
+  `CREATE TRIGGER evidence_append_only BEFORE UPDATE OR DELETE ON evidence FOR EACH ROW EXECUTE
+FUNCTION raise_immutable()`; the application role gets `INSERT`/`SELECT` only.
+- `verify()` walks `seq` ascending and recomputes; same semantics, same result shape, so the
+  route and tests do not change.
+- Migration runner: `npm run db:migrate` (`services/api/src/store/postgres/migrations/*.sql`,
+  applied in order, transactional, recorded). `npm run db:verify` re-verifies the chain from
+  outside the app — the operations tool of last resort.
+- Import: `npm run db:import -- <dataDir>` reads existing NDJSON/JSON and inserts it **verbatim**
+  (same `seq`, `prev_hash`, `hash`), then asserts the chain still verifies. A migration that
+  changes a digest is a failed migration.
+- Selection: `AEROSCRIBE_STORE=filesystem|postgres`, default `filesystem`. `postgres` without a
+  URL fails at boot with one sentence; an unreachable database fails `/health` with
+  `store: "postgres (unreachable)"` and refuses writes — no silent fall back to disk.
+
+**D3 — Redis (1–1.5 d).** `AEROSCRIBE_REDIS_URL` selects `RedisRateLimiter` (`INCR` + `EXPIRE`,
+same `check()` shape) and `RedisRunLock` (`SET NX PX` + heartbeat + Lua compare-and-delete) for
+the in-flight guard. Unset ⇒ current in-process behaviour, reported as such by `/health`
+(`rateLimit: "in-process" | "redis"`). This also fixes the documented caveat that two instances
+would run one stage twice.
+
+**D4 — S3 (2 d).** `AEROSCRIBE_S3_BUCKET`, `AEROSCRIBE_S3_ENDPOINT` (MinIO), `AEROSCRIBE_S3_REGION`;
+credentials from the standard `AWS_*` chain. Keys are content-addressed (`sha256/<hex>`), so a
+re-upload is a no-op and a mismatch is detectable. `cfd-run` artefacts gain `uri`; new endpoint
+`GET /api/v1/evidence/:seq/artefacts/:name` streams the object **after** re-hashing it and
+answers `409` on mismatch. Local disk remains the default; when S3 is configured, the working
+copy is deleted after upload.
+
+**Tasks.**
+
+- [ ] D1 ports + adapter names (`FilesystemRunStore`, …) and a `store` factory.
+- [ ] D2 schema, migrations, three stores, `db:migrate`, `db:verify`, `db:import`, trigger.
+- [ ] D3 Redis limiter and run lock; `/health` reports both.
+- [ ] D4 blob store, artefact endpoint, artefact `uri` in records.
+- [ ] **Contract suite**: `services/api/test/store-contract.test.ts` runs the same scenarios
+      against every configured backend (create/get/list, append/verify, tamper detection,
+      concurrent appends from two clients, audit read). CI runs it twice: filesystem always,
+      Postgres/Redis/MinIO via service containers.
+- [ ] `.github/workflows/ci.yml`: `services: postgres:16, redis:7, minio` in the API job;
+      `AEROSCRIBE_TEST_*` env. Tests skip with a loud `describe.skip` reason when the variable is
+      absent locally.
+- [ ] `compose.yaml` (shared with E) so the same stack runs on a laptop.
+- [ ] Docs: `docs/BACKEND.md` § 9 rewritten (store matrix, backup, migration), new
+      `docs/OPERATIONS.md` (migrate, verify, restore, rotate keys, recheck cron), integrity table
+      RULE-011/043/044 rows re-worded, `IMPLEMENTATION_STATUS` persistence row.
+
+**Acceptance.**
+
+1. Same test suite green on filesystem and Postgres; two processes appending 50 records each
+   produce a chain that `db:verify` accepts.
+2. `UPDATE evidence SET payload = …` fails at the database with the trigger's message.
+3. `AEROSCRIBE_STORE=postgres` with the database stopped: `/health` says unreachable, writes
+   return `503`, and **no** file is created on disk.
+4. Two API instances behind one Redis enforce a combined 60 req/min, and a second `advance` on
+   the same run from the _other_ instance is rejected.
+5. An artefact uploaded to MinIO round-trips through the new endpoint with a matching digest; a
+   byte flipped in MinIO yields `409`.
+
+**Risks.** Dual-store support doubles the surface for a while (mitigated by the contract suite,
+which is written first, D1); Postgres advisory locks are a bottleneck under very high write rates
+— irrelevant at this scale, stated in the docs; `pg`/`ioredis`/`@aws-sdk/client-s3` are three new
+runtime dependencies (see §12).
+
+**Rollback.** `AEROSCRIBE_STORE=filesystem` and empty Redis/S3 settings restore today's behaviour;
+`db:import` is one-way, so the rollback procedure is “keep writing files until the import is
+verified”, documented in `OPERATIONS.md`.
+
+**Size.** 8–10 days total (D1 1, D2 5, D3 1.5, D4 2).
+
+---
+
+## 9. E — Publish the image, add a staging environment
+
+**Why.** RULE-063 says no auto-deploy to production. That rule cannot be satisfied by a
+repository that deploys nothing: the current state is “no production at all”, which is honest but
+not the property the rule describes.
+
+**Design.**
+
+- **Publishing.** `.github/workflows/release-api.yml` on tags `v*` and `workflow_dispatch`:
+  `docker/build-push-action` → `ghcr.io/<owner>/aeroscribe-api` with semver, `sha-…` and `latest`
+  tags; `platforms: linux/amd64,linux/arm64`; `provenance: true`, `sbom: true`;
+  `permissions: packages: write`. The image already installs production dependencies only.
+- **Environment split.** Two GitHub Environments: `staging` (self-service) and `production`
+  (required reviewers, restricted branches). The workflow that targets `production` is
+  dispatch-only and protected by the environment rule — the rule lives in repository settings,
+  and `docs/DEPLOYMENT.md` records exactly which toggles to set.
+- **Where it runs.** The repository cannot create an account, so the plan offers a default and
+  two alternatives rather than pretending:
+  1. **Default — self-hosted compose over SSH** (works with any VPS; uses `compose.yaml`, TLS by
+     Caddy, no cloud account needed beyond the host).
+  2. Render / Fly.io — one service + managed Postgres/Redis; fewer moving parts, needs an account
+     and their secrets.
+  3. Kubernetes — out of scope; listed so it is a decision, not an omission.
+- **`compose.yaml`** (also the local dev stack): `api` (image or build), `postgres`, `redis`,
+  `minio`, `caddy` (TLS + reverse proxy serving the dashboard build at `/` and `/api` to the API).
+  Same-origin removes CORS entirely and makes the auth cookie story in F first-party.
+- **Post-deploy smoke.** `scripts/smoke-deploy.sh <base-url>`: `/health` reports the expected auth
+  and solver state; create a run with `solver: "synthetic"`; walk all eight gates; assert stage 8
+  is `blocked` **and** names the synthetic solver; assert `/api/v1/evidence/verify` is `valid`.
+  A deploy that breaks a label fails the deploy.
+
+**Tasks.**
+
+- [ ] `release-api.yml` with GHCR publish, multi-arch, SBOM, provenance; `AEROSCRIBE_VERSION` and
+      `GIT_SHA` build args surfaced in `/health`.
+- [ ] `compose.yaml` + `docker/Caddyfile` + `.env.example` for the stack; `docker compose up`
+      gives a working live dashboard against the real API.
+- [ ] `deploy-staging.yml` (dispatch, `environment: staging`) — SSH-to-compose by default,
+      documented alternatives.
+- [ ] `deploy-production.yml` (dispatch, `environment: production`, required reviewers) — never
+      triggered by a push.
+- [ ] `scripts/smoke-deploy.sh` + run it in the staging workflow; failure blocks promotion.
+- [ ] `docs/DEPLOYMENT.md`: topology, secret list, TLS, backup/restore, rollback to a previous
+      tag, environment-protection setup steps, and the explicit sentence that GitHub Pages hosts
+      the **fixture-only** dashboard.
+- [ ] Integrity table RULE-063 → **Process** (environment protection) instead of N/A.
+
+**Acceptance.** A tag `v0.3.0` publishes a multi-arch image with an SBOM; `docker compose up`
+brings the stack to a state where the dashboard lists live runs; a staging deploy is followed by a
+green smoke that proves the stage-8 blocker; a production deploy cannot start without a reviewer.
+
+**Size.** 3–5 days, plus whatever the chosen host costs.
+
+---
+
+## 10. F — Accounts
+
+**Why.** Two problems, not one: there is no way to tell users apart, **and** the audit trail
+records whatever `actor` string the caller typed (`http/app.ts:160`). The second is an integrity
+defect hiding behind the first.
+
+**Design.**
+
+- `AEROSCRIBE_AUTH=none|token|oidc` (default `none`, reported in `/health`). `token` keeps
+  today's behaviour for scripts; `oidc` is the real mode.
+- OIDC Authorization Code + PKCE. The API only **validates** tokens: `OIDC_ISSUER`,
+  `OIDC_AUDIENCE`, JWKS fetched and cached, `jose` for verification, clock skew 60 s. No
+  passwords, no sessions table, no password reset surface to get wrong.
+- Identity: `users(sub text primary key, email text, name text, role text, created_at)` with
+  roles `researcher | reviewer | admin`, assigned by an admin (`AEROSCRIBE_ADMIN_SUBS`), never
+  self-declared. `AEROSCRIBE_AUTH=oidc` requires the Postgres store (D2).
+- Authorization: runs gain `owner_sub`. Read/advance/approve allowed for the owner; `reviewer` may
+  read and approve gates on any run; `admin` may do everything. `403` with the role it required.
+- **Audit integrity:** `actor` becomes `user:<sub>` derived from the verified token — never from
+  the request body. The body's `actor` field is ignored in `oidc` mode and documented as
+  “display name only in `none`/`token` mode”. A test asserts that a body claiming
+  `actor: "someone-else"` cannot change the recorded actor.
+- Rate limiting keyed by subject when authenticated.
+- Dashboard: `apps/dashboard/src/auth/` — PKCE redirect, access token in memory only, refresh
+  through an `HttpOnly`, `SameSite=Lax` cookie issued by a small `/auth/refresh` endpoint;
+  first-party because E serves the dashboard and the API from one origin. Login screen, 401 →
+  re-login, role-aware gate buttons (“reviewer approval”).
+
+**Tasks.**
+
+- [ ] `services/api/src/auth/{oidc,token,principal}.ts`, middleware replacing the single-key
+      check, `GET /api/v1/me`.
+- [ ] Users table + migration; `runs.owner_sub`; authorization checks in the orchestrator with a
+      test matrix (owner / other / reviewer / admin × read / advance / approve).
+- [ ] Audit actor derived from the principal; test for spoof rejection.
+- [ ] `/auth/refresh` route + cookie handling; CORS `credentials: true` only in that mode.
+- [ ] Dashboard auth module, login/logout, role-aware UI, token never in `localStorage`.
+- [ ] Tests: local JWKS fixture (generated keypair, no network), expired token, wrong audience,
+      wrong issuer, unknown `sub` ⇒ `403`.
+- [ ] Docs: `docs/BACKEND.md` § 8/§ 9, `SECURITY.md` threat model, `IMPLEMENTATION_STATUS`
+      Authentication row → **Implemented (OIDC)** with the token mode noted as a script fallback.
+- [ ] Integrity table RULE-004/040 rows mention the principal-derived actor.
+
+**Acceptance.** Two accounts: A creates a run and approves GATE-0; B gets `403` on approve and
+`200` on read only if reviewer. The audit entry for A's approval says `user:<A-sub>`, and a request
+that claims `actor: "B"` still records A. Expired token ⇒ `401`, dashboard redirects to login.
+
+**Size.** 5–7 days (after D2 and A).
+
+---
+
+## 11. G — RULE-030, RULE-032, RULE-033
+
+These are three separate rules; the plan keeps them separate even though they ship together.
+
+### G1 — Hierarchical manuscript generation (RULE-030)
+
+**Design.** The writer stays deterministic; the hierarchy becomes a typed artefact rather than a
+claim about prompting.
+
+```ts
+export interface ManuscriptPlan {
+  stage: 'plan';
+  schemaVersion: 2;
+  sections: Array<{
+    heading: string;
+    purpose: string;
+    paragraphs: Array<{
+      id: string; // `p-<section>-<n>`
+      intent: string;
+      evidenceRefs: string[]; // record ids this paragraph may cite
+      numberKeys: string[]; // keys of ManuscriptPayload.numbers it may print
+      targetWords: number;
+    }>;
+  }>;
+}
+```
+
+- Stage 5 writes `manuscript-plan` (new kind, writer: `paperSynthesis`) **before** rendering, then
+  renders only from the plan: every paragraph's text is produced from its `intent` and its
+  declared numbers. Plan and text cannot disagree because text is a projection of the plan.
+- Stage 6 (review) checks the projection: every planned paragraph id appears in the manuscript,
+  every number printed has a `numberKeys` entry, and no paragraph exceeds its `targetWords` by
+  more than 20 %. Failures are review findings, and any `major` finding makes the verdict
+  `revise` — which already blocks stage 8 via the review-verdict compliance issue.
+- `ManuscriptPayload` gains `planRef: { seq: number; hash: string }`, so the text is bound to the
+  plan that produced it.
+
+**Tasks.**
+
+- [ ] `services/api/src/agents/plan.ts`: `buildPlan(records, journal)` — deterministic, no
+      randomness, ordered by `journal.sectionOrder`.
+- [ ] Stage 5 renders from the plan; `manuscript-plan` kind wired end to end (registry, mapper,
+      docs, contract test).
+- [ ] Stage 6 projection checks + tests (missing paragraph, undeclared number, overlong
+      paragraph).
+- [ ] Docs: `docs/BACKEND.md` § 3 stage 5/6; integrity table RULE-030 → **API (projection
+      checked)**; note that this is _not_ an LLM hierarchy.
+
+**Size.** 2 d.
+
+### G2 — AIAA citation formatting (RULE-032)
+
+**Design.** `services/api/src/agents/citation.ts`:
+
+```ts
+export interface FormattedCitation {
+  text: string;
+  style: 'aiaa-journal' | 'aiaa-book' | 'aiaa-conference' | 'incomplete';
+  missing: string[]; // fields the record does not carry
+}
+export function formatAiaa(reference: ReferenceRecord): FormattedCitation;
+export function parseAiaa(text: string): ParsedCitation | null; // for the round-trip check
+```
+
+- Journal: `[N] A. Author and B. Author, "Title," Journal, Vol. V, No. N, YYYY, pp. P–P. doi:…`
+- Conference: `[N] A. Author, "Title," Proceedings Name, Publisher, YYYY, pp. P–P.`
+- Book: `[N] A. Author, Title, Publisher, City, YYYY, pp. P–P.`
+- Authors beyond three become `et al.`; missing fields are **omitted**, never invented, and listed
+  in `missing`.
+- `CitationValidator` in stage 5: format each reference, parse it back, and fail if the round-trip
+  loses a field that was present. Compliance (stage 7) gains a `citation-format` issue: `major`
+  when the formatter returns `incomplete` for a field the journal requires, `minor` otherwise.
+- `agents/writing.ts:formatCitation` delegates to `formatAiaa`; the existing `[n]` prefix check in
+  `review.ts:213` becomes a secondary assertion.
+
+**Tasks.**
+
+- [ ] `citation.ts` + table-driven tests for the three forms, `et al.`, missing volume/pages,
+      Unicode names, a DOI with a trailing slash.
+- [ ] Round-trip validator + stage 5 wiring.
+- [ ] Compliance rule + tests; `citation` string in the manuscript payload produced by the
+      formatter.
+- [ ] Integrity table RULE-032 → **API**; `IMPLEMENTATION_STATUS` manuscript row notes the style.
+
+**Size.** 1.5 d.
+
+### G3 — pgfplots figures (RULE-033)
+
+**Design.** `services/api/src/latex/figures.ts` — pure functions from GCI data to `.tex` + `.dat`:
+
+- One figure per CFD series: `figure-gci.tex` with two panels (`value vs cells`, `GCI vs cells`),
+  `\addplot table {figure-gci.dat}`, axis labels carrying SI units from the payload, a legend when
+  more than one series exists, and a caption that names the run and the artefact SHA-256.
+- Header comment: `% provenance: run <id>, evidence seq <n>, sha256 <hash>`.
+- No `\includegraphics`, no binary assets: text in, text out, diffable in review.
+- Determinism: same evidence ⇒ byte-identical `.tex` and `.dat` (test hashes twice).
+- If the study is invalid, the figure is still rendered but its caption says so in one sentence
+  (“the grid study did not reach the asymptotic range; the interval is not reported”).
+
+**Tasks.**
+
+- [ ] `figures.ts` + tests on generated source (axis labels, units, legend presence/absence,
+      caption hash, determinism, invalid-study caption).
+- [ ] Wired into `render.ts` (B) so figures are included in the manuscript.
+- [ ] Integrity table RULE-033 → **API** (source generated and checked; compilation depends on the
+      toolchain from B).
+
+**Size.** 1.5 d.
+
+---
+
+## 12. Milestones, exit criteria
+
+| Milestone                    | Scope                        | Exit criterion (demonstrable)                                                                                                                             | Days |
+| ---------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| **M0 Foundations**           | P1, payload versioning, H, I | A run's records carry structured references and `schemaVersion`; logs are JSON with `run_id`; ADR merged; full gate green.                                | 4–5  |
+| **M1 Live dashboard**        | A                            | A stranger runs two terminals and drives a real run from the UI; API down ⇒ error, not fixtures; no secret in the bundle.                                 | 6–7  |
+| **M2 Typeset manuscript**    | B, G3                        | Synthetic run ⇒ real `.tex` with pgfplots figures; with a TeX binary, a PDF; without, a named blocker and a `503` on the PDF route.                       | 6–8  |
+| **M3 Reference integrity**   | C, G1, G2                    | Re-check flips a DOI to `broken`, the manuscript is unchanged, stage 8 blocks; citations are AIAA-formatted; plan ↔ text projection verified.             | 6–8  |
+| **M4 Service-grade storage** | D                            | Contract suite green on filesystem **and** Postgres; two instances share Redis limits and locks; artefacts round-trip through S3 with tamper detection.   | 8–10 |
+| **M5 Deployable**            | E                            | Tagged multi-arch image with SBOM; `docker compose up` serves a live dashboard; staging smoke proves the stage-8 blocker; production requires a reviewer. | 3–5  |
+| **M6 Accounts**              | F                            | Two users, real 403s, audit actor derived from the token, spoof attempt recorded as the real user.                                                        | 5–7  |
+
+**Indicative PR sequence** (each row is one reviewable PR; dependencies are the column before):
+
+| #   | PR                                                                             | Depends on |
+| --- | ------------------------------------------------------------------------------ | ---------- |
+| 1   | `feat(api): version evidence payloads and structure references` (P1)           | —          |
+| 2   | `feat(api): structured JSON logs with request and run correlation` (H)         | —          |
+| 3   | `docs(adr): why the writer is deterministic, and what RULE-022 would need` (I) | —          |
+| 4   | `feat(contract): share wire types between the API and the dashboard`           | 1          |
+| 5   | `feat(dashboard): read runs, gates and evidence from the API`                  | 4          |
+| 6   | `feat(dashboard): migrate every view to the run source`                        | 5          |
+| 7   | `feat(api): render LaTeX and compile a PDF when a toolchain exists` (B)        | 1          |
+| 8   | `feat(api): pgfplots figures from grid-study evidence` (G3)                    | 7          |
+| 9   | `feat(api): re-check manuscript DOIs and record the result` (C)                | 1          |
+| 10  | `feat(api): manuscript plan and AIAA citations` (G1+G2)                        | 1          |
+| 11  | `refactor(api): storage ports and a store factory` (D1)                        | —          |
+| 12  | `feat(api): Postgres store with an append-only ledger` (D2)                    | 11         |
+| 13  | `feat(api): Redis rate limit and run lock` (D3)                                | 11         |
+| 14  | `feat(api): S3 artefact store and download endpoint` (D4)                      | 11         |
+| 15  | `build: publish the API image and add a compose stack` (E1)                    | 12         |
+| 16  | `feat(auth): OIDC accounts with token-derived audit actors` (F)                | 12, 5      |
+
+PRs 1–3 can go in parallel; 4–6 are one thread; 7–8 another; 9–10 a third; 11–14 a fourth.
+
+---
+
+## 13. Test strategy by layer
+
+| Layer          | Where                                                                         | What it must prove                                                               |
+| -------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Unit           | colocated `*.test.ts`                                                         | Pure functions: mappers, escaping, citation formatting, figures, plan projection |
+| HTTP           | `services/api/test/http*.test.ts`                                             | Status codes, error shapes, auth matrix, body limits, new routes                 |
+| Contract       | `services/api/test/contract.test.ts` → `apps/dashboard/src/api/__fixtures__/` | Recorded responses keep matching the server; dashboard mappers read them         |
+| Store contract | `services/api/test/store-contract.test.ts`                                    | Same semantics on filesystem and Postgres; two clients append safely             |
+| Integration    | CI service containers (Postgres, Redis, MinIO)                                | Real database trigger, shared limiter, S3 round-trip                             |
+| Toolchain      | fake binaries (`su2-http.test.ts` pattern) + one real-toolchain CI job        | Spawn/timeout/error paths without a solver or TeX on the developer's machine     |
+| Documentation  | `services/api/test/docs.test.ts`                                              | Routes, env vars, stages, workspace layout and `.env.example` match reality      |
+| Bundle         | `scripts/check-bundle-secrets.mjs`                                            | No secret ships to the browser                                                   |
+| Deploy         | `scripts/smoke-deploy.sh`                                                     | A deployed instance still refuses to package a synthetic run                     |
+
+Every workstream above adds tests in the first three rows; only D adds the fourth and fifth.
+
+---
+
+## 14. Dependency policy
+
+Adding a dependency needs a sentence in the PR saying why 50 lines of our own are worse. The plan
+needs exactly six:
+
+| Package                                                  | Used by | Why not our own                                      |
+| -------------------------------------------------------- | ------- | ---------------------------------------------------- |
+| `pg`                                                     | D2      | protocol + pooling + types; not a thing to hand-roll |
+| `ioredis`                                                | D3      | cluster/retry semantics, `SET NX PX`, Lua            |
+| `@aws-sdk/client-s3`                                     | D4      | SigV4 signing and multipart are error-prone          |
+| `jose`                                                   | F       | JWT/JWKS verification is security-critical           |
+| `docker/build-push-action`, `docker/setup-buildx-action` | E       | CI only                                              |
+| `actions/*` already in use                               | E       | CI only                                              |
+
+Explicitly rejected: an ORM (SQL is ~200 lines here and the schema is three tables), a state
+library (the source interface is smaller than the config), React Query (one `useResource` hook,
+no cache semantics we need), a schema validator (hand-written `assertShape` helpers plus the
+contract fixtures catch what matters), any model SDK (ADR-0001).
+
+---
+
+## 15. Risk register
+
+| Risk                                                      | Likelihood   | Mitigation                                                                                                                                                              |
+| --------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dashboard/view-model mismatch produces invented UI values | Medium       | The field table in §5 is a decision list; mappers return `undefined` rather than a default; a test asserts every live cell is either from the payload or “not recorded” |
+| TeX Live bloats the image or breaks CI                    | Medium       | Opt-in build arg; separate CI job with a path filter; `smoke:latex` degrades to source-only                                                                             |
+| Postgres migration changes a hash                         | Low / severe | `db:import` preserves `seq`/`prev_hash`/`hash` and asserts `verify()` immediately; archive the NDJSON before importing                                                  |
+| Dual-store support doubles maintenance                    | Medium       | Ports land first, contract suite is written before the second adapter, filesystem stays the default                                                                     |
+| Accounts break scripts                                    | Medium       | `AEROSCRIBE_AUTH=token` retained; `/health` names the mode; smoke script passes a token                                                                                 |
+| Staging host choice stalls the milestone                  | Medium       | Compose + SSH is the default and needs no vendor decision; the workflow is reusable for any Docker host                                                                 |
+| Coverage thresholds ratchet past what UI wiring can meet  | Low          | Thresholds are floors, not targets; new code is tested with the same rigour; any proposed decrease is a review item (§3)                                                |
+| Plan drifts from reality                                  | Medium       | This document is updated in the same PR as the code; `docs.test.ts` already enforces the other two docs                                                                 |
+
+---
+
+## 16. Non-goals (kept out on purpose)
+
+- Multi-tenant SaaS: billing, organisations, SSO per tenant, quotas.
+- Real-time collaboration or websockets; the dashboard refreshes, it does not stream.
+- An LLM prose generator. RULE-001 is enforceable because the writer is deterministic (ADR-0001).
+- Publisher submission APIs; the package ends at a downloadable, checksummed artefact.
+- Kubernetes, Terraform, or a service mesh.
+- Mobile apps, i18n, dark mode.
+
+---
+
+## 17. What the status documents will say when this lands
+
+Only after the acceptance criteria hold.
+
+| File / row                             | Today                                                    | After                                                                                                     |
+| -------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `IMPLEMENTATION_STATUS.md` → dashboard | Implemented, fixture data                                | Implemented; **live against the API** when `VITE_API_URL` is set, fixtures otherwise, labelled either way |
+| → LaTeX compilation                    | Not implemented                                          | Implemented: `.tex` + BibTeX always; PDF when `LATEX_BINARY` is set, otherwise a named stage-8 blocker    |
+| → Persistence                          | Implemented (server), single writer                      | Implemented: filesystem **or** Postgres; Redis for shared limits/locks; S3 for artefacts                  |
+| → Authentication                       | Partial: one bearer token                                | OIDC accounts + roles; token mode for scripts; audit actor from the verified subject                      |
+| → CI / deployment                      | Typecheck, lint, coverage, builds, image build           | … plus image publish (GHCR, multi-arch, SBOM) and a staging deploy gated by a post-deploy smoke           |
+| → CFD solver adapter                   | Real SU2 + synthetic                                     | unchanged — this plan does not touch the solver                                                           |
+| `specs/integrity-rules.md`             | RULE-002/030/032/033/043/053/063 partial, not met or N/A | Each moves to **API** or **Process** with the file that enforces it; RULE-022 stays N/A with an ADR link  |
+
+---
+
+## 18. Decisions needed before M1, M4, M5
+
+1. **Hosting for E.** Default is self-hosted compose over SSH (no vendor account). Alternative:
+   Render/Fly. Which?
+2. **Is multi-instance real?** If the answer is “one box for now”, D3 and D4 can be deferred
+   indefinitely and only D1+D2 are needed for F — say so and the plan saves ~3.5 days.
+3. **Accounts: OIDC against which provider?** GitHub OIDC (fits the repo) or a generic issuer?
+   The code is provider-agnostic, the smoke test is not.
+4. **Pages dashboard.** Keep the published dashboard on fixtures (recommended: it cannot hold a
+   token, and a public API does not exist yet), or point the Pages build at a public API once E
+   lands?

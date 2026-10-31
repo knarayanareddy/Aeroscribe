@@ -137,6 +137,8 @@ the API image and waits for `/health` inside it.
 - [`specs/pipeline.md`](specs/pipeline.md) — nine stages, eleven specified gate checkpoints, reducer semantics
 - [`specs/integrity-rules.md`](specs/integrity-rules.md) — the non-negotiable rules and how much of each is enforced today
 - [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) — the honest inventory
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — the plan for what is still missing: workstreams, milestones,
+  acceptance criteria, risks and the decisions that need an owner
 
 ## Contributing
 
