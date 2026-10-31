@@ -43,8 +43,9 @@ export const evidenceGeneration: StageHandler = async (context): Promise<StageOu
     {
       quantity: options.quantity,
       caseDescription: options.caseDescription,
+      // Solver settings (Mach, angle of attack, iterations) belong in the SU2
+      // config file the operator points at; the adapter does not invent them.
       meshes: options.meshes,
-      su2: options.meshes ? { iterations: 2_000 } : undefined,
     },
     { solver: options.solver },
   );

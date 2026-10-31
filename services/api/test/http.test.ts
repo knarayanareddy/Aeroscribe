@@ -204,6 +204,28 @@ describe('runs', () => {
     expect((await badJson.json()).error.message).toMatch(/not valid JSON/i);
   });
 
+  it('rejects a topic that is too long to store in every artefact', async () => {
+    const app = makeApp();
+    const response = await post(app, '/api/v1/runs', { topic: 'x'.repeat(301) });
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.message).toMatch(/300 characters/);
+  });
+
+  it('refuses a request body larger than a megabyte', async () => {
+    const app = makeApp();
+    const oversized = JSON.stringify({ topic: 'drag', padding: 'x'.repeat(1_100_000) });
+
+    const response = await app.request('/api/v1/runs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: oversized,
+    });
+
+    expect(response.status).toBe(413);
+    expect((await response.json()).error.code).toBe('payload_too_large');
+  });
+
   it('404s for an unknown run and for an unknown route', async () => {
     const app = makeApp();
 

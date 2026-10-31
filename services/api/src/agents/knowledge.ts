@@ -1,4 +1,4 @@
-import { hashPayload } from '../lib/canonical';
+import { canonicalJson, sha256 } from '../lib/canonical';
 import type { StageHandler, StageOutcome } from './types';
 import type { ManuscriptPayload } from './writing';
 import type { CompliancePayload, ReviewPayload } from './review';
@@ -89,11 +89,16 @@ export const knowledgeAndSubmission: StageHandler = async (context): Promise<Sta
   if (compliance && !compliance.compliant) blockers.push('journal compliance has blocking issues');
   if (manuscript.synthetic) blockers.push('the results come from the synthetic solver');
 
-  const files = records.map((record) => ({
-    name: `${record.kind}-${record.seq}.json`,
-    sha256: hashPayload(record.payload),
-    bytes: null,
-  }));
+  // The artefact *is* the canonical JSON of the payload, so the manifest can
+  // state its checksum and its size without pretending a file was rendered.
+  const files = records.map((record) => {
+    const bytes = Buffer.byteLength(canonicalJson(record.payload), 'utf8');
+    return {
+      name: `${record.kind}-${record.seq}.json`,
+      sha256: sha256(canonicalJson(record.payload)),
+      bytes,
+    };
+  });
 
   const submission: SubmissionPayload = {
     stage: 'aerowiki-submission',

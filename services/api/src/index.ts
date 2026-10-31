@@ -14,6 +14,7 @@ import { AuditLog } from './store/audit';
 import { EvidenceRegistry } from './store/registry';
 import { RunRepository } from './store/runs';
 import { detectSu2 } from './config';
+import { createShutdown } from './lib/shutdown';
 
 /**
  * Process entry point.
@@ -68,18 +69,55 @@ export async function buildServer(env: NodeJS.ProcessEnv = process.env) {
 
 const isMain = process.argv[1]?.endsWith('index.ts') ?? false;
 
-if (isMain) {
-  const { app, config } = await buildServer();
+export interface StartServerOptions {
+  /** Injected in tests; the real default binds a TCP port. */
+  serve?: typeof serve;
+  log?: (message: string) => void;
+  /** Where the process exits to. Injected so tests do not kill the runner. */
+  exit?: (code: number) => void;
+}
 
-  serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => {
-    console.log(`[api] listening on http://${info.address}:${info.port}`);
-    console.log(
+/**
+ * Binds the port and installs the shutdown handlers.
+ *
+ * Separate from `buildServer` so a test can prove what production wiring does —
+ * which address it binds, what it prints, and that SIGTERM closes the listener —
+ * without opening a socket or signalling the test runner.
+ */
+export function startServer(
+  { app, config }: Awaited<ReturnType<typeof buildServer>>,
+  {
+    serve: serveFn = serve,
+    log = console.log,
+    exit = (code) => process.exit(code),
+  }: StartServerOptions = {},
+) {
+  const server = serveFn({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => {
+    log(`[api] listening on http://${info.address}:${info.port}`);
+    log(
       `[api] auth: ${config.apiKey ? 'API key required' : 'disabled (set AEROSCRIBE_API_KEY before exposing this)'}`,
     );
-    console.log(
+    log(
       `[api] literature: ${config.offline ? 'offline corpus' : 'live providers'} · data: ${config.dataDir}`,
     );
   });
+
+  // `docker stop` sends SIGTERM. Stop accepting requests and let the ones in
+  // flight finish their writes: a killed stage leaves a run that still says
+  // "running" and no evidence record for the work it had already done.
+  const shutdown = createShutdown({
+    close: (onClosed) => server.close(onClosed),
+    exit,
+    log: (message) => log(`[api] ${message}`),
+  });
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  process.once('SIGINT', () => shutdown('SIGINT'));
+
+  return { server, shutdown };
+}
+
+if (isMain) {
+  startServer(await buildServer());
 }
 
 export * from './orchestrator';

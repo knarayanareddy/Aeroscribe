@@ -79,6 +79,14 @@ export class Orchestrator {
   private readonly clock: () => Date;
   private readonly newRunId: () => string;
   private readonly optionsCache = new Map<string, RunOptions>();
+  /**
+   * Runs with a stage handler currently executing. A stage can take minutes
+   * (a SU2 study spawns one solver process per mesh), and `advance` is an HTTP
+   * endpoint: two clicks, or a retried request, would otherwise run the same
+   * stage twice and append its evidence twice. A stage that is merely *recorded*
+   * as running (after a crash) is not in this set and is resumed as before.
+   */
+  private readonly inFlight = new Set<string>();
 
   constructor(options: OrchestratorOptions) {
     this.options = options;
@@ -94,6 +102,11 @@ export class Orchestrator {
         'invalid_request',
         'Describe the research topic in at least 8 characters.',
       );
+    }
+    if (topic.length > 300) {
+      // The topic is copied into every artefact, the manuscript title and the
+      // audit trail; an unbounded string would be stored once per record.
+      throw new ApiError(400, 'invalid_request', 'Keep the research topic under 300 characters.');
     }
 
     const journal = request.journal?.trim() || 'AIAA Journal';
@@ -149,6 +162,31 @@ export class Orchestrator {
     const handler = STAGE_HANDLERS[stage.id];
     if (!handler) throw conflict(`No handler is registered for stage ${stage.id}.`);
 
+    if (this.inFlight.has(run.id)) {
+      throw conflict(
+        `A stage is already running for this run (stage ${run.currentStage}). Wait for it to finish before advancing again.`,
+      );
+    }
+    this.inFlight.add(run.id);
+    try {
+      return await this.runStage({ run, stage, handler, actor });
+    } finally {
+      this.inFlight.delete(run.id);
+    }
+  }
+
+  /** Executes one stage handler and records its outcome. Never called twice concurrently. */
+  private async runStage({
+    run,
+    stage,
+    handler,
+    actor,
+  }: {
+    run: PipelineRun;
+    stage: StageInfo;
+    handler: StageHandler;
+    actor: string;
+  }): Promise<AdvanceResult> {
     const stageOptions = this.optionsCache.get(run.id) ??
       (await this.options.runs.getOptions<RunOptions>(run.id)) ?? { ...DEFAULT_RUN_OPTIONS };
     const runningStage: StageInfo = {
