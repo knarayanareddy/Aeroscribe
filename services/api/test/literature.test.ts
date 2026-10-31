@@ -42,6 +42,37 @@ describe('Crossref mapping', () => {
     expect(mapCrossrefItem({})).toBeNull();
   });
 
+  it('maps the bibliographic fields a citation style needs', () => {
+    const paper = mapCrossrefItem({
+      DOI: '10.2514/1.J060000',
+      title: ['Detonation cell width in RDEs'],
+      'container-title': ['  AIAA Journal '],
+      volume: '62',
+      page: '1201-1215',
+      publisher: 'AIAA',
+    });
+
+    expect(paper).toMatchObject({
+      containerTitle: 'AIAA Journal',
+      volume: '62',
+      pages: '1201-1215',
+      publisher: 'AIAA',
+    });
+  });
+
+  it('normalises blank bibliographic fields to null instead of empty strings', () => {
+    const paper = mapCrossrefItem({
+      DOI: '10.2514/1.J060000',
+      title: ['Detonation cell width'],
+      volume: '   ',
+      page: '',
+    });
+
+    expect(paper!.volume).toBeNull();
+    expect(paper!.pages).toBeNull();
+    expect(paper!.containerTitle).toBeNull();
+  });
+
   it('flattens JATS and decodes entities', () => {
     expect(stripJats('<jats:p>a &amp; b</jats:p>')).toBe('a & b');
     expect(stripJats(undefined)).toBeNull();

@@ -5,30 +5,20 @@ import {
 } from '@aeroscribe/pipeline';
 import { buildPolicy, verifyClaims } from '../claims/verify';
 import { UnverifiableClaimError } from '../errors';
+import { readReferences, type ReferenceRecord } from '../literature';
 import type { StageHandler, StageOutcome } from './types';
 import type { FramingPayload, LiteraturePayload, NoveltyPayload } from './research';
 import type { CfdEvidencePayload } from './evidence';
 
-export interface ManuscriptSectionText {
-  heading: string;
-  body: string;
-}
+import type {
+  ManuscriptPayload,
+  ManuscriptReference,
+  ManuscriptSectionText,
+} from '@aeroscribe/contract';
 
-export interface ManuscriptPayload {
-  stage: 'paper-synthesis';
-  title: string;
-  journal: string;
-  journalId: string;
-  sections: ManuscriptSectionText[];
-  abstract: string;
-  wordCount: number;
-  referenceCount: number;
-  references: Array<{ index: number; citation: string; doi: string }>;
-  numbers: Record<string, number>;
-  generatedAt: string;
-  /** True when any number came from the synthetic solver. */
-  synthetic: boolean;
-}
+// The payload shape is the wire contract; re-exported so the stage catalogue
+// and the tests keep importing it from the agent that produces it.
+export type { ManuscriptPayload, ManuscriptReference, ManuscriptSectionText };
 
 /** Round to a fixed number of significant digits and return a real number. */
 export function quote(value: number, significantDigits = 4): number {
@@ -52,14 +42,20 @@ function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-function formatCitation(
-  index: number,
-  paper: { authors: string[]; year: number | null; title: string; doi: string | null },
-): string {
+/**
+ * Render a reference line.
+ *
+ * Every part of this string comes from the structured record. A field the
+ * record does not carry is printed as an explicit placeholder — `n.d.` for a
+ * year, `Untitled` for a missing title — never filled in from another field.
+ */
+export function formatCitation(index: number, reference: ReferenceRecord): string {
   const authors =
-    paper.authors.length > 0 ? paper.authors.slice(0, 3).join(', ') : 'Unknown authors';
-  const year = paper.year ?? 'n.d.';
-  return `[${index}] ${authors} (${year}). ${paper.title}. doi:${paper.doi ?? 'unresolved'}`;
+    reference.authors.length > 0 ? reference.authors.slice(0, 3).join(', ') : 'Unknown authors';
+  const year = reference.year ?? 'n.d.';
+  const title = reference.title ?? 'Untitled (title not recorded)';
+  const venue = reference.venue ? ` ${reference.venue}.` : '';
+  return `[${index}] ${authors} (${year}). ${title}.${venue} doi:${reference.doi ?? 'unresolved'}`;
 }
 
 /**
@@ -94,7 +90,9 @@ export const paperSynthesis: StageHandler = async (context): Promise<StageOutcom
 
   const journal: JournalTarget =
     findJournalTarget(framing?.journal ?? run.journal) ?? DEFAULT_JOURNAL_TARGET;
-  const references = literature?.references ?? [];
+  // `readReferences` accepts both payload versions: a manuscript re-rendered from
+  // an older run must not lose its bibliography or silently invent titles.
+  const references = readReferences(literature);
 
   const value = quote(cfd.value);
   const uncertainty = quote(cfd.uncertainty || 0, 3);
@@ -161,18 +159,25 @@ export const paperSynthesis: StageHandler = async (context): Promise<StageOutcom
     },
   ];
 
-  const referenceLines = references.map((reference, index) => ({
+  const referenceLines: ManuscriptReference[] = references.map((reference, index) => ({
     index: index + 1,
     citation: formatCitation(index + 1, reference),
     doi: reference.doi ?? '',
+    record: reference,
   }));
 
-  const fullText = [
+  // The verifier reads the prose, not the bibliography. A reference line is
+  // bibliographic metadata — a year, a volume, a page range — rendered from a
+  // DOI-verified record, and RULE-002 is what validates it. Treating `2024` in
+  // a citation as a quantitative claim would force the writer to declare other
+  // people's publication years as its own results.
+  const prose = [
     title,
     abstract,
     ...sections.map((section) => `${section.heading}\n${section.body}`),
-    ...referenceLines.map((line) => line.citation),
   ].join('\n\n');
+
+  const fullText = [prose, ...referenceLines.map((line) => line.citation)].join('\n\n');
 
   // Counts are derived from evidence by construction, and are declared to the
   // verifier so that "3 meshes" is never mistaken for a measurement.
@@ -183,7 +188,7 @@ export const paperSynthesis: StageHandler = async (context): Promise<StageOutcom
       { value: meshCount, source: 'cfd.gci.levels.length' },
     ],
   });
-  const report = verifyClaims(fullText, policy);
+  const report = verifyClaims(prose, policy);
   if (!report.ok) {
     throw new UnverifiableClaimError(
       report.unbacked.map((claim) => `${claim.token} (${claim.reason}) in: ${claim.context}`),
@@ -192,6 +197,7 @@ export const paperSynthesis: StageHandler = async (context): Promise<StageOutcom
 
   const payload: ManuscriptPayload = {
     stage: 'paper-synthesis',
+    schemaVersion: 2,
     title,
     journal: journal.name,
     journalId: journal.id,

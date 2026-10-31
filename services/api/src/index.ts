@@ -14,6 +14,7 @@ import { AuditLog } from './store/audit';
 import { EvidenceRegistry } from './store/registry';
 import { RunRepository } from './store/runs';
 import { detectSu2 } from './config';
+import { createLogger } from './lib/logger';
 import { createShutdown } from './lib/shutdown';
 
 /**
@@ -55,16 +56,25 @@ export async function buildServer(env: NodeJS.ProcessEnv = process.env) {
 
   const cfd = new CfdService({ su2, workDir: join(config.dataDir, 'cfd') });
 
-  const orchestrator = new Orchestrator({ runs, registry, audit, literature, cfd });
+  // The API key and the Semantic Scholar key are declared secret here, so a
+  // message that interpolates one is masked even under an innocent field name.
+  const logger = createLogger({
+    level: config.logLevel,
+    secrets: [config.apiKey, env.SEMANTIC_SCHOLAR_API_KEY ?? ''].filter(
+      (secret) => secret.length > 0,
+    ),
+  });
+
+  const orchestrator = new Orchestrator({ runs, registry, audit, literature, cfd, logger });
 
   const app = createApp({
     orchestrator,
     config,
     capabilities: () => describeCapabilities(config),
-    enableLogging: true,
+    logger,
   });
 
-  return { app, config, orchestrator };
+  return { app, config, orchestrator, logger };
 }
 
 const isMain = process.argv[1]?.endsWith('index.ts') ?? false;
@@ -85,20 +95,23 @@ export interface StartServerOptions {
  * without opening a socket or signalling the test runner.
  */
 export function startServer(
-  { app, config }: Awaited<ReturnType<typeof buildServer>>,
+  { app, config, logger }: Awaited<ReturnType<typeof buildServer>>,
   {
     serve: serveFn = serve,
-    log = console.log,
+    // RULE-053 bans `console.log` in production code: the lifecycle lines go
+    // through the same JSON logger as everything else, so `docker logs | jq`
+    // sees one stream rather than two formats interleaved.
+    log = (message: string) => logger.info('server.lifecycle', { message }),
     exit = (code) => process.exit(code),
   }: StartServerOptions = {},
 ) {
   const server = serveFn({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => {
-    log(`[api] listening on http://${info.address}:${info.port}`);
+    log(`listening on http://${info.address}:${info.port}`);
     log(
-      `[api] auth: ${config.apiKey ? 'API key required' : 'disabled (set AEROSCRIBE_API_KEY before exposing this)'}`,
+      `auth: ${config.apiKey ? 'API key required' : 'disabled (set AEROSCRIBE_API_KEY before exposing this)'}`,
     );
     log(
-      `[api] literature: ${config.offline ? 'offline corpus' : 'live providers'} · data: ${config.dataDir}`,
+      `literature: ${config.offline ? 'offline corpus' : 'live providers'} · data: ${config.dataDir}`,
     );
   });
 

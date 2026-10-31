@@ -8,6 +8,7 @@ import type {
 import { isValidDoi, normaliseDoi } from './types';
 import { searchOfflineCorpus } from './fixtures';
 
+export * from './reference';
 export * from './types';
 export { CrossrefClient, mapCrossrefItem, stripJats } from './crossref';
 export { ArxivClient, parseArxivFeed } from './arxiv';
@@ -193,7 +194,8 @@ export class LiteratureService {
           continue;
         }
 
-        if (expectedTitle && titleSimilarity(expectedTitle, paper.title) < 0.6) {
+        const similarity = expectedTitle ? titleSimilarity(expectedTitle, paper.title) : null;
+        if (similarity !== null && similarity < 0.6) {
           failures.push(`${provider.name}: title does not match the expected reference`);
           continue;
         }
@@ -205,6 +207,7 @@ export class LiteratureService {
           provider: provider.name,
           paper,
           checkedAt,
+          titleSimilarity: similarity,
         };
       } catch (error) {
         failures.push(`${provider.name}: ${(error as Error).message}`);

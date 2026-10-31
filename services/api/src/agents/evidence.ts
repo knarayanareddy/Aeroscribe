@@ -1,28 +1,9 @@
-import type { CfdStudyResult } from '../cfd';
+import type { CfdEvidencePayload, GciLevel } from '@aeroscribe/contract';
 import type { StageHandler, StageOutcome } from './types';
 
-export interface CfdEvidencePayload {
-  stage: 'evidence-generation';
-  quantity: string;
-  unit: string;
-  solver: CfdStudyResult['solver'];
-  value: number;
-  uncertainty: number;
-  method: string;
-  notes: string[];
-  disclaimer?: string;
-  gci: {
-    levels: Array<{ level: string; cells: number; value: number }>;
-    apparentOrder: number;
-    fineGciPercent: number | null;
-    mediumGciPercent: number | null;
-    asymptoticRatio: number | null;
-    valid: boolean;
-    reason?: string;
-  } | null;
-  artefacts: Array<{ name: string; sha256: string }>;
-  computedAt: string;
-}
+// The payload shape is the wire contract; re-exported so the stage catalogue
+// and the tests keep importing it from the agent that produces it.
+export type { CfdEvidencePayload, GciLevel };
 
 function finiteOrNull(value: number): number | null {
   return Number.isFinite(value) ? value : null;
@@ -53,6 +34,7 @@ export const evidenceGeneration: StageHandler = async (context): Promise<StageOu
   const study = result.study;
   const payload: CfdEvidencePayload = {
     stage: 'evidence-generation',
+    schemaVersion: 1,
     quantity: result.quantity,
     unit: result.unit,
     solver: result.solver,

@@ -30,7 +30,16 @@ describe('loadConfig', () => {
     expect(config.corsOrigins).toEqual(['http://localhost:5173', 'http://localhost:5174']);
     expect(config.upstreamTimeoutMs).toBe(15_000);
     expect(config.retryBaseDelayMs).toBe(2_000);
+    expect(config.logLevel).toBe('info');
+    expect(config.version).toBe('dev');
+    expect(config.commit).toBe('unknown');
     expect(isAbsolute(config.dataDir)).toBe(true);
+  });
+
+  it('reads LOG_LEVEL leniently and ignores an unknown one', () => {
+    expect(loadConfig({ LOG_LEVEL: ' warn ' }).logLevel).toBe('warn');
+    expect(loadConfig({ LOG_LEVEL: 'chatty' }).logLevel).toBe('info');
+    expect(loadConfig({ LOG_LEVEL: 'silent' }).logLevel).toBe('silent');
   });
 
   it('reads and trims every value it understands', () => {
@@ -45,6 +54,9 @@ describe('loadConfig', () => {
       AEROSCRIBE_CORS_ORIGINS: ' https://one.example , , https://two.example ',
       AEROSCRIBE_UPSTREAM_TIMEOUT_MS: '2500',
       AEROSCRIBE_RETRY_BASE_MS: '250',
+      LOG_LEVEL: 'debug',
+      AEROSCRIBE_VERSION: ' 1.2.3 ',
+      GIT_SHA: 'abc1234',
     });
 
     expect(config.host).toBe('0.0.0.0');
@@ -57,6 +69,9 @@ describe('loadConfig', () => {
     expect(config.corsOrigins).toEqual(['https://one.example', 'https://two.example']);
     expect(config.upstreamTimeoutMs).toBe(2500);
     expect(config.retryBaseDelayMs).toBe(250);
+    expect(config.logLevel).toBe('debug');
+    expect(config.version).toBe('1.2.3');
+    expect(config.commit).toBe('abc1234');
   });
 
   it('never invents a secret', () => {
@@ -167,6 +182,7 @@ describe('buildServer', () => {
     const { app, config, orchestrator } = await buildServer({
       AEROSCRIBE_DATA_DIR: directory,
       AEROSCRIBE_OFFLINE: 'true',
+      LOG_LEVEL: 'silent',
     });
 
     expect(config.dataDir).toBe(directory);
@@ -181,6 +197,7 @@ describe('buildServer', () => {
     const { app } = await buildServer({
       AEROSCRIBE_DATA_DIR: directory,
       AEROSCRIBE_OFFLINE: 'true',
+      LOG_LEVEL: 'silent',
     });
 
     const created = await app.request('/api/v1/runs', {
@@ -213,6 +230,7 @@ describe('buildServer', () => {
       AEROSCRIBE_DATA_DIR: directory,
       AEROSCRIBE_API_KEY: 'k3y',
       AEROSCRIBE_OFFLINE: 'true',
+      LOG_LEVEL: 'silent',
     });
 
     expect((await app.request('/api/v1/runs')).status).toBe(401);
@@ -231,6 +249,7 @@ describe('buildServer', () => {
     const { app } = await buildServer({
       AEROSCRIBE_DATA_DIR: directory,
       AEROSCRIBE_OFFLINE: 'true',
+      LOG_LEVEL: 'silent',
       SU2_CFD_BINARY: binary,
     });
 
@@ -249,6 +268,7 @@ describe('startServer (production wiring)', () => {
       HOST: '0.0.0.0',
       PORT: '8899',
       AEROSCRIBE_OFFLINE: 'true',
+      LOG_LEVEL: 'silent',
       AEROSCRIBE_API_KEY: 'secret',
     } as NodeJS.ProcessEnv);
 
@@ -288,7 +308,7 @@ describe('startServer (production wiring)', () => {
 
       onListen?.({ address: '0.0.0.0', port: 8899 });
       expect(bound).toEqual([{ hostname: '0.0.0.0', port: 8899 }]);
-      expect(logs[0]).toBe('[api] listening on http://0.0.0.0:8899');
+      expect(logs[0]).toBe('listening on http://0.0.0.0:8899');
       expect(logs[1]).toMatch(/API key required/);
       expect(logs[2]).toMatch(/offline corpus/);
 

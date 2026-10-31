@@ -61,6 +61,12 @@ export function parseArxivFeed(xml: string): Paper[] {
         url: canonical,
         abstract: firstTag(entry, 'summary'),
         citationCount: null,
+        // arXiv is a preprint server: it reports no container title, volume or
+        // pages, so those stay absent rather than being filled in.
+        containerTitle: null,
+        volume: null,
+        pages: null,
+        publisher: null,
       };
     })
     .filter((paper): paper is Paper => paper !== null);

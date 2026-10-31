@@ -1,8 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { logger } from 'hono/logger';
 import type { Capabilities, Config } from '../config';
 import { ApiError, badRequest, payloadTooLarge, unauthorized } from '../errors';
+import { silentLogger, type Logger } from '../lib/logger';
+import { bindRunId, runIdFromPath, runWithRequestScope, scopeFields } from '../lib/requestContext';
 import type { Orchestrator } from '../orchestrator';
 import { EVIDENCE_KINDS, type EvidenceKind } from '../store/registry';
 import { buildPolicy, verifyClaims } from '../claims/verify';
@@ -14,8 +16,11 @@ export interface AppDependencies {
   capabilities: () => Promise<Capabilities>;
   /** Exposed so tests can drive the limiter's clock. */
   rateLimiter?: RateLimiter;
-  /** Set to false in tests that hammer the API. */
-  enableLogging?: boolean;
+  /**
+   * Structured logger. `buildServer` always supplies one; the silent default
+   * exists so a test can build the app without describing how it logs.
+   */
+  logger?: Logger;
 }
 
 // Kinds the pipeline can actually produce, taken from the one list the store
@@ -49,15 +54,53 @@ export function createApp({
   config,
   capabilities,
   rateLimiter = new RateLimiter({ limit: 60, windowMs: 60_000 }),
-  enableLogging = false,
+  logger = silentLogger(),
 }: AppDependencies): Hono {
   const app = new Hono();
+
+  /**
+   * Every request gets an id, echoed as `x-request-id` and bound to the async
+   * scope, so a log line written eight frames deep still names its request.
+   * A run-scoped path also binds the run id.
+   */
+  app.use('*', async (context, next) => {
+    const inbound = context.req.header('x-request-id')?.trim();
+    const requestId = inbound && inbound.length > 0 ? inbound.slice(0, 128) : randomUUID();
+    const runId = runIdFromPath(context.req.path);
+    const startedAt = Date.now();
+
+    await runWithRequestScope({ requestId, ...(runId ? { runId } : {}) }, async () => {
+      // Re-bind inside the scope: a handler that moves between runs (a future
+      // cross-run report) would otherwise leak the path's run id.
+      if (runId) bindRunId(runId);
+      try {
+        await next();
+      } finally {
+        context.header('x-request-id', requestId);
+        logger.info('http.request', {
+          ...scopeFields(),
+          method: context.req.method,
+          path: context.req.path,
+          status: context.res.status,
+          duration_ms: Date.now() - startedAt,
+        });
+      }
+    });
+  });
 
   // Hono reports handler errors through `onError`, not by rethrowing through
   // middleware, so error mapping has to live here to keep status codes truthful
   // (a 404 that arrives as a 500 is a bug report waiting to happen).
   app.onError((error, context) => {
     if (error instanceof ApiError) {
+      if (error.status >= 500) {
+        logger.error('http.error', {
+          ...scopeFields(),
+          status: error.status,
+          code: error.code,
+          message: error.message,
+        });
+      }
       return context.json(
         { error: { code: error.code, message: error.message, details: error.details } },
         error.status as 400,
@@ -65,14 +108,19 @@ export function createApp({
     }
     // Log the real cause server-side, return a generic message: stack traces in
     // responses leak file paths and dependency versions.
-    console.error('[api] unhandled error', error);
+    logger.error('http.error', {
+      ...scopeFields(),
+      status: 500,
+      code: 'internal_error',
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      path: context.req.path,
+    });
     return context.json(
       { error: { code: 'internal_error', message: 'The request failed unexpectedly.' } },
       500,
     );
   });
-
-  if (enableLogging) app.use('*', logger());
 
   app.use(
     '/api/*',
@@ -92,6 +140,11 @@ export function createApp({
     const result = rateLimiter.check(key);
     context.header('x-ratelimit-remaining', String(result.remaining));
     if (!result.allowed) {
+      logger.warn('http.rate_limited', {
+        ...scopeFields(),
+        path: context.req.path,
+        reset_at: result.resetAt,
+      });
       return context.json(
         { error: { code: 'rate_limited', message: 'Too many requests; try again later.' } },
         429,
@@ -103,6 +156,7 @@ export function createApp({
   app.use('/api/*', async (context, next) => {
     if (config.apiKey === '') return next();
     if (bearerToken(context.req.header('authorization')) !== config.apiKey) {
+      logger.warn('http.unauthorised', { ...scopeFields(), path: context.req.path });
       throw unauthorized();
     }
     return next();
@@ -113,6 +167,9 @@ export function createApp({
     return context.json({
       status: 'ok',
       service: '@aeroscribe/api',
+      version: config.version,
+      commit: config.commit,
+      logLevel: config.logLevel,
       capabilities: caps,
       authRequired: caps.auth.required,
     });

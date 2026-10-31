@@ -14,6 +14,8 @@ import type { RunRepository } from './store/runs';
 import type { CfdService } from './cfd';
 import type { LiteratureService } from './literature';
 import { ApiError, conflict, notFound } from './errors';
+import { silentLogger, type Logger } from './lib/logger';
+import { scopeFields } from './lib/requestContext';
 import { DEFAULT_RUN_OPTIONS, type RunOptions, type StageHandler } from './agents/types';
 import {
   contributionFraming,
@@ -48,6 +50,7 @@ export interface OrchestratorOptions {
   clock?: () => Date;
   newRunId?: () => string;
   defaultOptions?: Partial<RunOptions>;
+  logger?: Logger;
 }
 
 export interface CreateRunRequest {
@@ -62,6 +65,27 @@ export interface AdvanceResult {
   stage: StageInfo;
   evidenceSeq: number | null;
   blocked?: { reason: string };
+}
+
+/**
+ * A stage payload must carry `schemaVersion` (a positive integer).
+ *
+ * Adding a field does not bump the version; renaming or changing the meaning of
+ * one does. The check lives here rather than in the registry because the
+ * registry is a generic append-only store, and because a handler that forgets
+ * to version its output is a defect in the handler.
+ */
+export function assertVersionedPayload(payload: unknown, stageId: number): void {
+  const version =
+    typeof payload === 'object' && payload !== null
+      ? (payload as { schemaVersion?: unknown }).schemaVersion
+      : undefined;
+
+  if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) {
+    throw new Error(
+      `Stage ${stageId} returned a payload without a positive integer schemaVersion; refusing to record it.`,
+    );
+  }
 }
 
 /**
@@ -88,10 +112,13 @@ export class Orchestrator {
    */
   private readonly inFlight = new Set<string>();
 
+  private readonly logger: Logger;
+
   constructor(options: OrchestratorOptions) {
     this.options = options;
     this.clock = options.clock ?? (() => new Date());
     this.newRunId = options.newRunId ?? (() => `run-${randomUUID()}`);
+    this.logger = options.logger ?? silentLogger();
   }
 
   async createRun(request: CreateRunRequest): Promise<PipelineRun> {
@@ -198,6 +225,13 @@ export class Orchestrator {
 
     const runningRun = this.patchStage(run, runningStage, 'running');
     await this.options.runs.save(runningRun);
+    this.logger.info('stage.start', {
+      ...scopeFields(),
+      run_id: run.id,
+      stage_id: stage.id,
+      stage: stage.name,
+      attempt: (stage.revisionCount ?? 0) + 1,
+    });
 
     try {
       const outcome = await handler({
@@ -209,6 +243,11 @@ export class Orchestrator {
         now: this.clock,
         options: stageOptions,
       });
+
+      // Every stored payload declares its own version, so a reader can tell a
+      // renamed field from a missing one. This is the single place that turns
+      // "remember to bump it" into something the code enforces.
+      assertVersionedPayload(outcome.payload, stage.id);
 
       const record = await this.options.registry.append({
         kind: outcome.kind,
@@ -251,6 +290,17 @@ export class Orchestrator {
         detail: { seq: record.seq, kind: record.kind, hash: record.hash },
       });
 
+      this.logger.info('stage.end', {
+        ...scopeFields(),
+        run_id: run.id,
+        stage_id: stage.id,
+        stage: stage.name,
+        status: gatePending.status,
+        evidence_seq: record.seq,
+        evidence_kind: record.kind,
+        ...(outcome.blocked ? { blocked_reason: outcome.blocked.reason } : {}),
+      });
+
       return {
         run: nextRun,
         stage: gatePending,
@@ -270,6 +320,14 @@ export class Orchestrator {
         runId: run.id,
         actor,
         detail: { stage: stage.id, error: (error as Error).message },
+      });
+      this.logger.error('stage.failed', {
+        ...scopeFields(),
+        run_id: run.id,
+        stage_id: stage.id,
+        stage: stage.name,
+        error: error instanceof Error ? error.message : String(error),
+        ...(error instanceof ApiError ? { code: error.code, status: error.status } : {}),
       });
       throw error;
     }

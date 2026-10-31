@@ -1,6 +1,17 @@
 import { JOURNAL_TARGETS, findJournalTarget, type JournalTarget } from '@aeroscribe/pipeline';
-import type { Paper } from '../literature';
+import { toReferenceRecord, type ReferenceRecord } from '../literature';
+import type {
+  FramingPayload,
+  LiteraturePayload,
+  NoveltyPayload,
+  TopicPayload,
+  VerifiedReference,
+} from '@aeroscribe/contract';
 import type { StageContext, StageHandler, StageOutcome } from './types';
+
+// The payload shapes are the wire contract; re-exported so the stage catalogue
+// and the tests keep importing them from the agent that produces them.
+export type { FramingPayload, LiteraturePayload, NoveltyPayload, TopicPayload, VerifiedReference };
 
 function tokenise(text: string): string[] {
   return text
@@ -48,26 +59,31 @@ export const topicIntelligence: StageHandler = async ({ run, now }) => {
     tokenise(keyword).some((term) => terms.includes(term)),
   );
 
+  // Typed against the wire contract, so the dashboard's view of stage 0 cannot
+  // drift from what this handler writes.
+  const payload: TopicPayload = {
+    stage: 'topic-intelligence',
+    schemaVersion: 1,
+    topic: run.topic,
+    requestedJournal: run.journal,
+    targetJournal: journal.name,
+    journalId: journal.id,
+    keywordFit: Number(fit.toFixed(4)),
+    matchedKeywords: matched,
+    unmatchedKeywords: journal.scopeKeywords.filter((keyword) => !matched.includes(keyword)),
+    // Numbers that are part of the research question itself (e.g. "Mach 8") are
+    // declared here so the claim verifier can treat them as given, not claimed.
+    topicNumbers: Array.from(run.topic.matchAll(/-?\d+(?:\.\d+)?/g), (match) =>
+      Number.parseFloat(match[0]),
+    ).filter((value) => Number.isFinite(value)),
+    generatedAt: now().toISOString(),
+  };
+
   return {
     kind: 'stage-output',
     label: `Topic intelligence for "${run.topic}"`,
     summary: `Targeted ${journal.name} (keyword fit ${(fit * 100).toFixed(0)}%).`,
-    payload: {
-      stage: 'topic-intelligence',
-      topic: run.topic,
-      requestedJournal: run.journal,
-      targetJournal: journal.name,
-      journalId: journal.id,
-      keywordFit: Number(fit.toFixed(4)),
-      matchedKeywords: matched,
-      unmatchedKeywords: journal.scopeKeywords.filter((keyword) => !matched.includes(keyword)),
-      // Numbers that are part of the research question itself (e.g. "Mach 8") are
-      // declared here so the claim verifier can treat them as given, not claimed.
-      topicNumbers: Array.from(run.topic.matchAll(/-?\d+(?:\.\d+)?/g), (match) =>
-        Number.parseFloat(match[0]),
-      ).filter((value) => Number.isFinite(value)),
-      generatedAt: now().toISOString(),
-    },
+    payload,
     metrics: {
       journal: journal.name,
       keywordFit: `${(fit * 100).toFixed(0)}%`,
@@ -75,25 +91,6 @@ export const topicIntelligence: StageHandler = async ({ run, now }) => {
     },
   };
 };
-
-export interface VerifiedReference extends Paper {
-  verified: boolean;
-  verificationProvider?: string;
-  verificationReason?: string;
-}
-
-export interface LiteraturePayload {
-  stage: 'literature-archaeology';
-  query: string;
-  searchedAt: string;
-  offline: boolean;
-  papersFound: number;
-  papersVerified: number;
-  /** Only DOI-verified records may be cited (RULE-002). */
-  references: VerifiedReference[];
-  rejected: Array<{ title: string; reason: string }>;
-  providerErrors: Array<{ provider: string; message: string }>;
-}
 
 /**
  * Stage 1 — literature archaeology.
@@ -108,41 +105,68 @@ export const literatureArchaeology = async (context: StageContext): Promise<Stag
   const report = await literature.search(query, { limit: options.paperLimit });
   const toVerify = report.papers.slice(0, options.verifyTop);
 
-  const references: VerifiedReference[] = [];
+  const references: ReferenceRecord[] = [];
+  const papers: VerifiedReference[] = [];
   const rejected: Array<{ title: string; reason: string }> = [];
 
-  for (const paper of toVerify) {
-    if (!paper.doi) {
+  for (const [position, candidate] of toVerify.entries()) {
+    // `report.papers` is already ranked by `rankPapers`; the position is the
+    // only relevance signal that exists, so it is recorded as a fact rather
+    // than re-derived by the client from citation counts.
+    const rank = position + 1;
+
+    if (!candidate.doi) {
       rejected.push({
-        title: paper.title,
+        title: candidate.title,
         reason:
-          paper.source === 'fixture'
+          candidate.source === 'fixture'
             ? 'offline corpus entries have no DOI by design'
             : 'record has no DOI to resolve',
       });
       continue;
     }
 
-    const verification = await literature.verifyDoi(paper.doi, { expectedTitle: paper.title });
+    const verification = await literature.verifyDoi(candidate.doi, {
+      expectedTitle: candidate.title,
+    });
+    const entry = verification.paper ?? candidate;
+
     if (verification.verified) {
-      references.push({
-        ...paper,
+      references.push(
+        toReferenceRecord({
+          paper: entry,
+          index: references.length + 1,
+          verification: {
+            verifiedAt: verification.checkedAt,
+            provider: verification.provider ?? null,
+            titleSimilarity: verification.titleSimilarity ?? null,
+          },
+        }),
+      );
+      papers.push({
+        ...entry,
         verified: true,
-        verificationProvider: verification.provider,
+        rank,
+        ...(verification.provider ? { verificationProvider: verification.provider } : {}),
       });
     } else {
-      rejected.push({ title: paper.title, reason: verification.reason ?? 'DOI did not resolve' });
+      rejected.push({
+        title: candidate.title,
+        reason: verification.reason ?? 'DOI did not resolve',
+      });
     }
   }
 
   const payload: LiteraturePayload = {
     stage: 'literature-archaeology',
+    schemaVersion: 2,
     query,
     searchedAt: now().toISOString(),
     offline: literature.offline,
     papersFound: report.papers.length,
     papersVerified: references.length,
     references,
+    papers,
     rejected,
     providerErrors: report.errors.map((error) => ({
       provider: error.provider,
@@ -164,15 +188,28 @@ export const literatureArchaeology = async (context: StageContext): Promise<Stag
   };
 };
 
-export interface NoveltyPayload {
-  stage: 'novelty-detection';
-  verifiedReferences: number;
-  /** Topic terms that no verified abstract mentions. */
-  uncoveredTerms: string[];
-  coveredTerms: string[];
-  gapCount: number;
-  confidence: 'supported' | 'insufficient-evidence';
-  notes: string[];
+/**
+ * The provider records behind a literature payload.
+ *
+ * v2 stores them in `papers`; v1 stored them in `references`. Reading both keeps
+ * a run started before the upgrade analysable, and the type guard means a
+ * malformed record is skipped rather than treated as text.
+ */
+function providerPapers(literature: LiteraturePayload | undefined): VerifiedReference[] {
+  if (!literature) return [];
+  const { papers, references } = literature as {
+    papers?: unknown;
+    references?: unknown;
+  };
+
+  if (Array.isArray(papers)) return papers as VerifiedReference[];
+  if (!Array.isArray(references)) return [];
+
+  // v1: `references` held the provider records themselves.
+  return (references as Array<Partial<VerifiedReference>>).filter(
+    (entry): entry is VerifiedReference =>
+      typeof entry === 'object' && entry !== null && typeof entry.abstract !== 'undefined',
+  ) as VerifiedReference[];
 }
 
 /**
@@ -188,7 +225,9 @@ export const noveltyDetection = async (context: StageContext): Promise<StageOutc
   const literatureRecord = await registry.latest(run.id, 'literature-search');
   const literature = literatureRecord?.payload as LiteraturePayload | undefined;
 
-  const references = literature?.references ?? [];
+  // The abstract is provider metadata, not a bibliographic field, so it lives on
+  // the raw papers rather than on the reference records.
+  const references = providerPapers(literature);
   const terms = unique(tokenise(run.topic));
   const corpus = references
     .map((reference) => `${reference.title} ${reference.abstract ?? ''}`.toLowerCase())
@@ -212,6 +251,7 @@ export const noveltyDetection = async (context: StageContext): Promise<StageOutc
 
   const payload: NoveltyPayload = {
     stage: 'novelty-detection',
+    schemaVersion: 1,
     verifiedReferences: references.length,
     uncoveredTerms,
     coveredTerms,
@@ -235,15 +275,6 @@ export const noveltyDetection = async (context: StageContext): Promise<StageOutc
   };
 };
 
-export interface FramingPayload {
-  stage: 'contribution-framing';
-  statement: string;
-  journal: string;
-  journalId: string;
-  position: string;
-  evidenceBasis: { verifiedReferences: number; gaps: number };
-}
-
 /** Stage 3 — contribution framing, built only from the previous two reports. */
 export const contributionFraming = async (context: StageContext): Promise<StageOutcome> => {
   const { run, registry } = context;
@@ -265,6 +296,7 @@ export const contributionFraming = async (context: StageContext): Promise<StageO
 
   const payload: FramingPayload = {
     stage: 'contribution-framing',
+    schemaVersion: 1,
     statement,
     journal: topic?.targetJournal ?? run.journal,
     journalId: topic?.journalId ?? '',
