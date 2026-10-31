@@ -1,5 +1,12 @@
 import { useState } from 'react';
-import { isManuscriptPayload, latestPayload, toLiveManuscript } from '../api/mappers';
+import type { RecheckStatus } from '@aeroscribe/contract';
+import {
+  isManuscriptPayload,
+  isRecheckPayload,
+  latestPayload,
+  toLiveManuscript,
+  toLiveRecheck,
+} from '../api/mappers';
 import { useActiveRun, useEvidence } from '../state/pipelineContext';
 
 /**
@@ -11,10 +18,20 @@ import { useActiveRun, useEvidence } from '../state/pipelineContext';
  * until it lands the page says so rather than offering a button that implies
  * otherwise.
  */
+const STATUS_STYLE: Record<RecheckStatus, string> = {
+  fresh: 'bg-emerald-50 text-emerald-800',
+  stale: 'bg-amber-50 text-amber-800',
+  broken: 'bg-red-50 text-red-800',
+  mismatch: 'bg-red-50 text-red-800',
+  unverified: 'bg-slate-100 text-slate-700',
+};
+
 export default function ManuscriptLive() {
   const activeRun = useActiveRun();
   const records = useEvidence();
   const payload = latestPayload(records, 'manuscript', isManuscriptPayload);
+  const recheckPayload = latestPayload(records, 'doi-recheck', isRecheckPayload);
+  const checks = recheckPayload ? toLiveRecheck(recheckPayload) : null;
   const [openSection, setOpenSection] = useState<string | null>(null);
 
   if (!activeRun) {
@@ -127,6 +144,46 @@ export default function ManuscriptLive() {
             <li className="italic text-slate-400">No references were admitted for this run.</li>
           )}
         </ol>
+      </section>
+
+      <section
+        className="rounded-xl border border-slate-200 bg-white p-5"
+        data-testid="citation-checks"
+      >
+        <h2 className="mb-3 text-sm font-bold text-slate-900">Citation checks</h2>
+        {checks ? (
+          <>
+            <p className="text-sm text-slate-700" data-testid="citation-checks-headline">
+              {checks.headline}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Checked {new Date(checks.checkedAt).toLocaleString()} ·{' '}
+              {checks.offline ? 'offline, no registry reachable' : 'live providers'} · stale after{' '}
+              {checks.maxAgeDays} days
+            </p>
+            <ul className="mt-3 space-y-1 text-xs">
+              {checks.results.map((result) => (
+                <li key={result.key} className="flex items-start gap-2">
+                  <span className="w-14 shrink-0 font-mono text-slate-500">{result.key}</span>
+                  <span
+                    className={`shrink-0 rounded px-1.5 py-0.5 font-semibold ${STATUS_STYLE[result.status]}`}
+                  >
+                    {result.status}
+                  </span>
+                  <span className="text-slate-600">
+                    {result.reason ?? 'resolved to the stored paper'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <p className="text-sm text-slate-600" data-testid="citation-checks-missing">
+            Never re-checked in this run: the verification times above are the ones stored when the
+            manuscript was written. <code>npm run recheck -- --run …</code> re-resolves every DOI
+            and records the result; nothing here is refreshed in the background.
+          </p>
+        )}
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-slate-50 p-5">

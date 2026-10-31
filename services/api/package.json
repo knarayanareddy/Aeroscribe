@@ -10,7 +10,8 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "smoke:literature": "tsx scripts/literature-smoke.ts",
-    "smoke:cfd": "tsx scripts/cfd-smoke.ts"
+    "smoke:cfd": "tsx scripts/cfd-smoke.ts",
+    "recheck": "tsx scripts/recheck.ts"
   },
   "dependencies": {
     "@aeroscribe/contract": "0.1.0",

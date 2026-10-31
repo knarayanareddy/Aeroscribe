@@ -1,11 +1,14 @@
 import type {
   CfdEvidencePayload,
+  DoiRecheckPayload,
+  DoiRecheckSummary,
   EvidenceKind,
   EvidenceRecord,
   LiteraturePayload,
   ManuscriptPayload,
   NoveltyPayload,
   ReferenceRecord,
+  RecheckResult,
   ReviewPayload,
   WikiPayload,
 } from '@aeroscribe/contract';
@@ -281,6 +284,50 @@ export function isWikiArticle(value: unknown): value is WikiPayload {
 export function wikiFromPackage(payload: unknown): WikiPayload | null {
   if (!isObject(payload)) return null;
   return isWikiArticle(payload['wiki']) ? payload['wiki'] : null;
+}
+
+/* ──────────────────────────── reference re-checks ────────────────────────── */
+
+export function isRecheckPayload(payload: unknown): payload is DoiRecheckPayload {
+  return isObject(payload) && payload['stage'] === 'reference-recheck';
+}
+
+export interface LiveRecheck {
+  checkedAt: string;
+  offline: boolean;
+  maxAgeDays: number;
+  summary: DoiRecheckSummary;
+  results: RecheckResult[];
+  /**
+   * One line saying what the check can and cannot support.
+   *
+   * An offline check resolved nothing, so it is never described as having
+   * verified a DOI — the same rule the API applies to its own reasons.
+   */
+  headline: string;
+}
+
+export function toLiveRecheck(payload: DoiRecheckPayload): LiveRecheck {
+  const { summary } = payload;
+  const failed = summary.broken + summary.mismatch;
+  const doiNoun = summary.total === 1 ? 'DOI' : 'DOIs';
+  const referenceNoun = summary.total === 1 ? 'reference' : 'references';
+  let headline: string;
+  if (payload.offline) {
+    headline = `Checked offline: no DOI was resolved, so no reference is confirmed (${summary.total} checked).`;
+  } else if (failed > 0) {
+    headline = `${failed} of ${summary.total} ${doiNoun} no longer match ${summary.total === 1 ? 'its' : 'their'} stored reference.`;
+  } else {
+    headline = `${summary.total} ${referenceNoun} checked: ${summary.fresh} fresh, ${summary.stale} stale, ${summary.unverified} unverified.`;
+  }
+  return {
+    checkedAt: payload.checkedAt,
+    offline: payload.offline,
+    maxAgeDays: payload.maxAgeDays,
+    summary,
+    results: payload.results,
+    headline,
+  };
 }
 
 /** Markdown is rendered as text: the app has no HTML-injection path. */

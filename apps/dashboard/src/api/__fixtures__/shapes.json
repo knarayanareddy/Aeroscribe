@@ -536,6 +536,7 @@
       "metrics": {
         "blockers": "number",
         "files": "number",
+        "references": "string",
         "status": "string"
       },
       "name": "string",
@@ -664,5 +665,82 @@
     "observedDois": "empty-array",
     "ok": "boolean",
     "unbacked": "empty-array"
+  },
+  "references-recheck": {
+    "checkedAt": "string",
+    "offline": "boolean",
+    "record": {
+      "createdAt": "string",
+      "hash": "string",
+      "id": "string",
+      "kind": "string",
+      "label": "string",
+      "payload": {
+        "checkedAt": "string",
+        "maxAgeDays": "number",
+        "offline": "boolean",
+        "results": {
+          "array": {
+            "doi": "string",
+            "key": "string",
+            "previousVerifiedAt": "string",
+            "provider": "string",
+            "reason": "null",
+            "status": "string",
+            "title": "string",
+            "titleSimilarity": "number"
+          }
+        },
+        "runId": "string",
+        "schemaVersion": "number",
+        "stage": "string",
+        "summary": {
+          "broken": "number",
+          "fresh": "number",
+          "mismatch": "number",
+          "stale": "number",
+          "total": "number",
+          "unverified": "number"
+        }
+      },
+      "payloadHash": "string",
+      "prevHash": "string",
+      "runId": "string",
+      "seq": "number",
+      "stageId": "null"
+    },
+    "summary": {
+      "broken": "number",
+      "fresh": "number",
+      "mismatch": "number",
+      "stale": "number",
+      "total": "number",
+      "unverified": "number"
+    }
+  },
+  "references": {
+    "checkedAt": "string",
+    "rechecks": "number",
+    "references": {
+      "array": {
+        "citation": "string",
+        "doi": "string",
+        "index": "number",
+        "key": "string",
+        "latest": {
+          "checkedAt": "string",
+          "provider": "string",
+          "reason": "null",
+          "seq": "number",
+          "status": "string",
+          "titleSimilarity": "number"
+        },
+        "title": "string",
+        "verifiedAt": "string",
+        "verifiedProvider": "string"
+      }
+    },
+    "runId": "string",
+    "status": "string"
   }
 }

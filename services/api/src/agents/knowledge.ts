@@ -1,7 +1,9 @@
 import { canonicalJson, sha256 } from '../lib/canonical';
+import { referenceBlockers } from '../references/recheck';
 import type { StageHandler, StageOutcome } from './types';
 import type {
   CompliancePayload,
+  DoiRecheckPayload,
   ManuscriptPayload,
   NoveltyPayload,
   ReviewPayload,
@@ -40,6 +42,11 @@ export const knowledgeAndSubmission: StageHandler = async (context): Promise<Sta
     CompliancePayload | undefined;
   const novelty = records.find((record) => record.kind === 'novelty-report')?.payload as
     NoveltyPayload | undefined;
+  // The newest re-check if one exists; a run that was never re-checked has none,
+  // and the blocker below is conditioned on the manuscript's age rather than on
+  // the absence of the record.
+  const recheck = records.filter((record) => record.kind === 'doi-recheck').at(-1)?.payload as
+    DoiRecheckPayload | undefined;
 
   if (!manuscript)
     throw new Error('knowledge compilation requires a manuscript record for this run');
@@ -80,6 +87,23 @@ export const knowledgeAndSubmission: StageHandler = async (context): Promise<Sta
   if (compliance && !compliance.compliant) blockers.push('journal compliance has blocking issues');
   if (manuscript.synthetic) blockers.push('the results come from the synthetic solver');
 
+  // One word for the run card: whether these references were checked now, only
+  // when the manuscript was written, or checked and found wanting.
+  const referenceMetric =
+    recheck === undefined
+      ? 'generation-time only'
+      : recheck.results.some((result) => result.status === 'broken' || result.status === 'mismatch')
+        ? 're-checked: problems'
+        : 're-checked';
+
+  const referenceState = referenceBlockers({
+    manuscriptGeneratedAt: manuscript.generatedAt,
+    now: now(),
+    maxAgeDays: context.doiMaxAgeDays,
+    recheck: recheck ?? null,
+  });
+  blockers.push(...referenceState);
+
   // The artefact *is* the canonical JSON of the payload, so the manifest can
   // state its checksum and its size without pretending a file was rendered.
   const files = records.map((record) => {
@@ -116,6 +140,7 @@ export const knowledgeAndSubmission: StageHandler = async (context): Promise<Sta
       status: submission.status,
       files: files.length,
       blockers: blockers.length,
+      references: referenceMetric,
     },
     blocked:
       submission.status === 'ready'

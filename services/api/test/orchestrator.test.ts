@@ -178,6 +178,91 @@ describe('a full nine-stage run', () => {
     );
   });
 
+  it('blocks submission when a stored DOI no longer resolves, and says which one', async () => {
+    const run = await orchestrator.createRun({ topic: 'transonic wing drag prediction' });
+    for (let stageId = 0; stageId < STAGE_COUNT - 1; stageId += 1) {
+      await advanceAndApprove(run.id);
+    }
+
+    // What a live re-check would have written: the DOI stage 5 resolved is gone.
+    await registry.append({
+      kind: 'doi-recheck',
+      runId: run.id,
+      stageId: null,
+      label: 'seeded re-check',
+      payload: {
+        stage: 'reference-recheck',
+        schemaVersion: 1,
+        runId: run.id,
+        checkedAt: new Date(nowMs + 1_000).toISOString(),
+        offline: false,
+        maxAgeDays: 30,
+        results: [
+          {
+            key: 'ref-01',
+            doi: '10.2514/1.j060001',
+            title: 'Transonic drag prediction on unstructured meshes',
+            status: 'broken',
+            reason: 'DOI not found in Crossref or Semantic Scholar',
+            provider: null,
+            titleSimilarity: null,
+            previousVerifiedAt: new Date(nowMs - 40 * 86_400_000).toISOString(),
+          },
+        ],
+        summary: { fresh: 0, stale: 0, broken: 1, mismatch: 0, unverified: 0, total: 1 },
+      },
+    });
+
+    const advanced = await orchestrator.advance(run.id);
+
+    expect(advanced.blocked).not.toBeNull();
+    expect(advanced.blocked!.reason).toMatch(/reference ref-01 \(10\.2514\/1\.j060001\)/);
+    expect(advanced.blocked!.reason).toMatch(/no longer resolves/);
+    // The run card says the references were re-checked and found wanting, rather
+    // than implying they are simply unverified.
+    expect(advanced.stage.metrics?.references).toBe('re-checked: problems');
+
+    const [packaged] = await orchestrator.evidence(run.id, 'submission-package');
+    const submission = (packaged!.payload as { submission: { blockers: string[] } }).submission;
+    expect(submission.blockers).toContain(
+      'reference ref-01 (10.2514/1.j060001) no longer resolves: DOI not found in Crossref or Semantic Scholar',
+    );
+  });
+
+  it('asks for a re-check once the manuscript is older than the limit', async () => {
+    const run = await orchestrator.createRun({ topic: 'transonic wing drag prediction' });
+    for (let stageId = 0; stageId < STAGE_COUNT - 1; stageId += 1) {
+      await advanceAndApprove(run.id);
+    }
+
+    // The manuscript was generated at the fixed 2026-10-30 clock. Run stage 8 six
+    // weeks later, against the same data, with no re-check on record: the
+    // generation-time verification is now older than the 30-day limit.
+    const later = new Orchestrator({
+      runs,
+      registry,
+      audit,
+      literature: new LiteratureService({ offline: true, providers: [] }),
+      cfd: new CfdService({
+        su2: { available: false, binary: null },
+        workDir: join(directory, 'cfd'),
+      }),
+      clock: () => new Date('2026-12-10T09:00:00.000Z'),
+      newRunId: () => 'run-later',
+    });
+
+    const advanced = await later.advance(run.id);
+    expect(advanced.stage.metrics?.references).toBe('generation-time only');
+
+    const [packaged] = await later.evidence(run.id, 'submission-package');
+    const submission = (packaged!.payload as { submission: { blockers: string[] } }).submission;
+    expect(
+      submission.blockers.some((blocker) =>
+        /references have not been re-verified in this run/.test(blocker),
+      ),
+    ).toBe(true);
+  });
+
   it('audits every transition and keeps the chain verifiable', async () => {
     const run = await orchestrator.createRun({ topic: 'transonic wing drag prediction' });
     await advanceAndApprove(run.id);

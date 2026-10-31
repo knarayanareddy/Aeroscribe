@@ -27,6 +27,10 @@ import { evidenceGeneration } from './agents/evidence';
 import { paperSynthesis } from './agents/writing';
 import { complianceCheck, peerReview } from './agents/review';
 import { knowledgeAndSubmission } from './agents/knowledge';
+import { recheckRun, referenceStatus } from './references/recheck';
+
+/** Matches the `AEROSCRIBE_DOI_MAX_AGE_DAYS` default in `config.ts`. */
+export const DEFAULT_DOI_MAX_AGE_DAYS = 30;
 
 /** One handler per stage id, in pipeline order. */
 export const STAGE_HANDLERS: readonly StageHandler[] = [
@@ -47,6 +51,11 @@ export interface OrchestratorOptions {
   audit: AuditLog;
   literature: LiteratureService;
   cfd: CfdService;
+  /**
+   * Staleness limit for a manuscript's DOI verifications, in days
+   * (`AEROSCRIBE_DOI_MAX_AGE_DAYS`). Reported by re-checks and stage 8.
+   */
+  doiMaxAgeDays?: number;
   clock?: () => Date;
   newRunId?: () => string;
   defaultOptions?: Partial<RunOptions>;
@@ -239,6 +248,7 @@ export class Orchestrator {
         stage: runningStage,
         literature: this.options.literature,
         cfd: this.options.cfd,
+        doiMaxAgeDays: this.options.doiMaxAgeDays ?? DEFAULT_DOI_MAX_AGE_DAYS,
         registry: this.options.registry,
         now: this.clock,
         options: stageOptions,
@@ -408,6 +418,71 @@ export class Orchestrator {
       },
     });
     return verification;
+  }
+
+  /**
+   * Re-resolve every DOI the run's manuscript cites and append one record.
+   *
+   * Appending, not mutating: the manuscript stays byte-identical, and the new
+   * record is the evidence that the check happened now rather than at generation
+   * time.
+   */
+  async recheckReferences(runId: string) {
+    const run = await this.getRun(runId);
+    if (run.id !== runId) throw conflict('The run could not be read.');
+
+    const outcome = await recheckRun(runId, {
+      literature: this.options.literature,
+      registry: this.options.registry,
+      clock: this.clock,
+      maxAgeDays: this.options.doiMaxAgeDays ?? DEFAULT_DOI_MAX_AGE_DAYS,
+    }).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/has no manuscript record/.test(message)) {
+        throw conflict(
+          'This run has no manuscript yet: stage 5 writes one, and only its references can be re-checked.',
+        );
+      }
+      throw error;
+    });
+
+    await this.options.audit.record({
+      action: 'doi.rechecked',
+      runId,
+      actor: 'api',
+      detail: {
+        seq: outcome.record.seq,
+        checkedAt: outcome.payload.checkedAt,
+        offline: outcome.payload.offline,
+        ...outcome.payload.summary,
+      },
+    });
+
+    this.logger.info('doi.rechecked', {
+      ...scopeFields(),
+      run_id: runId,
+      evidence_seq: outcome.record.seq,
+      offline: outcome.payload.offline,
+      ...outcome.payload.summary,
+    });
+
+    return outcome;
+  }
+
+  /** The run's references joined with its newest re-check. */
+  async referenceStatus(runId: string) {
+    const records = await this.evidence(runId);
+    const manuscript = records.filter((record) => record.kind === 'manuscript').at(-1);
+    if (!manuscript) {
+      throw conflict(
+        'This run has no manuscript yet: its references do not exist until stage 5 writes them.',
+      );
+    }
+    return referenceStatus({
+      runId,
+      manuscriptPayload: manuscript.payload,
+      rechecks: records.filter((record) => record.kind === 'doi-recheck'),
+    });
   }
 
   /** Read the audit trail for a run (or the whole log) without writing to it. */

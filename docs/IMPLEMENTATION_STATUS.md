@@ -20,9 +20,10 @@ everything still missing is planned in [`ROADMAP.md`](./ROADMAP.md).
 | Grid-convergence (GCI)    | **Implemented**          | Roache GCI with order estimate, Richardson extrapolation and asymptotic-range rejection.                                                          |
 | Verified registry         | **Implemented**          | Append-only NDJSON hash chain; tamper, reorder and deletion are detected.                                                                         |
 | Claim verification        | **Implemented**          | Stage 5 refuses to write a manuscript containing an unbacked number or unresolved DOI.                                                            |
+| Reference re-checks       | **Implemented**          | `references/recheck.ts` re-resolves stored DOIs on demand, appends one `doi-recheck` record, and stage 8 blocks on `broken`/`mismatch`.           |
 | HTTP API                  | **Implemented**          | Hono server: runs, gates, evidence, audit, literature, claim checks, rate limiting. `docker build` + `docker run` documented in `BACKEND.md` § 9. |
 | Persistence               | **Implemented (server)** | Runs, options, evidence and audit persist on disk and survive restarts. The dashboard reads them in live mode, per view.                          |
-| LaTeX compilation         | **Not implemented**      | The manuscript view generates a `.tex` document client-side; no PDF build.                                                                        |
+| LaTeX compilation         | **Not implemented**      | No `.tex` or PDF exists yet: the manuscript view renders the record and says so (workstream B).                                                   |
 | Journal submission        | **Not implemented**      | Stage 8 builds an evidence manifest only; nothing is uploaded.                                                                                    |
 | Authentication            | **Partial**              | Single server-side bearer token; no accounts, no per-user data, off when no key is set.                                                           |
 | LLM-generated prose       | **Not implemented**      | Deliberately: the writer is mechanical so RULE-001 can be enforced exactly.                                                                       |
@@ -42,9 +43,9 @@ the deployed Pages build runs.
 | Pipeline   | Create a run, run the next stage, approve or reject a gate. Every mutation re-reads the run from the server.                                     | `POST /runs`, `POST /runs/:id/advance`, gate routes |
 | Literature | The run's admitted references, with DOI, venue, and the timestamp of the resolution that admitted each one. No relevance score.                  | `literature-search` evidence record                 |
 | CFD        | The measured value, its GCI uncertainty, the mesh table and artefact hashes. A synthetic result says so at the top.                              | `cfd-run` evidence record                           |
-| Settings   | The server's own capabilities: literature mode, SU2 availability, registry path, auth. Plus the audit trail.                                     | `GET /api/v1/capabilities`, `GET /api/v1/audit`     |
+| Settings   | The server's own capabilities: literature mode, SU2 and LaTeX availability, registry path, auth. Plus the audit trail.                           | `GET /api/v1/capabilities`, `GET /api/v1/audit`     |
 | Novelty    | Term coverage: which topic terms no verified abstract mentions, with the stage's own confidence label. No novelty score — none is computed.      | `novelty-report` evidence record                    |
-| Manuscript | Title, abstract, sections, word counts and the rendered reference list, flagged when any number is synthetic. No `.tex` download (workstream B). | `manuscript` evidence record                        |
+| Manuscript | Title, abstract, sections, word counts, references and the newest DOI re-check, flagged when a number is synthetic, with no `.tex` download yet. | `manuscript`, `doi-recheck` evidence records        |
 | Review     | The council's verdict, its named checks and its comments. Read-only: a finding is answered by changing evidence, not by clicking resolve.        | `review-report` evidence record                     |
 | Wiki       | The article stage 8 generated, rendered from markdown as React elements (never as HTML), read-only because it is part of the evidence record.    | `submission-package` evidence record (`wiki`)       |
 
@@ -108,9 +109,11 @@ stating plainly:
 - The API rate limiter is per process, and the registry assumes a single writer.
 - No LaTeX/PDF build and no journal upload path: stage 8 assembles a submission bundle
   (manuscript Markdown/JSON plus artefact hashes), not a typeset PDF.
-- **DOI re-verification is per run, not per manuscript revision.** A paper is resolved when
-  it is retrieved; there is no scheduled job re-checking a stored manuscript later, so
-  RULE-002 is enforced at generation time only.
+- **DOI re-verification is on demand, never automatic.** A paper is resolved when it is
+  retrieved, and a stored manuscript is only re-checked when someone runs
+  `npm run recheck -- --all` or calls `POST /api/v1/runs/:id/references/recheck`. There is no
+  timer inside the API; until a re-check runs, stage 8 reports the generation-time timestamps
+  and labels the run `generation-time only`.
 - **No staging environment.** CI builds and tests; only the two static apps are deployed.
   The Dockerfile is built in CI but published nowhere.
 - One shared bearer token, no user accounts, no per-user data isolation.

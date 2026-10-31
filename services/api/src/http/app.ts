@@ -259,6 +259,29 @@ export function createApp({
     return context.json({ records });
   });
 
+  // ── References ────────────────────────────────────────────────────────────
+  //
+  // A re-check appends a record; it never edits the manuscript. GET joins the
+  // stored references with the newest re-check, and answers `unchecked` when
+  // there has never been one rather than implying the citations are current.
+
+  app.post('/api/v1/runs/:id/references/recheck', async (context) => {
+    const outcome = await orchestrator.recheckReferences(context.req.param('id'));
+    return context.json(
+      {
+        record: outcome.record,
+        summary: outcome.payload.summary,
+        checkedAt: outcome.payload.checkedAt,
+        offline: outcome.payload.offline,
+      },
+      201,
+    );
+  });
+
+  app.get('/api/v1/runs/:id/references', async (context) =>
+    context.json(await orchestrator.referenceStatus(context.req.param('id'))),
+  );
+
   app.get('/api/v1/evidence/verify', async (context) =>
     context.json(await orchestrator.verifyRegistry()),
   );

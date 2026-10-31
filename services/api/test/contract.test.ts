@@ -255,6 +255,14 @@ beforeAll(async () => {
       runId,
     }),
   });
+
+  // Re-check last, so the captures above describe the registry as it stood
+  // during the run: the re-check appends a record of its own.
+  captures.push({
+    name: 'references-recheck',
+    body: await postJson(`/api/v1/runs/${runId}/references/recheck`),
+  });
+  captures.push({ name: 'references', body: await json(`/api/v1/runs/${runId}/references`) });
 }, 60_000);
 
 afterAll(async () => {

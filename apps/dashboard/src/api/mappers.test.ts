@@ -1,15 +1,17 @@
-import type { EvidenceRecord, LiteraturePayload } from '@aeroscribe/contract';
+import type { DoiRecheckPayload, EvidenceRecord, LiteraturePayload } from '@aeroscribe/contract';
 import { describe, expect, it } from 'vitest';
 import evidenceFixture from './__fixtures__/evidence.json';
 import {
   formatReferenceLine,
   isCfdPayload,
   isLiteraturePayload,
+  isRecheckPayload,
   latestPayload,
   latestRecord,
   toLiveCfd,
   toLiveGaps,
   toLiveManuscript,
+  toLiveRecheck,
   toLiveReferences,
   toLiveReview,
 } from './mappers';
@@ -170,6 +172,59 @@ describe('novelty, manuscript and review', () => {
     const record = records.find((entry) => entry.kind === 'review-report')!;
     const review = toLiveReview(record.payload as never);
     expect(review.passedChecks).toBe(review.checks.filter((check) => check.passed).length);
+  });
+});
+
+describe('reference re-check mapping', () => {
+  const payload: DoiRecheckPayload = {
+    stage: 'reference-recheck',
+    schemaVersion: 1,
+    runId: 'run-1',
+    checkedAt: '2026-10-31T08:00:00.000Z',
+    offline: false,
+    maxAgeDays: 30,
+    summary: { fresh: 1, stale: 2, broken: 0, mismatch: 0, unverified: 0, total: 3 },
+    results: [
+      {
+        key: 'ref-01',
+        doi: '10.2514/1.j060001',
+        title: 'Transonic drag prediction',
+        status: 'fresh',
+        reason: 'DOI resolves and the title matches',
+        provider: 'crossref',
+        titleSimilarity: 0.97,
+        previousVerifiedAt: '2026-10-01T00:00:00.000Z',
+      },
+    ],
+  };
+
+  it('keeps the payload and states what it supports', () => {
+    expect(isRecheckPayload(payload)).toBe(true);
+    expect(isRecheckPayload({ stage: 'paper-synthesis' })).toBe(false);
+
+    const live = toLiveRecheck(payload);
+    expect(live.results).toBe(payload.results);
+    expect(live.summary).toBe(payload.summary);
+    expect(live.headline).toBe('3 references checked: 1 fresh, 2 stale, 0 unverified.');
+  });
+
+  it('never calls an offline check a verification', () => {
+    const live = toLiveRecheck({
+      ...payload,
+      offline: true,
+      summary: { fresh: 0, stale: 0, broken: 0, mismatch: 0, unverified: 3, total: 3 },
+    });
+    expect(live.headline).toMatch(/no DOI was resolved/);
+    expect(live.headline).toMatch(/no reference is confirmed/);
+    expect(live.headline).not.toMatch(/\bverified\b/);
+  });
+
+  it('counts broken and mismatched DOIs in one sentence', () => {
+    const live = toLiveRecheck({
+      ...payload,
+      summary: { fresh: 0, stale: 1, broken: 1, mismatch: 1, unverified: 0, total: 3 },
+    });
+    expect(live.headline).toBe('2 of 3 DOIs no longer match their stored reference.');
   });
 });
 

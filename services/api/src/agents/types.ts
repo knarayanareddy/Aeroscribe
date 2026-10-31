@@ -10,6 +10,8 @@ export interface StageContext {
   cfd: CfdService;
   registry: EvidenceRegistry;
   now: () => Date;
+  /** How old a generation-time DOI verification may be before it counts as stale. */
+  doiMaxAgeDays: number;
   /** Per-run knobs; defaults are documented in `runOptionsSchema` at the HTTP layer. */
   options: RunOptions;
 }

@@ -176,6 +176,11 @@ export class LiteratureService {
     }
 
     const failures: string[] = [];
+    // A DOI can resolve to the wrong paper. Keep the closest such record: a
+    // caller re-checking a manuscript needs to say "this DOI now points at a
+    // different title", which is a different fact from "this DOI is gone".
+    let rejected: DoiVerification['candidate'] | undefined;
+    let rejectedSimilarity = -1;
 
     for (const provider of this.options.providers) {
       try {
@@ -197,6 +202,10 @@ export class LiteratureService {
         const similarity = expectedTitle ? titleSimilarity(expectedTitle, paper.title) : null;
         if (similarity !== null && similarity < 0.6) {
           failures.push(`${provider.name}: title does not match the expected reference`);
+          if (similarity > rejectedSimilarity) {
+            rejectedSimilarity = similarity;
+            rejected = { title: paper.title, similarity, provider: provider.name };
+          }
           continue;
         }
 
@@ -221,6 +230,7 @@ export class LiteratureService {
       reason:
         failures.length > 0 ? failures.join('; ') : 'DOI not found in Crossref or Semantic Scholar',
       checkedAt,
+      ...(rejected ? { candidate: rejected } : {}),
     };
   }
 
