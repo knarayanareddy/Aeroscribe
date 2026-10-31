@@ -43,7 +43,10 @@ jobs:
       - name: Test with coverage thresholds
         run: npm run coverage
 
-      - name: Build both applications
+      # `npm run build` ends with scripts/check-bundle-secrets.mjs, which fails
+      # the job if a secret — or a non-VITE_ environment read in client code —
+      # reached the bundle.
+      - name: Build both applications and check the bundle
         run: npm run build
         env:
           BASE_PATH: /Aeroscribe/

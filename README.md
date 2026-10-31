@@ -50,8 +50,18 @@ npm run dev:dashboard   # http://localhost:5174
 npm run dev:api         # http://localhost:8787
 ```
 
-The dashboard is a prototype: create a run, approve a gate, send a stage back for revision — the
-state machine is real, the surrounding data is fixture data.
+The dashboard is fixture-only by default: every screen says so, and the numbers are illustrative.
+To have it drive the API instead, run the API and point the dashboard at it through the dev
+proxy — the browser never holds an API key:
+
+```bash
+printf 'VITE_API_URL=\n' > apps/dashboard/.env.local   # empty = same origin, via the proxy
+npm run dev:dashboard
+```
+
+Live mode currently covers Overview, Pipeline, Literature, CFD and Settings. Novelty,
+Manuscript, Review and Wiki refuse to render in live mode rather than show fixture numbers under a
+live badge. Unreachable API ⇒ `API unreachable · <reason>`, never a silent fallback.
 
 The API runs a whole pipeline for real. This creates a run, executes stage 0, and stops at its
 gate (run ids are UUIDs, so capture the id rather than guessing it):

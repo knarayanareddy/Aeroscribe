@@ -5,6 +5,7 @@ import {
   formatRelativeTime,
   runProgress,
 } from '@aeroscribe/pipeline';
+import { isLiteraturePayload, latestPayload } from '../api/mappers';
 import { mockPapers, mockWikiArticles } from '../data/mockData';
 import { usePipeline } from '../state/pipelineContext';
 import type { View } from './Sidebar';
@@ -30,8 +31,7 @@ const statusLabels: Record<string, string> = {
 };
 
 export default function Dashboard({ onNavigate }: DashboardProps) {
-  const { state } = usePipeline();
-  const { runs } = state;
+  const { runs, mode, evidence, activeRun } = usePipeline();
 
   const activeRuns = runs.filter(
     (run) => run.status === 'running' || run.status === 'gate_pending',
@@ -54,20 +54,38 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       icon: '📄',
       color: 'from-emerald-500 to-teal-500',
     },
-    {
-      label: 'Papers in fixture set',
-      value: String(mockPapers.length),
-      change: 'Illustrative data',
-      icon: '📚',
-      color: 'from-violet-500 to-purple-600',
-    },
-    {
-      label: 'AeroWiki articles',
-      value: String(mockWikiArticles.length),
-      change: `${mockWikiArticles.filter((article) => article.status === 'draft').length} in draft`,
-      icon: '🌐',
-      color: 'from-orange-500 to-amber-500',
-    },
+    mode === 'live'
+      ? {
+          label: 'Verified references',
+          value: String(
+            latestPayload(evidence, 'literature-search', isLiteraturePayload)?.papersVerified ?? 0,
+          ),
+          change: activeRun ? 'In the selected run' : 'Select a run',
+          icon: '📚',
+          color: 'from-violet-500 to-purple-600',
+        }
+      : {
+          label: 'Papers in fixture set',
+          value: String(mockPapers.length),
+          change: 'Illustrative data',
+          icon: '📚',
+          color: 'from-violet-500 to-purple-600',
+        },
+    mode === 'live'
+      ? {
+          label: 'Evidence records',
+          value: String(evidence.length),
+          change: activeRun ? `Run ${activeRun.id}` : 'Select a run',
+          icon: '🧾',
+          color: 'from-orange-500 to-amber-500',
+        }
+      : {
+          label: 'AeroWiki articles',
+          value: String(mockWikiArticles.length),
+          change: `${mockWikiArticles.filter((article) => article.status === 'draft').length} in draft`,
+          icon: '🌐',
+          color: 'from-orange-500 to-amber-500',
+        },
   ];
 
   return (

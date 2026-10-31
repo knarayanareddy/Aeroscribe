@@ -127,7 +127,7 @@ npm run coverage && npm run build`, plus `npx vitest run services/api` and the s
 
 ## 4. Foundations — milestone M0
 
-### 4.1 P1 — Structured reference records
+### 4.1 P1 — Structured reference records ✅ done
 
 **Why.** `ManuscriptPayload.references` is `{ index, citation, doi }` (`agents/writing.ts:26`).
 A bibliography, an AIAA formatter and a re-check all need title/authors/year/venue/volume/pages
@@ -179,15 +179,21 @@ the dashboard.
 
 **Size.** 1.5–2 days.
 
+**Status.** Landed: `services/api/src/literature/reference.ts`, providers extended
+(volume/pages/publisher/venue), stage 1 emits records, stage 5 renders from them, and the
+bibliography is excluded from the numeric verifier with the reasoning recorded in
+`docs/BACKEND.md` § 6.
+
 ### 4.2 Payload versioning policy
 
-- [ ] Add `schemaVersion: number` to every payload interface, starting at `2` for the payloads
+- [x] Add `schemaVersion: number` to every payload interface, starting at `2` for the payloads
       P1 touches; absent means `1`.
-- [ ] `docs/BACKEND.md` § 4 gains a short “Payload evolution” subsection: additive fields do not
-      bump the version; renames and semantic changes do; readers never fail on an unknown field.
-- [ ] A test asserts every payload interface in `agents/*.ts` declares `schemaVersion`.
+- [x] The rule is enforced in one place: `assertVersionedPayload` runs before every registry
+      append, and a run's records are asserted to be versioned in `orchestrator.test.ts`.
+- [x] `docs/BACKEND.md` § 6 documents the policy: additive fields do not bump the version;
+      renames and semantic changes do; readers never fail on an unknown field.
 
-### 4.3 H — RULE-053 structured logging
+### 4.3 H — RULE-053 structured logging ✅ done
 
 **Why.** `http/app.ts:75` logs `--> GET /health 200 1ms` through Hono. A stage that fails at 03:00
 leaves no machine-readable trace of which run, which stage, which solver invocation.
@@ -222,9 +228,15 @@ object per line; `jq 'select(.event=="stage.end") | .run_id'` prints the run id;
 `x-request-id: abc` logs `request_id: "abc"` and echoes the header; `grep -i secret` over the log
 is empty.
 
+**Status.** Landed: `lib/logger.ts`, `lib/requestContext.ts`, request middleware, `stage.start` /
+`stage.end` / `stage.failed` in the orchestrator, `/health` reports `version`, `commit` and
+`logLevel`. Verified against a running server: a `POST …/advance` produced one `request_id` across
+`stage.start`, `stage.end` and `http.request`, with `run_id` on all three. `console.*` is gone from
+`services/api/src` and a test keeps it that way.
+
 **Size.** 1.5–2 days.
 
-### 4.4 I — Close RULE-022 honestly
+### 4.4 I — Close RULE-022 honestly ✅ done
 
 - [ ] `docs/adr/0001-deterministic-writer.md`: why every stage handler is a deterministic
       function, what RULE-022 would require the day a model is introduced (per-invocation tokens,
@@ -236,9 +248,13 @@ is empty.
 
 **Size.** 0.5 day.
 
+**Status.** Landed: `docs/adr/0001-deterministic-writer.md`, plus `services/api/test/integrity.test.ts`
+which fails if a model SDK appears in any workspace and checks the integrity table's citations
+resolve.
+
 ---
 
-## 5. A — Wire the dashboard to the API
+## 5. A — Wire the dashboard to the API (in progress)
 
 **Why it matters.** This is the single largest credibility gap: the landing page says the agent
 API “is implemented and tested”, and the dashboard next to it cannot read a run from it.
@@ -303,31 +319,40 @@ directly; `vite.config.ts` has no proxy; `apiKey` is a server concept the browse
 
 **Tasks.**
 
-- [ ] `packages/contract`: payload types moved, `services/api` re-exports, workspace wired into
+- [x] `packages/contract`: payload types moved, `services/api` re-exports, workspace wired into
       `package.json`, `tsconfig`, Dockerfile manifest list.
-- [ ] Server: expose `relevance` on literature references; `GET /api/v1/runs/:id/references`
+- [x] Server: expose `relevance` on literature references; `GET /api/v1/runs/:id/references`
       (shared with C) is not needed yet.
-- [ ] `apps/dashboard/src/api/{client,errors,mappers}.ts` + unit tests per mapper.
-- [ ] `apps/dashboard/src/state/{source,useResource}.ts` — abortable loads, explicit
+- [x] `apps/dashboard/src/api/{client,errors,mappers}.ts` + unit tests per mapper.
+- [x] `apps/dashboard/src/state/{source,useResource}.ts` — abortable loads, explicit
       `refresh()`, no polling unless a stage is `running` (then 3 s with backoff to 15 s).
-- [ ] `PipelineProvider` accepts a source, exposes `status: 'loading' | 'ready' | 'error'`,
+- [x] `PipelineProvider` accepts a source, exposes `status: 'loading' | 'ready' | 'error'`,
       and keeps `dispatch` only for selection.
 - [ ] Views migrated one at a time, each keeping a fixture path for tests:
       `Pipeline`, `Dashboard`, `Literature`, `Novelty`, `CFD`, `Manuscript`, `Review`, `Wiki`,
       `Settings` (`Settings` reads `/capabilities`; “Not configured” becomes the server's answer).
 - [ ] `DataModeBadge` + empty/error states; a test that live mode with a failing fetch renders
       the error and **not** fixture rows.
-- [ ] `vite.config.ts` proxy + `.env.example` for the dashboard; docs: `docs/BACKEND.md` § 8
+- [x] `vite.config.ts` proxy + `.env.example` for the dashboard; docs: `docs/BACKEND.md` § 8
       “calling it from the browser”, README quick start with two terminals.
-- [ ] Contract test in `services/api/test/contract.test.ts`: run the full 9-stage flow in-process,
+- [x] Contract test in `services/api/test/contract.test.ts`: run the full 9-stage flow in-process,
       capture every response the dashboard consumes into `apps/dashboard/src/api/__fixtures__/`,
       and fail when the recorded shape stops matching the server. The dashboard's mapper tests
       read those files.
-- [ ] `scripts/check-bundle-secrets.mjs`: after `npm run build`, fail if the bundle contains
+- [x] `scripts/check-bundle-secrets.mjs`: after `npm run build`, fail if the bundle contains
       `AEROSCRIBE_API_KEY`, a bearer token, or `SEMANTIC_SCHOLAR_API_KEY`.
-- [ ] `docs/IMPLEMENTATION_STATUS.md`: dashboard row → “Implemented (fixture data) / **live mode
+- [x] `docs/IMPLEMENTATION_STATUS.md`: dashboard row → “Implemented (fixture data) / **live mode
       available**”; “Known limitations” loses the first bullet, gains “the deployed Pages build
       is fixture-only unless `VITE_API_URL` is set”.
+
+**Status (in progress).** The contract, the client, the source abstraction, the proxy, the bundle
+check and the contract test are in. Five views read the API in live mode: Overview, Pipeline,
+Literature, CFD and Settings. **Four do not:** Novelty, Manuscript, Review and Wiki are still
+fixture-only, and in live mode they render a notice instead of the fixture view — the honest
+option until their mappers exist. Acceptance items 1–3 hold for the five migrated views; item 2's
+Literature/CFD clauses are fully met (DOI per reference, no tag chips, GCI numbers with the
+synthetic disclaimer); item 4 holds (unset `VITE_API_URL` ⇒ every view says fixtures); item 5
+holds (`check:bundle` is part of `npm run build`).
 
 **Acceptance.**
 

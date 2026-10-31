@@ -44,8 +44,8 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ activeView, onNavigate, open, onClose }: SidebarProps) {
-  const { state } = usePipeline();
-  const gatesPending = state.runs.filter((run) => run.status === 'gate_pending').length;
+  const { runs } = usePipeline();
+  const gatesPending = runs.filter((run) => run.status === 'gate_pending').length;
   const openReviewComments = mockReviewComments.filter((comment) => !comment.resolved).length;
 
   const navItems: NavItem[] = [

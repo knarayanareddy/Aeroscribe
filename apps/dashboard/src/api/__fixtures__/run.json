@@ -1,0 +1,164 @@
+{
+  "run": {
+    "id": "run-contract",
+    "topic": "transonic wing drag prediction at Mach 0.85",
+    "journal": "AIAA Journal",
+    "status": "running",
+    "createdAt": "2026-10-31T17:38:37.118Z",
+    "updatedAt": "2026-10-31T17:38:37.185Z",
+    "currentStage": 8,
+    "noveltyScore": 0,
+    "paperTitle": "Pending…",
+    "stages": [
+      {
+        "id": 0,
+        "name": "Topic Intelligence",
+        "shortName": "Topic",
+        "status": "completed",
+        "agentsActive": ["TopicIntelligenceAgent"],
+        "gateId": "GATE-0",
+        "metrics": {
+          "journal": "AIAA Journal",
+          "keywordFit": "0%",
+          "keywordsMatched": 0
+        },
+        "startedAt": "2026-10-31T17:38:37.125Z",
+        "completedAt": "2026-10-31T17:38:37.131Z",
+        "evidenceSeq": 0,
+        "gateApproved": true
+      },
+      {
+        "id": 1,
+        "name": "Literature Archaeology",
+        "shortName": "Literature",
+        "status": "completed",
+        "agentsActive": ["LiteratureHarvestAgent", "CitationGraphAgent", "LiteratureRerankerAgent"],
+        "gateId": "GATE-1",
+        "metrics": {
+          "papersFound": 2,
+          "papersVerified": 2,
+          "papersRejected": 0,
+          "providerErrors": 0
+        },
+        "startedAt": "2026-10-31T17:38:37.131Z",
+        "completedAt": "2026-10-31T17:38:37.142Z",
+        "evidenceSeq": 1,
+        "gateApproved": true
+      },
+      {
+        "id": 2,
+        "name": "Novelty Detection",
+        "shortName": "Novelty",
+        "status": "completed",
+        "agentsActive": ["NoveltyDetectionAgent"],
+        "gateId": "GATE-2",
+        "metrics": {
+          "verifiedReferences": 2,
+          "gaps": 1,
+          "confidence": "insufficient-evidence"
+        },
+        "startedAt": "2026-10-31T17:38:37.142Z",
+        "completedAt": "2026-10-31T17:38:37.148Z",
+        "evidenceSeq": 2,
+        "gateApproved": true
+      },
+      {
+        "id": 3,
+        "name": "Contribution Framing",
+        "shortName": "Framing",
+        "status": "completed",
+        "agentsActive": ["ContributionFramingAgent"],
+        "gateId": "GATE-3",
+        "metrics": {
+          "position": "consolidating",
+          "verifiedReferences": 2,
+          "gaps": 1
+        },
+        "startedAt": "2026-10-31T17:38:37.148Z",
+        "completedAt": "2026-10-31T17:38:37.153Z",
+        "evidenceSeq": 3,
+        "gateApproved": true
+      },
+      {
+        "id": 4,
+        "name": "Evidence Generation (CFD)",
+        "shortName": "CFD",
+        "status": "completed",
+        "agentsActive": ["CFDSetupAgent", "CFDSolverAgent"],
+        "gateId": "GATE-4A",
+        "metrics": {
+          "solver": "synthetic",
+          "gciValid": "yes",
+          "fineGciPercent": 0.000787,
+          "apparentOrder": 2
+        },
+        "startedAt": "2026-10-31T17:38:37.153Z",
+        "completedAt": "2026-10-31T17:38:37.159Z",
+        "evidenceSeq": 4,
+        "gateApproved": true
+      },
+      {
+        "id": 5,
+        "name": "Paper Synthesis",
+        "shortName": "Writing",
+        "status": "completed",
+        "agentsActive": ["SectionWriterAgent", "ManuscriptAssemblerAgent"],
+        "gateId": "GATE-5",
+        "metrics": {
+          "words": 346,
+          "references": 2,
+          "claimsChecked": 23
+        },
+        "startedAt": "2026-10-31T17:38:37.159Z",
+        "completedAt": "2026-10-31T17:38:37.171Z",
+        "evidenceSeq": 5,
+        "gateApproved": true
+      },
+      {
+        "id": 6,
+        "name": "Peer Review Council",
+        "shortName": "Review",
+        "status": "completed",
+        "agentsActive": ["ReviewerAAgent", "ReviewerBAgent", "ReviewerCAgent", "ReviewerDAgent"],
+        "gateId": "GATE-6",
+        "metrics": {
+          "verdict": "revise",
+          "checksPassed": 5,
+          "checksTotal": 6,
+          "majorComments": 2
+        },
+        "startedAt": "2026-10-31T17:38:37.171Z",
+        "completedAt": "2026-10-31T17:38:37.177Z",
+        "evidenceSeq": 6,
+        "gateApproved": true
+      },
+      {
+        "id": 7,
+        "name": "Revision & Compliance",
+        "shortName": "Revision",
+        "status": "completed",
+        "agentsActive": ["RevisionAgent", "JournalComplianceAgent"],
+        "gateId": "GATE-7",
+        "metrics": {
+          "compliant": "no",
+          "wordCount": 346,
+          "issues": 1
+        },
+        "startedAt": "2026-10-31T17:38:37.177Z",
+        "completedAt": "2026-10-31T17:38:37.185Z",
+        "evidenceSeq": 7,
+        "gateApproved": true
+      },
+      {
+        "id": 8,
+        "name": "AeroWiki & Submission",
+        "shortName": "Submit",
+        "status": "running",
+        "agentsActive": [],
+        "gateId": "GATE-8",
+        "metrics": {},
+        "startedAt": "2026-10-31T17:38:37.185Z"
+      }
+    ]
+  }
+}

@@ -1,6 +1,8 @@
 import { formatMeasuredValue, truncateHash } from '@aeroscribe/pipeline';
 import { useState } from 'react';
 import { mockCFDResults } from '../data/mockData';
+import { usePipeline } from '../state/pipelineContext';
+import CFDLive from './CFDLive';
 
 type Tab = 'results' | 'convergence' | 'registry';
 
@@ -58,7 +60,12 @@ function convergedAt() {
 }
 
 export default function CFDView() {
+  const { mode } = usePipeline();
   const [activeTab, setActiveTab] = useState<Tab>('results');
+
+  // See LiteratureView: a fixture chart under a live badge is the failure mode
+  // this whole workstream exists to prevent.
+  if (mode === 'live') return <CFDLive />;
 
   const chart = buildChart();
   const converged = convergedAt();

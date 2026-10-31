@@ -10,9 +10,9 @@ everything still missing is planned in [`ROADMAP.md`](./ROADMAP.md).
 | Area                      | Status                   | Notes                                                                                                                                             |
 | ------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Landing page              | **Implemented**          | Static site, keyboard accessible, self-hosted fonts, no third-party requests.                                                                     |
-| Researcher dashboard (UI) | **Implemented**          | Nine views over fixture data, responsive down to 360 px.                                                                                          |
+| Researcher dashboard (UI) | **Implemented**          | Nine views, responsive down to 360 px. Fixture mode is the default build; live mode (Overview, Pipeline, Literature, CFD, Settings) is opt-in.    |
 | Pipeline state machine    | **Implemented**          | Pure reducer in `packages/pipeline`; gate approval, revision requests, run creation.                                                              |
-| Automated tests           | **Implemented**          | Vitest + Testing Library: 270 tests across 30 files, apps and API; CI enforces coverage thresholds.                                               |
+| Automated tests           | **Implemented**          | Vitest + Testing Library: 313 tests across 33 files, apps and API; CI enforces coverage thresholds.                                               |
 | CI / deployment           | **Implemented**          | Typecheck, lint, format check, coverage thresholds, both app builds and the API image (built and health-checked) on every PR.                     |
 | Agent runtime (backend)   | **Implemented**          | `services/api`: 9 stage handlers, orchestrator, gates, revisions, audit trail.                                                                    |
 | Literature APIs           | **Implemented**          | Crossref, arXiv and Semantic Scholar clients with DTO mapping, retries and politeness. Offline fixtures carry no DOIs.                            |
@@ -21,7 +21,7 @@ everything still missing is planned in [`ROADMAP.md`](./ROADMAP.md).
 | Verified registry         | **Implemented**          | Append-only NDJSON hash chain; tamper, reorder and deletion are detected.                                                                         |
 | Claim verification        | **Implemented**          | Stage 5 refuses to write a manuscript containing an unbacked number or unresolved DOI.                                                            |
 | HTTP API                  | **Implemented**          | Hono server: runs, gates, evidence, audit, literature, claim checks, rate limiting. `docker build` + `docker run` documented in `BACKEND.md` § 9. |
-| Persistence               | **Implemented (server)** | Runs, options, evidence and audit persist on disk and survive restarts. The dashboard still renders fixtures.                                     |
+| Persistence               | **Implemented (server)** | Runs, options, evidence and audit persist on disk and survive restarts. The dashboard reads them in live mode, per view.                          |
 | LaTeX compilation         | **Not implemented**      | The manuscript view generates a `.tex` document client-side; no PDF build.                                                                        |
 | Journal submission        | **Not implemented**      | Stage 8 builds an evidence manifest only; nothing is uploaded.                                                                                    |
 | Authentication            | **Partial**              | Single server-side bearer token; no accounts, no per-user data, off when no key is set.                                                           |
@@ -29,6 +29,25 @@ everything still missing is planned in [`ROADMAP.md`](./ROADMAP.md).
 | Wiki persistence          | **Not implemented**      | Wiki edits and drafts are local to the session and labelled as such.                                                                              |
 
 ## What each dashboard view actually does
+
+The first table describes **fixture mode**, which is what `npm run build` produces unless
+`VITE_API_URL` is set. The second table describes **live mode**, which is opt-in and is not what
+the deployed Pages build runs.
+
+### Live mode (`VITE_API_URL` set)
+
+| View                              | Behaviour                                                                                                                         | Where the data comes from                           |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Overview                          | Run counts and progress from the API; "verified references" and "evidence records" are counted from the selected run's records.   | `GET /api/v1/runs`, `GET /api/v1/runs/:id/evidence` |
+| Pipeline                          | Create a run, run the next stage, approve or reject a gate. Every mutation re-reads the run from the server.                      | `POST /runs`, `POST /runs/:id/advance`, gate routes |
+| Literature                        | The run's admitted references, with DOI, venue, and the timestamp of the resolution that admitted each one. No relevance score.   | `literature-search` evidence record                 |
+| CFD                               | The measured value, its GCI uncertainty, the mesh table and artefact hashes. A synthetic result says so at the top.               | `cfd-run` evidence record                           |
+| Settings                          | The server's own capabilities: literature mode, SU2 availability, registry path, auth. Plus the audit trail.                      | `GET /api/v1/capabilities`, `GET /api/v1/audit`     |
+| Novelty, Manuscript, Review, Wiki | **Refuse to render.** They show a notice explaining that the view is fixture-only, instead of fixture numbers under a live badge. | —                                                   |
+
+An unreachable API shows `API unreachable · <reason>` and zero fixture rows. It never falls back.
+
+### Fixture mode (default)
 
 | View       | Behaviour                                                                                                                                                           | Honest label in the UI               |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
@@ -64,8 +83,10 @@ What was removed or corrected in this pass:
 The API in `services/api` is real code with real integrations, but three things are worth
 stating plainly:
 
-- **The dashboard is not wired to it yet.** Every view still renders fixtures; the API is
-  exercised through `curl`, the smoke scripts and the test suite.
+- **The default dashboard build is fixture-only.** `npm run build` produces a bundle with no API
+  address in it, and every screen says "Fixtures · illustrative data". Live mode exists — set
+  `VITE_API_URL` — but only five views consume it; the other four refuse to render in live mode
+  rather than show fixture data under a live badge. The deployed Pages build is fixture-only.
 - **Synthetic CFD is not physics.** Without `SU2_CFD_BINARY` the pipeline runs a
   deterministic analytic benchmark so the verification path can be tested. It is labelled
   in every artefact, the manuscript is marked `synthetic: true`, the review verdict is
@@ -75,8 +96,10 @@ stating plainly:
 
 ## Known limitations
 
-- Dashboard fixture data is static; the UI does not call the API.
-- Gate approvals made in the dashboard are lost on reload (the server persists its own).
+- The default dashboard build is static fixture data. In live mode, Novelty, Manuscript, Review
+  and Wiki still have no live implementation, and say so instead of rendering.
+- In live mode a gate approval is a real server call and survives a reload. In fixture mode it is
+  still local to the session, and the run list resets.
 - Wiki edits are not persisted anywhere.
 - The API rate limiter is per process, and the registry assumes a single writer.
 - No LaTeX/PDF build and no journal upload path: stage 8 assembles a submission bundle

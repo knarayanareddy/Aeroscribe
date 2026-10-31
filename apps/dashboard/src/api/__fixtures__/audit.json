@@ -1,0 +1,279 @@
+{
+  "entries": [
+    {
+      "at": "2026-10-31T17:38:37.120Z",
+      "action": "run.created",
+      "runId": "run-contract",
+      "actor": "anonymous",
+      "detail": {
+        "topic": "transonic wing drag prediction at Mach 0.85",
+        "journal": "AIAA Journal"
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.129Z",
+      "action": "run.advanced",
+      "runId": "run-contract",
+      "actor": "anonymous",
+      "detail": {
+        "stage": 0,
+        "evidenceSeq": 0,
+        "summary": "Targeted AIAA Journal (keyword fit 0%)."
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.129Z",
+      "action": "evidence.appended",
+      "runId": "run-contract",
+      "actor": "orchestrator",
+      "detail": {
+        "seq": 0,
+        "kind": "stage-output",
+        "hash": "366b05aeb935bda3e69476b7eee7e0fafda7413eb5a2687d3164bc82be960916"
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.132Z",
+      "action": "gate.approved",
+      "runId": "run-contract",
+      "actor": "ana",
+      "detail": {
+        "gateId": "GATE-0",
+        "stage": 0,
+        "stageName": "Topic Intelligence"
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.137Z",
+      "action": "run.advanced",
+      "runId": "run-contract",
+      "actor": "anonymous",
+      "detail": {
+        "stage": 1,
+        "evidenceSeq": 1,
+        "summary": "2 hits, 2 DOI-verified (0 rejected)."
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.137Z",
+      "action": "evidence.appended",
+      "runId": "run-contract",
+      "actor": "orchestrator",
+      "detail": {
+        "seq": 1,
+        "kind": "literature-search",
+        "hash": "1e78164e1283cc846423ab8cdbfd7bdc7abf526941730bd5ce0af0b9be627bf2"
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.142Z",
+      "action": "gate.approved",
+      "runId": "run-contract",
+      "actor": "ana",
+      "detail": {
+        "gateId": "GATE-1",
+        "stage": 1,
+        "stageName": "Literature Archaeology"
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.146Z",
+      "action": "run.advanced",
+      "runId": "run-contract",
+      "actor": "anonymous",
+      "detail": {
+        "stage": 2,
+        "evidenceSeq": 2,
+        "summary": "Insufficient evidence: 2 verified references."
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.147Z",
+      "action": "evidence.appended",
+      "runId": "run-contract",
+      "actor": "orchestrator",
+      "detail": {
+        "seq": 2,
+        "kind": "novelty-report",
+        "hash": "f3368408f6a9a818591459bb80569ef467df9be7e67e66b557d1ed01a0ae0d82"
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.149Z",
+      "action": "gate.approved",
+      "runId": "run-contract",
+      "actor": "ana",
+      "detail": {
+        "gateId": "GATE-2",
+        "stage": 2,
+        "stageName": "Novelty Detection"
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.152Z",
+      "action": "run.advanced",
+      "runId": "run-contract",
+      "actor": "anonymous",
+      "detail": {
+        "stage": 3,
+        "evidenceSeq": 3,
+        "summary": "This work addresses mach in transonic wing drag prediction at mach 0.85, a gap not covered by the 2 DOI-verified references retrieved for this topic."
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.152Z",
+      "action": "evidence.appended",
+      "runId": "run-contract",
+      "actor": "orchestrator",
+      "detail": {
+        "seq": 3,
+        "kind": "stage-output",
+        "hash": "2e1635f7d12b6ee04dc02ac77d434768e266341314ba45b92ac35a54af536c0e"
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.154Z",
+      "action": "gate.approved",
+      "runId": "run-contract",
+      "actor": "ana",
+      "detail": {
+        "gateId": "GATE-3",
+        "stage": 3,
+        "stageName": "Contribution Framing"
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.157Z",
+      "action": "run.advanced",
+      "runId": "run-contract",
+      "actor": "anonymous",
+      "detail": {
+        "stage": 4,
+        "evidenceSeq": 4,
+        "summary": "0.426409 ±3.36e-6 (GCI 0.000787%, order 2.00)."
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.157Z",
+      "action": "evidence.appended",
+      "runId": "run-contract",
+      "actor": "orchestrator",
+      "detail": {
+        "seq": 4,
+        "kind": "cfd-run",
+        "hash": "bc7586e08c239a6940a12ebf4eac1c81f66ca200faae94633f95af2895b93961"
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.159Z",
+      "action": "gate.approved",
+      "runId": "run-contract",
+      "actor": "ana",
+      "detail": {
+        "gateId": "GATE-4A",
+        "stage": 4,
+        "stageName": "Evidence Generation (CFD)"
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.169Z",
+      "action": "run.advanced",
+      "runId": "run-contract",
+      "actor": "anonymous",
+      "detail": {
+        "stage": 5,
+        "evidenceSeq": 5,
+        "summary": "6 sections, 2 verified references, 346 words. All 23 numeric claims traced to evidence."
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.170Z",
+      "action": "evidence.appended",
+      "runId": "run-contract",
+      "actor": "orchestrator",
+      "detail": {
+        "seq": 5,
+        "kind": "manuscript",
+        "hash": "137afd341c70a1ed126d6c5b1f4c995ea54c0893c53600eb2be79287dac7e239"
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.172Z",
+      "action": "gate.approved",
+      "runId": "run-contract",
+      "actor": "ana",
+      "detail": {
+        "gateId": "GATE-5",
+        "stage": 5,
+        "stageName": "Paper Synthesis"
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.175Z",
+      "action": "run.advanced",
+      "runId": "run-contract",
+      "actor": "anonymous",
+      "detail": {
+        "stage": 6,
+        "evidenceSeq": 6,
+        "summary": "2 major issue(s) found."
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.176Z",
+      "action": "evidence.appended",
+      "runId": "run-contract",
+      "actor": "orchestrator",
+      "detail": {
+        "seq": 6,
+        "kind": "review-report",
+        "hash": "05bbfce143a03fe536ca797c5deebd53c5bdba92069389ea7f25be3f67d2690c"
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.177Z",
+      "action": "gate.approved",
+      "runId": "run-contract",
+      "actor": "ana",
+      "detail": {
+        "gateId": "GATE-6",
+        "stage": 6,
+        "stageName": "Peer Review Council"
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.180Z",
+      "action": "run.advanced",
+      "runId": "run-contract",
+      "actor": "anonymous",
+      "detail": {
+        "stage": 7,
+        "evidenceSeq": 7,
+        "summary": "1 blocking issue(s) for AIAA Journal."
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.180Z",
+      "action": "evidence.appended",
+      "runId": "run-contract",
+      "actor": "orchestrator",
+      "detail": {
+        "seq": 7,
+        "kind": "compliance-report",
+        "hash": "f1bdac36038868ff56737e97bcd620a3f0df1c7d604d46000ae369e0d06881d1"
+      }
+    },
+    {
+      "at": "2026-10-31T17:38:37.187Z",
+      "action": "gate.approved",
+      "runId": "run-contract",
+      "actor": "ana",
+      "detail": {
+        "gateId": "GATE-7",
+        "stage": 7,
+        "stageName": "Revision & Compliance"
+      }
+    }
+  ],
+  "malformed": 0
+}

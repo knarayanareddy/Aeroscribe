@@ -1,9 +1,33 @@
-import type { PipelineAction, PipelineRun, PipelineState } from '@aeroscribe/pipeline';
-import { createContext, useContext, type Dispatch } from 'react';
+import type { AuditResponse, Capabilities, EvidenceRecord } from '@aeroscribe/contract';
+import type { PipelineRun } from '@aeroscribe/pipeline';
+import { createContext, useContext } from 'react';
+import type { RunSource } from './source';
+
+export type LoadStatus = 'loading' | 'ready' | 'error';
 
 export interface PipelineContextValue {
-  state: PipelineState;
-  dispatch: Dispatch<PipelineAction>;
+  /** Every run the source can see. */
+  runs: PipelineRun[];
+  activeRunId: string | null;
+  activeRun: PipelineRun | undefined;
+  status: LoadStatus;
+  /** The server's message, verbatim. Never replaced with a generic one. */
+  error: string | null;
+  mode: RunSource['mode'];
+  sourceLabel: string;
+
+  capabilities: Capabilities | null;
+  evidence: EvidenceRecord[];
+  audit: AuditResponse | null;
+  /** True while a mutation (advance, approve, create) is in flight. */
+  busy: boolean;
+
+  selectRun(runId: string): void;
+  refresh(): Promise<void>;
+  createRun(input: { topic: string; journal?: string }): Promise<PipelineRun>;
+  advance(runId: string): Promise<void>;
+  approveGate(runId: string, gateId: string): Promise<void>;
+  requestRevision(runId: string, gateId: string, note?: string): Promise<void>;
 }
 
 export const PipelineContext = createContext<PipelineContextValue | null>(null);
@@ -17,6 +41,10 @@ export function usePipeline(): PipelineContextValue {
 }
 
 export function useActiveRun(): PipelineRun | undefined {
-  const { state } = usePipeline();
-  return state.runs.find((run) => run.id === state.activeRunId) ?? state.runs[0];
+  return usePipeline().activeRun;
+}
+
+/** Evidence for the active run, newest last. Empty in fixture mode, by design. */
+export function useEvidence(): EvidenceRecord[] {
+  return usePipeline().evidence;
 }

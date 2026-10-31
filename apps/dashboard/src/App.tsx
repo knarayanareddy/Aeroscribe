@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import CFDView from './components/CFDView';
+import DataModeBadge from './components/DataModeBadge';
+import FixtureOnlyNotice from './components/FixtureOnlyNotice';
 import Dashboard from './components/Dashboard';
 import LiteratureView from './components/LiteratureView';
 import ManuscriptView from './components/ManuscriptView';
@@ -11,19 +13,38 @@ import Sidebar, { type View } from './components/Sidebar';
 import WikiView from './components/WikiView';
 import { PipelineProvider } from './state/PipelineProvider';
 import { usePipeline } from './state/pipelineContext';
+import { createSourceFromEnv } from './state/sourceFromEnv';
 
-function AppShell() {
-  const { dispatch } = usePipeline();
+export function AppShell() {
+  const { selectRun, mode } = usePipeline();
   const [activeView, setActiveView] = useState<View>('dashboard');
   const [navOpen, setNavOpen] = useState(false);
 
   const navigate = (view: View, runId?: string) => {
-    if (runId) dispatch({ type: 'selectRun', runId });
+    if (runId) selectRun(runId);
     setActiveView(view);
     setNavOpen(false);
   };
 
+  /**
+   * Views that still render fixtures are refused in live mode rather than shown
+   * with demo numbers under a live badge. Removing a view from this list is the
+   * last step of migrating it.
+   */
+  const fixtureOnly: Partial<Record<View, string>> =
+    mode === 'live'
+      ? {
+          novelty: 'Novelty detection',
+          manuscript: 'Manuscript',
+          review: 'Peer review',
+          wiki: 'AeroWiki',
+        }
+      : {};
+
   const renderView = () => {
+    const gated = fixtureOnly[activeView];
+    if (gated) return <FixtureOnlyNotice view={gated} />;
+
     switch (activeView) {
       case 'pipeline':
         return <PipelineView onNavigate={navigate} />;
@@ -89,6 +110,8 @@ function AppShell() {
           </span>
         </header>
 
+        <DataModeBadge />
+
         <main id="main" className="min-w-0 flex-1">
           {renderView()}
         </main>
@@ -98,8 +121,12 @@ function AppShell() {
 }
 
 export default function App() {
+  // The source is chosen once, from the build environment. There is no runtime
+  // switch that could turn demo data into something that looks live.
+  const source = createSourceFromEnv();
+
   return (
-    <PipelineProvider>
+    <PipelineProvider source={source}>
       <AppShell />
     </PipelineProvider>
   );
