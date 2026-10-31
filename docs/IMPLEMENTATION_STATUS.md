@@ -36,14 +36,17 @@ the deployed Pages build runs.
 
 ### Live mode (`VITE_API_URL` set)
 
-| View                              | Behaviour                                                                                                                         | Where the data comes from                           |
-| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| Overview                          | Run counts and progress from the API; "verified references" and "evidence records" are counted from the selected run's records.   | `GET /api/v1/runs`, `GET /api/v1/runs/:id/evidence` |
-| Pipeline                          | Create a run, run the next stage, approve or reject a gate. Every mutation re-reads the run from the server.                      | `POST /runs`, `POST /runs/:id/advance`, gate routes |
-| Literature                        | The run's admitted references, with DOI, venue, and the timestamp of the resolution that admitted each one. No relevance score.   | `literature-search` evidence record                 |
-| CFD                               | The measured value, its GCI uncertainty, the mesh table and artefact hashes. A synthetic result says so at the top.               | `cfd-run` evidence record                           |
-| Settings                          | The server's own capabilities: literature mode, SU2 availability, registry path, auth. Plus the audit trail.                      | `GET /api/v1/capabilities`, `GET /api/v1/audit`     |
-| Novelty, Manuscript, Review, Wiki | **Refuse to render.** They show a notice explaining that the view is fixture-only, instead of fixture numbers under a live badge. | —                                                   |
+| View       | Behaviour                                                                                                                                        | Where the data comes from                           |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- |
+| Overview   | Run counts and progress from the API; "verified references" and "evidence records" are counted from the selected run's records.                  | `GET /api/v1/runs`, `GET /api/v1/runs/:id/evidence` |
+| Pipeline   | Create a run, run the next stage, approve or reject a gate. Every mutation re-reads the run from the server.                                     | `POST /runs`, `POST /runs/:id/advance`, gate routes |
+| Literature | The run's admitted references, with DOI, venue, and the timestamp of the resolution that admitted each one. No relevance score.                  | `literature-search` evidence record                 |
+| CFD        | The measured value, its GCI uncertainty, the mesh table and artefact hashes. A synthetic result says so at the top.                              | `cfd-run` evidence record                           |
+| Settings   | The server's own capabilities: literature mode, SU2 availability, registry path, auth. Plus the audit trail.                                     | `GET /api/v1/capabilities`, `GET /api/v1/audit`     |
+| Novelty    | Term coverage: which topic terms no verified abstract mentions, with the stage's own confidence label. No novelty score — none is computed.      | `novelty-report` evidence record                    |
+| Manuscript | Title, abstract, sections, word counts and the rendered reference list, flagged when any number is synthetic. No `.tex` download (workstream B). | `manuscript` evidence record                        |
+| Review     | The council's verdict, its named checks and its comments. Read-only: a finding is answered by changing evidence, not by clicking resolve.        | `review-report` evidence record                     |
+| Wiki       | The article stage 8 generated, rendered from markdown as React elements (never as HTML), read-only because it is part of the evidence record.    | `submission-package` evidence record (`wiki`)       |
 
 An unreachable API shows `API unreachable · <reason>` and zero fixture rows. It never falls back.
 
@@ -96,8 +99,9 @@ stating plainly:
 
 ## Known limitations
 
-- The default dashboard build is static fixture data. In live mode, Novelty, Manuscript, Review
-  and Wiki still have no live implementation, and say so instead of rendering.
+- The default dashboard build is static fixture data. Live mode needs a running API.
+- In live mode the manuscript view has no source download: the LaTeX renderer and PDF compile are
+  workstream B, and the page says so instead of offering a file that would not match the registry.
 - In live mode a gate approval is a real server call and survives a reload. In fixture mode it is
   still local to the session, and the run list resets.
 - Wiki edits are not persisted anywhere.

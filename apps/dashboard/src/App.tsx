@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import CFDView from './components/CFDView';
 import DataModeBadge from './components/DataModeBadge';
-import FixtureOnlyNotice from './components/FixtureOnlyNotice';
 import Dashboard from './components/Dashboard';
 import LiteratureView from './components/LiteratureView';
 import ManuscriptView from './components/ManuscriptView';
@@ -16,7 +15,7 @@ import { usePipeline } from './state/pipelineContext';
 import { createSourceFromEnv } from './state/sourceFromEnv';
 
 export function AppShell() {
-  const { selectRun, mode } = usePipeline();
+  const { selectRun } = usePipeline();
   const [activeView, setActiveView] = useState<View>('dashboard');
   const [navOpen, setNavOpen] = useState(false);
 
@@ -26,25 +25,9 @@ export function AppShell() {
     setNavOpen(false);
   };
 
-  /**
-   * Views that still render fixtures are refused in live mode rather than shown
-   * with demo numbers under a live badge. Removing a view from this list is the
-   * last step of migrating it.
-   */
-  const fixtureOnly: Partial<Record<View, string>> =
-    mode === 'live'
-      ? {
-          novelty: 'Novelty detection',
-          manuscript: 'Manuscript',
-          review: 'Peer review',
-          wiki: 'AeroWiki',
-        }
-      : {};
-
+  // Every view has a live implementation, so none renders fixture data in live
+  // mode. `FixtureOnlyNotice` stays for the next view that needs it.
   const renderView = () => {
-    const gated = fixtureOnly[activeView];
-    if (gated) return <FixtureOnlyNotice view={gated} />;
-
     switch (activeView) {
       case 'pipeline':
         return <PipelineView onNavigate={navigate} />;

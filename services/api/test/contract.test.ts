@@ -225,14 +225,19 @@ beforeAll(async () => {
 
   // Drive all eight stages, approving the human gate after each one. This is
   // the same sequence the dashboard performs, in the same order.
-  for (let index = 0; index < 8; index += 1) {
+  for (let index = 0; index < 9; index += 1) {
     const advanced = (await postJson(`/api/v1/runs/${runId}/advance`)) as {
       stage: { gateId?: string };
     };
     captures.push({ name: `advance-${index}`, body: advanced });
 
+    // Stage 8 is blocked (the run is synthetic and the review said revise), so it
+    // writes its package record and then fails; there is no gate to approve.
     const gateId = advanced.stage.gateId;
-    if (gateId) await postJson(`/api/v1/runs/${runId}/gates/${gateId}/approve`, { actor: 'ana' });
+    const blocked = (advanced as { blocked?: unknown }).blocked;
+    if (gateId && !blocked) {
+      await postJson(`/api/v1/runs/${runId}/gates/${gateId}/approve`, { actor: 'ana' });
+    }
   }
 
   captures.push({ name: 'run', body: await json(`/api/v1/runs/${runId}`) });

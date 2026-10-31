@@ -360,6 +360,18 @@ export interface SubmissionPayload {
   packagedAt: string;
 }
 
+/**
+ * Stage 8 writes the article and the manifest in one append.
+ *
+ * The version covers the envelope; each part carries its own so a reader can
+ * track them independently.
+ */
+export interface SubmissionPackagePayload {
+  schemaVersion: 1;
+  wiki: WikiPayload;
+  submission: SubmissionPayload;
+}
+
 /* ─────────────────────────────── verification ────────────────────────────── */
 
 export interface UnbackedClaim {
