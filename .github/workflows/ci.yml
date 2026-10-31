@@ -38,8 +38,10 @@ jobs:
       - name: Format check
         run: npm run format:check
 
-      - name: Test
-        run: npm test
+      # Coverage is the same run plus thresholds, so it replaces `npm test`
+      # rather than repeating it. The thresholds encode RULE-050.
+      - name: Test with coverage thresholds
+        run: npm run coverage
 
       - name: Build both applications
         run: npm run build
@@ -74,3 +76,42 @@ jobs:
         run: npm run smoke:cfd
         env:
           AEROSCRIBE_DATA_DIR: ${{ runner.temp }}/aeroscribe-data
+
+  # The Dockerfile is the deployment artefact; building it here keeps it from
+  # rotting. The runtime install is `--omit=dev`, so this also fails if a
+  # package the service needs at runtime is sitting in devDependencies.
+  api-image:
+    name: API image builds and answers /health
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build the image
+        run: docker build -t aeroscribe-api:ci .
+
+      - name: Boot it and wait for /health
+        run: |
+          docker run -d --name api -p 8787:8787 \
+            -e AEROSCRIBE_OFFLINE=true \
+            -e AEROSCRIBE_DATA_DIR=/data \
+            aeroscribe-api:ci
+          for attempt in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:8787/health > /dev/null; then
+              echo "healthy after ${attempt}s"
+              curl -fsS http://127.0.0.1:8787/health
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "the container never answered /health"
+          docker logs api
+          exit 1
+
+      - name: Container logs
+        if: always()
+        run: docker logs api || true
+
+      - name: Remove the container
+        if: always()
+        run: docker rm -f api || true
