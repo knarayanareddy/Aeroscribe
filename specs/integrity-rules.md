@@ -3,21 +3,71 @@
 The rules below are copied verbatim from the project's design draft
 ([`archive/design-spec-v0.1.md`](archive/design-spec-v0.1.md), Article I and following
 articles), with whitespace normalised. They are the project's stated definition of "not
-fabricating results". Where a rule refers to packages or services that do not exist yet
-(`packages/verified-registry`, `apps/api`, a Postgres-backed registry), the rule is a
-requirement on the future backend, not a description of the current code.
+fabricating results".
+
+Some rules name infrastructure this repository does not have (`packages/verified-registry`,
+a Postgres registry, Redis, S3, Turborepo). Those are marked N/A or Partial below rather
+than quietly rewritten; where a rule's _property_ matters — an append-only, detectable
+registry — the code implements the property with the tools it does have. The enforcement
+table is the honest answer to "is this rule real?", and it is kept in step with the code
+(`services/api/test/docs.test.ts` checks the API's own documentation the same way).
 
 ## Enforcement status in this repository
 
-| Rule                                                    | Status in this repository                                                                                                                                                                                   |
-| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| RULE-001 (no fabricated numbers)                        | **Partly enforced.** The UI never computes research results; every displayed value comes from fixture data and is labelled "illustrative". A real backend is still required to enforce traceability.        |
-| RULE-002 (DOI-verified citations)                       | **Not implemented.** The literature view ships fixture papers; no DOI resolution is performed.                                                                                                              |
-| RULE-003 (no gate bypass)                               | **Enforced in the UI state machine.** `approveGate` only moves a stage that is `gate_pending`, and only in response to a human click (`packages/pipeline/src/reducer.ts`). The API endpoint does not exist. |
-| RULE-004 (no AI authorship)                             | **Represented in the UI.** The manuscript view flags a missing AI-use disclosure; the rule is not mechanically enforced.                                                                                    |
-| RULE-040 (no hardcoded secrets)                         | **Enforced by omission.** No credentials are collected or stored in the browser; the settings view is read-only and shows configuration as "Not configured".                                                |
-| RULE-041 – RULE-044 (checksummed, append-only registry) | **Not implemented.** The dashboard renders fixture checksums to show the intended shape of the data.                                                                                                        |
-| RULE-050 – RULE-063 (quality and process)               | **Partly adopted.** Strict TypeScript, lint, formatting, tests and PR checks exist; coverage thresholds and release process do not.                                                                         |
+The rules below were written for a backend that did not exist. It exists now, in
+`services/api`, so this table says where each rule is actually enforced — and where it is
+still only a sentence.
+
+Legend: **API** = the service refuses to violate it · **UI** = visible in the prototype
+only · **Partial** = enforced in some paths · **N/A** = the rule assumes infrastructure
+this repository deliberately does not have.
+
+| Rule                                        | Status         | Where                                                                                                                                                                                            |
+| ------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| RULE-001 no fabricated numbers              | **API**        | `services/api/src/claims/verify.ts`; stage 5 throws `UnverifiableClaimError` before a manuscript record is written                                                                               |
+| RULE-002 DOI-verified citations             | **API**        | `LiteratureService.verifyDoi` + the same verifier; a DOI that did not resolve this run is a `RULE-002` violation                                                                                 |
+| RULE-003 no gate bypass                     | **API and UI** | `Orchestrator.assertGate` returns `409`; `approveGate` in `packages/pipeline/src/reducer.ts` only moves a `gate_pending` stage                                                                   |
+| RULE-004 no AI authorship                   | **API**        | Stage 5 always emits the disclosure section; the review council fails `RULE-004` without it                                                                                                      |
+| RULE-005 journal scope validation           | **Partial**    | Stage 0 scores scope keywords, but there is no 7.0/10 threshold and stage 8 only builds a manifest                                                                                               |
+| RULE-010 strict TypeScript                  | **Adopted**    | `strict` in `tsconfig.base.json` for every workspace; no Python in the repository                                                                                                                |
+| RULE-011 stateless agents                   | **Partial**    | Agents are stateless functions, but state lives on disk (registry, runs, audit) rather than in Postgres/Redis/S3 — see `docs/BACKEND.md` § 9                                                     |
+| RULE-012 barrel imports                     | **Adopted**    | Cross-package imports go through `@aeroscribe/pipeline`'s barrel; not mechanically linted                                                                                                        |
+| RULE-013 API contract                       | **Partial**    | Rate limiting (60/min), input validation and structured error shapes exist; the validation is hand-written rather than Zod, and there is no OpenAPI document yet                                 |
+| RULE-014 / RULE-015                         | **N/A**        | No database, no Turborepo; npm workspaces with a single lockfile                                                                                                                                 |
+| RULE-022 agent telemetry                    | **N/A**        | No model calls: every stage handler is deterministic, so there are no tokens or costs to log                                                                                                     |
+| RULE-031 value ± uncertainty                | **Partial**    | `agents/writing.ts` formats every result as `value ± uncertainty` from the GCI, and `agents/review.ts` fails a study whose GCI is invalid; neither parses arbitrary prose for a missing interval |
+| RULE-040 no hardcoded secrets               | **API and UI** | `config.ts` reads the environment only; the dashboard never accepts a key; `SEMANTIC_SCHOLAR_API_KEY` stays server-side                                                                          |
+| RULE-041 checksum → registry → manuscript   | **API**        | Artefact SHA-256 in every `cfd-run` record, hash-chained registry, GCI validity gate before a value may be quoted                                                                                |
+| RULE-042 exponential backoff                | **API**        | `literature/http.ts`: immediate, 2 s, 4 s, 8 s, 16 s, then a structured error                                                                                                                    |
+| RULE-043 append-only registry               | **API**        | NDJSON append-only plus a hash chain; `GET /api/v1/evidence/verify` detects edits, reordering and deletion                                                                                       |
+| RULE-044 audit trail                        | **Partial**    | `store/audit.ts` is append-only and readable per run, but not hash-chained and not on object-locked storage                                                                                      |
+| RULE-050 coverage thresholds                | **Partial**    | CI fails below the thresholds in `vitest.config.ts` (repository floor plus a stricter floor for `services/api`), not the exact per-package numbers                                               |
+| RULE-052 time budget                        | **Partial**    | Each SU2 invocation has a timeout; there is no overall per-stage budget that kills a slow stage                                                                                                  |
+| RULE-053 structured logging                 | **Not met**    | The server logs text through Hono's logger; there is no JSON logger carrying `run_id`/`stage_id`                                                                                                 |
+| RULE-063 no auto-deploy to production       | **N/A**        | The only deployment is a static site to GitHub Pages; there is no staging/production split                                                                                                       |
+| RULE-020 Scout Protocol                     | **Process**    | Done by hand before new modules (the review that produced `services/api` re-used `@aeroscribe/pipeline`); no tool detects a re-implemented utility                                               |
+| RULE-021 Compression Loop                   | **Not met**    | There is no scheduled 15 % refactor pass; code is reshaped when a change makes it clearer, and the review panel calls that out rather than claiming a loop                                       |
+| RULE-023 reasoning between tool calls       | **N/A**        | Stage handlers make no tool calls; they are deterministic functions                                                                                                                              |
+| RULE-024 MCP context budget                 | **N/A**        | No MCP servers and no model context window to budget                                                                                                                                             |
+| RULE-025 subagents                          | **N/A**        | No subagents: the orchestrator calls typed functions and the results are typed records, not free text                                                                                            |
+| RULE-030 hierarchical manuscript generation | **Not met**    | `agents/writing.ts` emits sections in one deterministic pass; there are no Level 1–4 artefacts and no LaTeX renderer                                                                             |
+| RULE-032 AIAA citation format               | **Not met**    | `formatCitation` emits `[n] authors (year). title. doi:…`; there is no AIAA formatter and no CitationValidator pass                                                                              |
+| RULE-033 pgfplots figures                   | **Not met**    | No figure pipeline: CFD artefacts are CSV files referenced by the submission manifest                                                                                                            |
+| RULE-034 four-sentence abstract             | **Partial**    | The abstract is three deterministic sentences (result, method, literature) under 250 words, not the four prescribed ones                                                                         |
+| RULE-051 async/await only                   | **Adopted**    | `async`/`await` throughout; ESLint is not configured with a floating-promises rule, so this rests on review                                                                                      |
+| RULE-054 no magic numbers                   | **Partial**    | Tunables are named module constants or parsed in `config.ts` from the environment; there is no shared `constants/` package and no lint rule                                                      |
+| RULE-060 branch naming                      | **Process**    | Followed for hand-made branches; automated work uses the platform's `arena/<session>` branch                                                                                                     |
+| RULE-061 Conventional Commits               | **Adopted**    | Recent commits: `test(api): …`, `docs(site): …`, `fix(landing-page): …`, `chore(deps): …`. Not enforced by a commit hook                                                                         |
+| RULE-062 PR contents                        | **Partial**    | `.github/pull_request_template.md` asks for the four required sections; contributors may leave them terse, and nothing fails CI                                                                  |
+
+Two rules deserve a note because the wording no longer matches the code:
+
+- **RULE-003's gate list** ("0, 3, 4a, 4b, 4c, 6, 7") contradicts the project's own gate
+  table (GATE-0 … GATE-8, with 4A/4B/4C). The rule's substance — no gate may be
+  auto-approved — stands and is enforced; see [`pipeline.md`](pipeline.md).
+- **RULE-043's** "enforced at the database level with a trigger" is implemented as an
+  append-only file plus a hash chain, because there is no database. The property that
+  matters — a rewritten record is detectable — holds.
 
 ## Rules
 

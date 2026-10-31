@@ -128,10 +128,21 @@ Guards, all `409 conflict`:
 
 - `advance` on a stage that is already `gate_pending` (message names the open gate);
 - `advance` on a stage that is already `completed`;
+- `advance` while this run already has a stage in flight — a double click, or a retried
+  request, would otherwise spawn a second SU2 study and append a second evidence record;
 - `approveGate` / `requestRevision` when the current stage is not `gate_pending`;
 - `approveGate` / `requestRevision` with a `gateId` that is not the open one.
 
-`404` for an unknown run id, `400` for a topic shorter than eight characters.
+`404` for an unknown run id, `400` for a topic shorter than eight or longer than 300
+characters, `413` for a body over 1 MiB.
+
+The in-flight guard is per process, like the rate limiter: two instances sharing a data
+directory would not see each other's running stages. The registry assumes a single writer for
+the same reason (see § 13).
+
+A stage that is only _recorded_ as `running` — the process died mid-stage — is resumed by the
+next `advance`, because the in-flight set is empty in the new process. Nothing is guessed: the
+handler re-runs and appends a fresh record.
 
 A **failed** stage can be advanced again: that is the retry path after an operator fixes a
 capability (installs SU2, adds an API key). Each attempt appends its own evidence record, so a
@@ -463,6 +474,31 @@ curl -s localhost:8787/api/v1/evidence/verify
 | `AEROSCRIBE_RETRY_BASE_MS`       | `2000`                                        | first backoff step (RULE-042)                                      |
 | `SEMANTIC_SCHOLAR_API_KEY`       | _unset_                                       | server-side only; never sent to the browser                        |
 
+Every variable is described in `services/api/.env.example`; copy it to `services/api/.env`
+for local work. Neither browser app reads any of them — a key in a Vite bundle is a public key.
+
+### Running it
+
+```sh
+# Laptop
+npm ci && npm run start:api
+
+# Container
+docker build -t aeroscribe-api .
+docker run --rm -p 8787:8787 \
+  -e AEROSCRIBE_API_KEY="$(openssl rand -hex 32)" \
+  -e AEROSCRIBE_CONTACT_EMAIL=you@example.org \
+  -v aeroscribe-data:/data \
+  aeroscribe-api
+```
+
+The image installs with `--omit=dev`, which is why `tsx` is listed in `dependencies`: the
+service runs its TypeScript source, and there is no compiled artifact to ship. `HOST`
+defaults to `0.0.0.0` inside the image, the health check polls `/health`, and `/data` is a
+volume — without it the evidence registry dies with the container. CI builds the image and
+waits for `/health` inside it (`api-image` job), so the Dockerfile is a tested artefact rather
+than reviewed configuration.
+
 Data layout under `AEROSCRIBE_DATA_DIR`:
 
 ```
@@ -490,7 +526,10 @@ cfd/study-<uuid>/        SU2 working directories: history.csv per mesh level
 | Registry tampered with on disk         | `verify()` reports `brokenAt` and the reason                                    | `GET /evidence/verify` → `valid:false`                   |
 | API key unset                          | runs unauthenticated and says so                                                | `/health` → `authRequired:false`                         |
 | Too many requests                      | fixed-window limiter per key/IP                                                 | `429 rate_limited` + `x-ratelimit-remaining`             |
+| Second `advance` while a stage runs    | in-flight guard per run; the handler is not invoked twice                       | `409 conflict` naming the running stage                  |
 | Process restarts mid-run               | run state and options reload from disk; a `running` stage can be advanced again | run continues, evidence chain intact                     |
+| `SIGTERM` (`docker stop`)              | stops accepting requests, lets in-flight writes finish, exits 0 after ≤30 s     | the container exits cleanly instead of being killed      |
+| Body over 1 MiB                        | rejected before parsing                                                         | `413 payload_too_large`                                  |
 
 Deliberate non-fallback: there is no "try SU2, else synthetic" path anywhere in the
 code, and no "use the cache if the network fails" path in live mode. Both would make a
@@ -514,23 +553,30 @@ run look successful while its numbers were not what the operator asked for.
 
 ## 12. Tests
 
-| File                        | Covers                                                                         |
-| --------------------------- | ------------------------------------------------------------------------------ |
-| `test/canonical.test.ts`    | canonical JSON, key ordering, hash stability                                   |
-| `test/registry.test.ts`     | chain integrity, tamper detection, concurrent appends                          |
-| `test/retry.test.ts`        | backoff schedule, `Retry-After`, timeout vs abort vs DNS messages, spacer      |
-| `test/gci.test.ts`          | order recovery, extrapolation, oscillatory and non-asymptotic rejection        |
-| `test/literature.test.ts`   | provider mapping, JATS stripping, dedupe/rank, DOI verification, offline rules |
-| `test/su2.test.ts`          | `history.csv` parsing, fake-binary study, failure paths                        |
-| `test/cfd-service.test.ts`  | solver selection, capability refusal, synthetic labelling                      |
-| `test/claims.test.ts`       | extraction, precision rules, derived counts, DOI masking                       |
-| `test/agents.test.ts`       | stages 0–3 payloads, stage 5 refusal, stage 6 verdict                          |
-| `test/orchestrator.test.ts` | full 9-stage run, gate discipline, revision loop, restart durability           |
-| `test/http.test.ts`         | auth on/off, rate limit, error shapes, CORS, every route                       |
+| File                        | Covers                                                                          |
+| --------------------------- | ------------------------------------------------------------------------------- |
+| `test/canonical.test.ts`    | canonical JSON, key ordering, hash stability                                    |
+| `test/registry.test.ts`     | chain integrity, tamper detection, concurrent appends                           |
+| `test/retry.test.ts`        | backoff schedule, `Retry-After`, timeout vs abort vs DNS messages, spacer       |
+| `test/gci.test.ts`          | order recovery, extrapolation, oscillatory and non-asymptotic rejection         |
+| `test/literature.test.ts`   | provider mapping, JATS stripping, dedupe/rank, DOI verification, offline rules  |
+| `test/su2.test.ts`          | `history.csv` parsing, fake-binary study, failure paths                         |
+| `test/cfd-service.test.ts`  | solver selection, capability refusal, synthetic labelling                       |
+| `test/claims.test.ts`       | extraction, precision rules, derived counts, DOI masking                        |
+| `test/agents.test.ts`       | stages 0–3 payloads, stage 5 refusal, stage 6 verdict                           |
+| `test/orchestrator.test.ts` | full 9-stage run, gate discipline, revision loop, restart durability            |
+| `test/http.test.ts`         | auth on/off, rate limit, error shapes, CORS, body limits, every route           |
+| `test/su2-http.test.ts`     | `solver: "su2"` over HTTP with a fake binary: meshes, digests, GCI, 502 path    |
+| `test/config.test.ts`       | env parsing, SU2 detection, capability reporting, on-disk wiring, `startServer` |
+| `test/shutdown.test.ts`     | SIGTERM drain, single exit, deadline exit code                                  |
+| `test/docs.test.ts`         | `docs/BACKEND.md` routes/env/stages and `specs/architecture.md` match the code  |
 
 The suite is hermetic: no network, no solver, temporary data directories, and fake
 binaries written into `os.tmpdir()`. `npm run smoke:*` is the by-hand equivalent that
 _does_ touch the outside world, on purpose.
+
+`npm run coverage` runs the same suite with the thresholds in `vitest.config.ts`; CI uses it
+instead of `npm test` because thresholds only apply when coverage is collected.
 
 ---
 
