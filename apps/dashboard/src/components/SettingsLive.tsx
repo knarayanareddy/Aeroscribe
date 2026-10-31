@@ -42,6 +42,14 @@ export default function SettingsLive() {
         : 'SU2_CFD_BINARY is unset. Stage 4 will use the synthetic benchmark and the run will be labelled synthetic.',
     },
     {
+      label: 'LaTeX toolchain',
+      value: capabilities.latex.available ? 'Available' : 'Not configured',
+      ok: capabilities.latex.available,
+      note: capabilities.latex.configured
+        ? `LATEX_BINARY = ${capabilities.latex.binary ?? ''}${capabilities.latex.version ? ` · ${capabilities.latex.version}` : ' · no version reported'}`
+        : 'LATEX_BINARY is unset. Stage 8 still writes the .tex, records typeset="source-only" and blocks submission with the reason.',
+    },
+    {
       label: 'Synthetic benchmark',
       value: capabilities.cfd.synthetic ? 'Available (labelled)' : 'Unavailable',
       ok: capabilities.cfd.synthetic,

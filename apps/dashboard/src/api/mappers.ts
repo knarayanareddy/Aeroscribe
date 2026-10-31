@@ -6,6 +6,7 @@ import type {
   EvidenceRecord,
   LiteraturePayload,
   ManuscriptPayload,
+  ManuscriptRenderPayload,
   NoveltyPayload,
   ReferenceRecord,
   RecheckResult,
@@ -284,6 +285,41 @@ export function isWikiArticle(value: unknown): value is WikiPayload {
 export function wikiFromPackage(payload: unknown): WikiPayload | null {
   if (!isObject(payload)) return null;
   return isWikiArticle(payload['wiki']) ? payload['wiki'] : null;
+}
+
+/* ────────────────────────── rendered manuscript ─────────────────────────── */
+
+export function isRenderPayload(payload: unknown): payload is ManuscriptRenderPayload {
+  return isObject(payload) && payload['stage'] === 'manuscript-render';
+}
+
+export interface LiveRender {
+  template: string;
+  typeset: 'pdf' | 'source-only';
+  files: ManuscriptRenderPayload['files'];
+  pdf: { sha256: string; bytes: number } | null;
+  toolchain: { binary: string; version: string | null } | null;
+  missingBibliographyFields: string[];
+  generatedAt: string;
+  /** One sentence saying what exists, and what does not. */
+  summary: string;
+}
+
+export function toLiveRender(payload: ManuscriptRenderPayload): LiveRender {
+  const summary =
+    payload.typeset === 'pdf'
+      ? `Typeset to PDF with ${payload.toolchain?.version ?? 'a TeX engine'} using the ${payload.template} template.`
+      : `LaTeX source only (${payload.template} template). The .tex compiles by hand; this instance had no TeX engine, so no PDF exists.`;
+  return {
+    template: payload.template,
+    typeset: payload.typeset,
+    files: payload.files,
+    pdf: payload.pdf,
+    toolchain: payload.toolchain,
+    missingBibliographyFields: payload.missingBibliographyFields,
+    generatedAt: payload.generatedAt,
+    summary,
+  };
 }
 
 /* ──────────────────────────── reference re-checks ────────────────────────── */

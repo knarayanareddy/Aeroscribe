@@ -1,10 +1,16 @@
+import { findJournalTarget } from '@aeroscribe/pipeline';
 import { canonicalJson, sha256 } from '../lib/canonical';
+import { buildPolicy, verifyClaims } from '../claims/verify';
+import { UnverifiableClaimError } from '../errors';
 import { referenceBlockers } from '../references/recheck';
 import type { StageHandler, StageOutcome } from './types';
 import type {
+  CfdEvidencePayload,
   CompliancePayload,
   DoiRecheckPayload,
+  LiteraturePayload,
   ManuscriptPayload,
+  ManuscriptRenderPayload,
   NoveltyPayload,
   ReviewPayload,
   SubmissionPayload,
@@ -26,10 +32,12 @@ function slugify(value: string): string {
 /**
  * Stage 8 — compounding knowledge base and submission package.
  *
- * The wiki article is generated from the manuscript; the package is a manifest
- * of *evidence hashes*, not a PDF. A real submission package needs a LaTeX
- * toolchain and publisher-specific formatting, and pretending otherwise is how
- * a prototype ends up claiming it produced a camera-ready paper.
+ * The wiki article is generated from the manuscript, and the submission package
+ * is a manifest of *evidence hashes*. The typeset manuscript is a separate
+ * record (`manuscript-render`), produced by the same stage: the `.tex` is always
+ * written, the PDF only when a TeX engine is configured, and a missing PDF is a
+ * blocker rather than a footnote. Claim verification runs on the **rendered
+ * text**, so a number that never reached a record cannot reach the PDF either.
  */
 export const knowledgeAndSubmission: StageHandler = async (context): Promise<StageOutcome> => {
   const { run, registry, now } = context;
@@ -87,6 +95,60 @@ export const knowledgeAndSubmission: StageHandler = async (context): Promise<Sta
   if (compliance && !compliance.compliant) blockers.push('journal compliance has blocking issues');
   if (manuscript.synthetic) blockers.push('the results come from the synthetic solver');
 
+  // ── The typeset manuscript ────────────────────────────────────────────────
+  //
+  // Rendering happens here, not in a route: the artefact is part of what stage 8
+  // decides, and a package that claims to be submittable while its PDF does not
+  // exist would be a lie the registry could not correct.
+  const journal = findJournalTarget(manuscript.journalId);
+  if (!journal) {
+    throw new Error(
+      `this run's journal "${manuscript.journalId}" is not a configured submission target`,
+    );
+  }
+  const cfd = (records.find((record) => record.kind === 'cfd-run')?.payload ??
+    null) as CfdEvidencePayload | null;
+  const literature = records.find((record) => record.kind === 'literature-search')?.payload as
+    LiteraturePayload | undefined;
+
+  const render = await context.latex.build({
+    runId: run.id,
+    manuscript,
+    journal,
+    cfd,
+    // The header of the `.tex` names the records it was built from, so the file
+    // carries its own provenance.
+    inputHashes: records.map((record) => ({
+      kind: record.kind,
+      seq: record.seq,
+      sha256: record.payloadHash,
+    })),
+  });
+
+  // The same policy stage 5 used, applied to the text a reader will actually
+  // see. Counts are declared as derived for the same reason: "3 meshes" is a
+  // count of evidence, not a measurement.
+  const claims = verifyClaims(
+    render.rendered.verifiableText,
+    buildPolicy(records, {
+      derived: [
+        {
+          value: literature?.references.length ?? manuscript.referenceCount,
+          source: 'literature.references.length',
+        },
+        { value: novelty?.gapCount ?? 0, source: 'novelty.gapCount' },
+        { value: cfd?.gci?.levels.length ?? 0, source: 'cfd.gci.levels.length' },
+      ],
+    }),
+  );
+  if (!claims.ok) {
+    throw new UnverifiableClaimError(
+      claims.unbacked.map((claim) => `${claim.token} (${claim.reason}) in: ${claim.context}`),
+    );
+  }
+
+  if (render.blocker) blockers.push(render.blocker);
+
   // One word for the run card: whether these references were checked now, only
   // when the manuscript was written, or checked and found wanting.
   const referenceMetric =
@@ -115,6 +177,7 @@ export const knowledgeAndSubmission: StageHandler = async (context): Promise<Sta
     };
   });
 
+  const renderPayload: ManuscriptRenderPayload = render.payload;
   const submission: SubmissionPayload = {
     stage: 'aerowiki-submission',
     schemaVersion: 1,
@@ -122,7 +185,10 @@ export const knowledgeAndSubmission: StageHandler = async (context): Promise<Sta
     status: blockers.length === 0 ? 'ready' : 'blocked',
     blockers,
     files,
-    note: 'Manifest only: no PDF or .docx is compiled by this service, and no file is uploaded to a journal.',
+    note:
+      renderPayload.typeset === 'pdf'
+        ? "Manifest of evidence hashes. The typeset PDF is recorded in this run's manuscript-render record; nothing is uploaded to a journal."
+        : "Manifest of evidence hashes. The LaTeX source is recorded in this run's manuscript-render record, but no PDF was typeset; nothing is uploaded to a journal.",
     packagedAt: now().toISOString(),
   };
 
@@ -136,11 +202,23 @@ export const knowledgeAndSubmission: StageHandler = async (context): Promise<Sta
     // Composite payload: the version covers the envelope, and each part carries
     // its own so a reader can track them independently.
     payload: { schemaVersion: 1, wiki, submission },
+    extra: [
+      {
+        kind: 'manuscript-render',
+        label:
+          renderPayload.typeset === 'pdf'
+            ? `Typeset manuscript for "${manuscript.title}" (${renderPayload.template})`
+            : `LaTeX source for "${manuscript.title}" (${renderPayload.template}); no PDF typeset`,
+        payload: renderPayload,
+      },
+    ],
     metrics: {
       status: submission.status,
       files: files.length,
       blockers: blockers.length,
       references: referenceMetric,
+      typeset: renderPayload.typeset,
+      figures: renderPayload.files.filter((file) => file.name.endsWith('.tex')).length - 1,
     },
     blocked:
       submission.status === 'ready'

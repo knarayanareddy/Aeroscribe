@@ -7,15 +7,15 @@
       "doi": "10.1016/j.jcp.2023.112001",
       "title": "Adjoint-based mesh adaptation for transonic flows",
       "citation": "[1] C. Author (2023). Adjoint-based mesh adaptation for transonic flows. Journal of Computational Physics. doi:10.1016/j.jcp.2023.112001",
-      "verifiedAt": "2026-10-31T22:04:07.855Z",
+      "verifiedAt": "2026-10-31T22:25:25.130Z",
       "verifiedProvider": "crossref",
       "latest": {
         "status": "fresh",
-        "checkedAt": "2026-10-31T22:04:07.924Z",
+        "checkedAt": "2026-10-31T22:25:25.196Z",
         "reason": null,
         "provider": "crossref",
         "titleSimilarity": 1,
-        "seq": 9
+        "seq": 10
       }
     },
     {
@@ -24,19 +24,19 @@
       "doi": "10.2514/1.j060001",
       "title": "Transonic drag prediction on unstructured meshes",
       "citation": "[2] A. Author, B. Author (2024). Transonic drag prediction on unstructured meshes. AIAA Journal. doi:10.2514/1.j060001",
-      "verifiedAt": "2026-10-31T22:04:07.856Z",
+      "verifiedAt": "2026-10-31T22:25:25.131Z",
       "verifiedProvider": "crossref",
       "latest": {
         "status": "fresh",
-        "checkedAt": "2026-10-31T22:04:07.924Z",
+        "checkedAt": "2026-10-31T22:25:25.196Z",
         "reason": null,
         "provider": "crossref",
         "titleSimilarity": 1,
-        "seq": 9
+        "seq": 10
       }
     }
   ],
-  "checkedAt": "2026-10-31T22:04:07.924Z",
+  "checkedAt": "2026-10-31T22:25:25.196Z",
   "rechecks": 1,
   "status": "current"
 }

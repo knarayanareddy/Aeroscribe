@@ -7,6 +7,10 @@
 #     -v aeroscribe-data:/data \
 #     aeroscribe-api
 #
+# Add `--build-arg INSTALL_LATEX=true` and `-e LATEX_BINARY=/usr/bin/pdflatex`
+# to typeset the manuscript PDF as well; without them the run still writes the
+# `.tex`, says `typeset: "source-only"` and blocks submission at stage 8.
+#
 # The service runs from TypeScript source through `tsx`, which is a production
 # dependency rather than a dev convenience. There is no `tsc` emit step because
 # `@aeroscribe/pipeline` is consumed as source too; compiling would need a
@@ -20,6 +24,27 @@
 FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 
+# Typesetting is optional: without an engine, stage 8 still writes the `.tex`
+# and the run says `typeset: "source-only"`, which is honest but stops a journal
+# PDF from existing. `--build-arg INSTALL_LATEX=true` adds the engine, and the
+# binary then answers a run's `GET /api/v1/runs/:id/manuscript.pdf`.
+#
+# texlive-latex-recommended carries the `article` class, amsmath, booktabs and
+# graphicx; texlive-pictures carries pgfplots, which figure-1.tex uses. The
+# bibliography is written inline, so no BibTeX package is needed. Both are
+# ~250 MB together, which is why this is not the default.
+ARG INSTALL_LATEX=false
+RUN if [ "$INSTALL_LATEX" = "true" ]; then \
+      apt-get update \
+      && apt-get install -y --no-install-recommends \
+           texlive-latex-recommended texlive-pictures \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
+
+# `LATEX_BINARY` is deliberately *not* set here: it would point at a binary the
+# default image does not contain, and the service would then report a toolchain
+# that "did not answer" instead of an unset one. Build with `INSTALL_LATEX=true`
+# and run with `-e LATEX_BINARY=/usr/bin/pdflatex` to get PDFs.
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=8787 \

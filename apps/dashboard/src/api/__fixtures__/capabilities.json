@@ -13,15 +13,21 @@
     },
     "synthetic": true
   },
+  "latex": {
+    "configured": false,
+    "binary": null,
+    "available": false,
+    "version": null
+  },
   "registry": {
     "algorithm": "sha256",
-    "path": "/tmp/aeroscribe-contract-jxNQBM/registry.ndjson"
+    "path": "/tmp/aeroscribe-contract-Dbg2d9/registry.ndjson"
   },
   "auth": {
     "required": false
   },
   "storage": {
-    "runsDir": "/tmp/aeroscribe-contract-jxNQBM/runs",
-    "auditPath": "/tmp/aeroscribe-contract-jxNQBM/audit.ndjson"
+    "runsDir": "/tmp/aeroscribe-contract-Dbg2d9/runs",
+    "auditPath": "/tmp/aeroscribe-contract-Dbg2d9/audit.ndjson"
   }
 }

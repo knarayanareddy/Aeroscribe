@@ -82,6 +82,8 @@ function buildServer() {
     corsOrigins: ['http://localhost:5174'],
     upstreamTimeoutMs: 5_000,
     retryBaseDelayMs: 1,
+    latexBinary: null,
+    latexTimeoutMs: 5_000,
     logLevel: 'silent',
     version: 'test',
     commit: 'test',

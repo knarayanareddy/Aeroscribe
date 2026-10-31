@@ -3,11 +3,13 @@ import type { RecheckStatus } from '@aeroscribe/contract';
 import {
   isManuscriptPayload,
   isRecheckPayload,
+  isRenderPayload,
   latestPayload,
   toLiveManuscript,
   toLiveRecheck,
+  toLiveRender,
 } from '../api/mappers';
-import { useActiveRun, useEvidence } from '../state/pipelineContext';
+import { useActiveRun, useEvidence, usePipeline } from '../state/pipelineContext';
 
 /**
  * The manuscript as the API recorded it.
@@ -26,12 +28,24 @@ const STATUS_STYLE: Record<RecheckStatus, string> = {
   unverified: 'bg-slate-100 text-slate-700',
 };
 
+/** A byte count a reader can act on, without pretending to more precision. */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  return `${(bytes / 1024).toFixed(1)} kB`;
+}
+
 export default function ManuscriptLive() {
   const activeRun = useActiveRun();
+  const { artefactUrl } = usePipeline();
   const records = useEvidence();
   const payload = latestPayload(records, 'manuscript', isManuscriptPayload);
   const recheckPayload = latestPayload(records, 'doi-recheck', isRecheckPayload);
   const checks = recheckPayload ? toLiveRecheck(recheckPayload) : null;
+  const renderPayload = latestPayload(records, 'manuscript-render', isRenderPayload);
+  const rendered = renderPayload ? toLiveRender(renderPayload) : null;
+  const runId = activeRun?.id ?? '';
+  const texUrl = rendered ? (artefactUrl?.(runId, 'tex') ?? null) : null;
+  const pdfUrl = rendered?.typeset === 'pdf' ? (artefactUrl?.(runId, 'pdf') ?? null) : null;
   const [openSection, setOpenSection] = useState<string | null>(null);
 
   if (!activeRun) {
@@ -187,13 +201,54 @@ export default function ManuscriptLive() {
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-slate-50 p-5">
-        <h2 className="text-sm font-bold text-slate-900">Source files</h2>
-        <p className="mt-1 text-xs text-slate-600">
-          Not produced yet. The LaTeX renderer and the PDF compile step are workstream B in{' '}
-          <code className="rounded bg-white px-1 py-0.5">docs/ROADMAP.md</code>; until they exist,
-          the submission package is a manifest of hashes, and this page does not offer a download
-          that would not match the registry.
-        </p>
+        <h2 className="mb-3 text-sm font-bold text-slate-900">Source files</h2>
+        {rendered ? (
+          <div className="space-y-3" data-testid="manuscript-render">
+            <p className="text-sm text-slate-700" data-testid="render-summary">
+              {rendered.summary}
+            </p>
+            <ul className="space-y-1 text-xs">
+              {rendered.files.map((file) => (
+                <li key={file.name} className="flex flex-wrap items-center gap-2">
+                  <code className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-800">
+                    {file.name}
+                  </code>
+                  <span className="text-slate-500">{formatBytes(file.bytes)}</span>
+                  <span className="font-mono text-slate-400">{file.sha256.slice(0, 12)}…</span>
+                </li>
+              ))}
+            </ul>
+            {rendered.missingBibliographyFields.length > 0 && (
+              <p className="text-xs text-slate-500">
+                The .bib omits {rendered.missingBibliographyFields.join(', ')} because the reference
+                records carry no such field. Nothing was filled in.
+              </p>
+            )}
+            <div className="flex flex-wrap gap-3 text-xs">
+              {texUrl && (
+                <a className="font-semibold text-slate-800 underline" href={texUrl}>
+                  Download manuscript.tex
+                </a>
+              )}
+              {pdfUrl && (
+                <a className="font-semibold text-slate-800 underline" href={pdfUrl}>
+                  Download manuscript.pdf ({formatBytes(rendered.pdf?.bytes ?? 0)})
+                </a>
+              )}
+              {!texUrl && (
+                <span className="text-slate-500">
+                  Downloads are served by the API; this dashboard is in fixture mode.
+                </span>
+              )}
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-slate-600" data-testid="manuscript-render-missing">
+            This run has no rendered manuscript. Stage 8 writes the LaTeX source, and a PDF only
+            when the server has a TeX engine configured; nothing is generated in the browser, and
+            this page does not offer a download that would not match the registry.
+          </p>
+        )}
       </section>
     </div>
   );

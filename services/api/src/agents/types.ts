@@ -1,5 +1,6 @@
 import type { PipelineRun, StageInfo } from '@aeroscribe/pipeline';
 import type { CfdService } from '../cfd';
+import type { LatexService } from '../latex';
 import type { LiteratureService } from '../literature';
 import type { EvidenceRegistry, EvidenceKind } from '../store/registry';
 
@@ -8,6 +9,8 @@ export interface StageContext {
   stage: StageInfo;
   literature: LiteratureService;
   cfd: CfdService;
+  /** Renders the manuscript; typesets only when a TeX engine answered the probe. */
+  latex: LatexService;
   registry: EvidenceRegistry;
   now: () => Date;
   /** How old a generation-time DOI verification may be before it counts as stale. */
@@ -35,6 +38,13 @@ export const DEFAULT_RUN_OPTIONS: RunOptions = {
   quantity: 'drag coefficient',
 };
 
+/** A second record a stage appends after its primary one. */
+export interface ExtraRecord {
+  kind: EvidenceKind;
+  label: string;
+  payload: unknown;
+}
+
 export interface StageOutcome {
   kind: EvidenceKind;
   label: string;
@@ -42,6 +52,14 @@ export interface StageOutcome {
   payload: unknown;
   /** Metrics shown on the run card; scalars only. */
   metrics: Record<string, string | number>;
+  /**
+   * Records that describe an artefact rather than a stage transition.
+   *
+   * Stage 8 uses this for the rendered manuscript: it is produced *by* the
+   * stage but is not the submission package, and giving it its own record means
+   * a reader can fetch the `.tex` without parsing the package.
+   */
+  extra?: readonly ExtraRecord[];
   /** Optional signal that the stage produced a blocking problem. */
   blocked?: { reason: string };
 }

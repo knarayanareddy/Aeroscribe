@@ -11,6 +11,12 @@
       },
       "synthetic": "boolean"
     },
+    "latex": {
+      "available": "boolean",
+      "binary": "null",
+      "configured": "boolean",
+      "version": "null"
+    },
     "literature": {
       "arxiv": "boolean",
       "crossref": "boolean",
@@ -535,9 +541,11 @@
       "id": "number",
       "metrics": {
         "blockers": "number",
+        "figures": "number",
         "files": "number",
         "references": "string",
-        "status": "string"
+        "status": "string",
+        "typeset": "string"
       },
       "name": "string",
       "shortName": "string",

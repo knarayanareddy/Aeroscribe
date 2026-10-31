@@ -15,6 +15,8 @@ export interface PipelineContextValue {
   error: string | null;
   mode: RunSource['mode'];
   sourceLabel: string;
+  /** How to reach a rendered manuscript file, when the source can serve one. */
+  artefactUrl: RunSource['artefactUrl'];
 
   capabilities: Capabilities | null;
   evidence: EvidenceRecord[];

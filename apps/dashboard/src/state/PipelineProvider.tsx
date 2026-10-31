@@ -170,6 +170,7 @@ export function PipelineProvider({
       error,
       mode: runSource.mode,
       sourceLabel: runSource.label,
+      artefactUrl: runSource.artefactUrl,
       capabilities,
       evidence,
       audit,

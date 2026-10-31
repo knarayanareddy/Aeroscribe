@@ -6,6 +6,7 @@ import {
   isCfdPayload,
   isLiteraturePayload,
   isRecheckPayload,
+  isRenderPayload,
   latestPayload,
   latestRecord,
   toLiveCfd,
@@ -13,6 +14,7 @@ import {
   toLiveManuscript,
   toLiveRecheck,
   toLiveReferences,
+  toLiveRender,
   toLiveReview,
 } from './mappers';
 
@@ -172,6 +174,40 @@ describe('novelty, manuscript and review', () => {
     const record = records.find((entry) => entry.kind === 'review-report')!;
     const review = toLiveReview(record.payload as never);
     expect(review.passedChecks).toBe(review.checks.filter((check) => check.passed).length);
+  });
+});
+
+describe('rendered manuscript mapping', () => {
+  // The payload is the one the contract test recorded from a real stage-8 run.
+  const payload = latestPayload(records, 'manuscript-render', isRenderPayload)!;
+
+  it('reads the recorded render, including the files it wrote', () => {
+    expect(isRenderPayload(payload)).toBe(true);
+    expect(isRenderPayload({ stage: 'aerowiki-submission' })).toBe(false);
+
+    const live = toLiveRender(payload);
+    expect(live.template).toBe('aiaa-style');
+    expect(live.typeset).toBe('source-only');
+    expect(live.files.map((file) => file.name)).toEqual([
+      'manuscript.tex',
+      'references.bib',
+      'figure-1.tex',
+      'figure-1.dat',
+    ]);
+    expect(live.pdf).toBeNull();
+    expect(live.summary).toMatch(/LaTeX source only/);
+    expect(live.summary).toMatch(/no PDF exists/);
+  });
+
+  it('says which engine typeset the PDF when there is one', () => {
+    const live = toLiveRender({
+      ...payload,
+      typeset: 'pdf',
+      pdf: { sha256: 'a'.repeat(64), bytes: 1000 },
+      toolchain: { binary: '/usr/bin/pdflatex', version: 'pdfTeX 3.141592653' },
+    });
+    expect(live.summary).toMatch(/Typeset to PDF with pdfTeX 3\.141592653/);
+    expect(live.pdf?.bytes).toBe(1000);
   });
 });
 

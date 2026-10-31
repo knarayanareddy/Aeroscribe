@@ -282,6 +282,29 @@ export function createApp({
     context.json(await orchestrator.referenceStatus(context.req.param('id'))),
   );
 
+  // ── Manuscript artefacts ──────────────────────────────────────────────────
+  //
+  // Both routes serve the file the record hashed, and refuse when the file on
+  // disk no longer matches it. A PDF that was never typeset is a 503 naming the
+  // missing capability, not a 404: the run exists, the artefact does not.
+
+  app.get('/api/v1/runs/:id/manuscript.tex', async (context) => {
+    const artefact = await orchestrator.manuscriptArtefact(context.req.param('id'), 'tex');
+    context.header('content-type', 'text/x-tex; charset=utf-8');
+    context.header('x-content-sha256', artefact.sha256);
+    context.header('content-disposition', 'inline; filename="manuscript.tex"');
+    return context.body(artefact.kind === 'tex' ? artefact.content : '');
+  });
+
+  app.get('/api/v1/runs/:id/manuscript.pdf', async (context) => {
+    const artefact = await orchestrator.manuscriptArtefact(context.req.param('id'), 'pdf');
+    context.header('content-type', 'application/pdf');
+    context.header('x-content-sha256', artefact.sha256);
+    context.header('content-disposition', 'inline; filename="manuscript.pdf"');
+    if (artefact.kind !== 'pdf') return context.body('');
+    return context.body(new Uint8Array(artefact.bytes).buffer as ArrayBuffer);
+  });
+
   app.get('/api/v1/evidence/verify', async (context) =>
     context.json(await orchestrator.verifyRegistry()),
   );

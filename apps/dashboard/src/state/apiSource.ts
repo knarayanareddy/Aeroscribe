@@ -46,5 +46,9 @@ export function createApiSource(
     },
     capabilities: () => client.capabilities(),
     audit: () => client.audit(),
+    artefactUrl(runId, kind) {
+      const base = client.baseUrl.endsWith('/') ? client.baseUrl.slice(0, -1) : client.baseUrl;
+      return `${base}/api/v1/runs/${encodeURIComponent(runId)}/manuscript.${kind}`;
+    },
   };
 }
