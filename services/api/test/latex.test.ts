@@ -246,7 +246,7 @@ describe('figure', () => {
   it('names the run, the record and the artefact digest in the source and caption', () => {
     const figure = cfdFigure(cfdPayload(), provenance)!;
     expect(figure.tex.content).toContain('% provenance: run run-1, evidence seq 4, sha256 def');
-    expect(figure.tex.content).toContain('evidence record #4');
+    expect(figure.tex.content).toContain('evidence record \\#4');
     expect(figure.tex.content).toContain('sha256 def');
     expect(figure.tex.content).toContain('gci-study.json');
     expect(figure.tex.content).toContain('a'.repeat(64));
@@ -254,6 +254,17 @@ describe('figure', () => {
     // header, so a provenance comment above it would silently become data. The
     // render record hashes the file instead, and the caption names the record.
     expect(figure.dat[0]!.content.startsWith('cells value gci_percent')).toBe(true);
+  });
+
+  it('escapes every # in the body, because a caption feeds a macro definition', () => {
+    // A real `pdflatex` run failed here: `evidence record #4` inside \caption is
+    // an "Illegal parameter number". Comments may carry a #; the body may not.
+    const figure = cfdFigure(cfdPayload(), provenance)!;
+    const body = figure.tex.content
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('%'))
+      .join('\n');
+    expect(body).not.toMatch(/(^|[^\\])#/);
   });
 
   it('says in the caption that a synthetic study is not a physical result', () => {
@@ -381,6 +392,19 @@ describe('renderManuscript', () => {
 
   it('loads the pgfplots library the two-panel figure needs', () => {
     expect(renderManuscript(input()).tex).toContain('\\usepgfplotslibrary{groupplots}');
+  });
+
+  it('leaves no unescaped # in the document, figure included', () => {
+    // `#` is a macro parameter once it reaches \caption or a moving argument;
+    // `evidence record #4` in the figure caption failed a real pdflatex run.
+    const rendered = renderManuscript(input());
+    for (const file of rendered.files) {
+      const body = file.content
+        .split('\n')
+        .filter((line) => !line.trimStart().startsWith('%'))
+        .join('\n');
+      expect(body, file.name).not.toMatch(/(^|[^\\])#/);
+    }
   });
 });
 

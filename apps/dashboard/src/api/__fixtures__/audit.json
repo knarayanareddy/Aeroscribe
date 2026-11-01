@@ -1,7 +1,7 @@
 {
   "entries": [
     {
-      "at": "2026-11-01T22:32:24.934Z",
+      "at": "2026-11-01T22:37:14.023Z",
       "action": "run.created",
       "runId": "run-contract",
       "actor": "anonymous",
@@ -11,7 +11,7 @@
       }
     },
     {
-      "at": "2026-11-01T22:32:24.942Z",
+      "at": "2026-11-01T22:37:14.032Z",
       "action": "run.advanced",
       "runId": "run-contract",
       "actor": "anonymous",
@@ -22,18 +22,18 @@
       }
     },
     {
-      "at": "2026-11-01T22:32:24.942Z",
+      "at": "2026-11-01T22:37:14.032Z",
       "action": "evidence.appended",
       "runId": "run-contract",
       "actor": "orchestrator",
       "detail": {
         "seq": 0,
         "kind": "stage-output",
-        "hash": "d49da13a01ec6e6a6e8820ff6d2b9cea5969953372d9b637bc45d841e159c774"
+        "hash": "b68bb2c5321fa73e763437a334af9586a0801f67891515232a8101baf1329bbd"
       }
     },
     {
-      "at": "2026-11-01T22:32:24.945Z",
+      "at": "2026-11-01T22:37:14.036Z",
       "action": "gate.approved",
       "runId": "run-contract",
       "actor": "ana",
@@ -44,7 +44,7 @@
       }
     },
     {
-      "at": "2026-11-01T22:32:24.950Z",
+      "at": "2026-11-01T22:37:14.041Z",
       "action": "run.advanced",
       "runId": "run-contract",
       "actor": "anonymous",
@@ -55,18 +55,18 @@
       }
     },
     {
-      "at": "2026-11-01T22:32:24.950Z",
+      "at": "2026-11-01T22:37:14.041Z",
       "action": "evidence.appended",
       "runId": "run-contract",
       "actor": "orchestrator",
       "detail": {
         "seq": 1,
         "kind": "literature-search",
-        "hash": "ca7944a289cde60c9695fa64d88e585019533989d9bd284cab4ccfde264dbd9d"
+        "hash": "fa88d9f43a8876d5bf66b58fd7e742c337a3d3ba00ede3f0b5a284d1c259f838"
       }
     },
     {
-      "at": "2026-11-01T22:32:24.954Z",
+      "at": "2026-11-01T22:37:14.046Z",
       "action": "gate.approved",
       "runId": "run-contract",
       "actor": "ana",
@@ -77,7 +77,7 @@
       }
     },
     {
-      "at": "2026-11-01T22:32:24.957Z",
+      "at": "2026-11-01T22:37:14.049Z",
       "action": "run.advanced",
       "runId": "run-contract",
       "actor": "anonymous",
@@ -88,18 +88,18 @@
       }
     },
     {
-      "at": "2026-11-01T22:32:24.957Z",
+      "at": "2026-11-01T22:37:14.050Z",
       "action": "evidence.appended",
       "runId": "run-contract",
       "actor": "orchestrator",
       "detail": {
         "seq": 2,
         "kind": "novelty-report",
-        "hash": "24df37000270b0078679caac72413b750f8dbb90ee2df152a0dab204caf97356"
+        "hash": "5165272f83f8443a39a26d934197c946954c1eeaa747afc59378f3ac90c889d1"
       }
     },
     {
-      "at": "2026-11-01T22:32:24.959Z",
+      "at": "2026-11-01T22:37:14.052Z",
       "action": "gate.approved",
       "runId": "run-contract",
       "actor": "ana",
@@ -110,7 +110,7 @@
       }
     },
     {
-      "at": "2026-11-01T22:32:24.962Z",
+      "at": "2026-11-01T22:37:14.054Z",
       "action": "run.advanced",
       "runId": "run-contract",
       "actor": "anonymous",
@@ -121,18 +121,18 @@
       }
     },
     {
-      "at": "2026-11-01T22:32:24.962Z",
+      "at": "2026-11-01T22:37:14.054Z",
       "action": "evidence.appended",
       "runId": "run-contract",
       "actor": "orchestrator",
       "detail": {
         "seq": 3,
         "kind": "stage-output",
-        "hash": "addfec675788c0a47a0dcb9b96cfb4c165a9e5b1308687a91ea3c5513867599c"
+        "hash": "7fc4ae026c15e1f98b2cb46f0092aea38ad6712448db1c016188984bbab61e52"
       }
     },
     {
-      "at": "2026-11-01T22:32:24.964Z",
+      "at": "2026-11-01T22:37:14.055Z",
       "action": "gate.approved",
       "runId": "run-contract",
       "actor": "ana",
@@ -143,7 +143,7 @@
       }
     },
     {
-      "at": "2026-11-01T22:32:24.974Z",
+      "at": "2026-11-01T22:37:14.064Z",
       "action": "run.advanced",
       "runId": "run-contract",
       "actor": "anonymous",
@@ -154,18 +154,18 @@
       }
     },
     {
-      "at": "2026-11-01T22:32:24.974Z",
+      "at": "2026-11-01T22:37:14.065Z",
       "action": "evidence.appended",
       "runId": "run-contract",
       "actor": "orchestrator",
       "detail": {
         "seq": 4,
         "kind": "cfd-run",
-        "hash": "045b66cf5cb4ac94c9018acd780de20a3443beafb7f615318dea69b2e226b6a7"
+        "hash": "e947c2f146664f22e8c262b5ae772d021be87e77c12353e498f8f629ae48d33f"
       }
     },
     {
-      "at": "2026-11-01T22:32:24.976Z",
+      "at": "2026-11-01T22:37:14.067Z",
       "action": "gate.approved",
       "runId": "run-contract",
       "actor": "ana",
@@ -176,7 +176,7 @@
       }
     },
     {
-      "at": "2026-11-01T22:32:24.985Z",
+      "at": "2026-11-01T22:37:14.076Z",
       "action": "run.advanced",
       "runId": "run-contract",
       "actor": "anonymous",
@@ -187,18 +187,18 @@
       }
     },
     {
-      "at": "2026-11-01T22:32:24.985Z",
+      "at": "2026-11-01T22:37:14.076Z",
       "action": "evidence.appended",
       "runId": "run-contract",
       "actor": "orchestrator",
       "detail": {
         "seq": 6,
         "kind": "manuscript",
-        "hash": "427e0d38c96b43609129640f66c7fec9b793eb6fa67974d760a781b989c05d98"
+        "hash": "ce7a94add711feda6e7a3f279063a0cd1af82cc16ebb38fd166fa7918cfa4a70"
       }
     },
     {
-      "at": "2026-11-01T22:32:24.987Z",
+      "at": "2026-11-01T22:37:14.078Z",
       "action": "gate.approved",
       "runId": "run-contract",
       "actor": "ana",
@@ -209,7 +209,7 @@
       }
     },
     {
-      "at": "2026-11-01T22:32:24.995Z",
+      "at": "2026-11-01T22:37:14.083Z",
       "action": "run.advanced",
       "runId": "run-contract",
       "actor": "anonymous",
@@ -220,18 +220,18 @@
       }
     },
     {
-      "at": "2026-11-01T22:32:24.995Z",
+      "at": "2026-11-01T22:37:14.084Z",
       "action": "evidence.appended",
       "runId": "run-contract",
       "actor": "orchestrator",
       "detail": {
         "seq": 7,
         "kind": "review-report",
-        "hash": "5a01ab9fe667875b418f86b195b79449985c3bcca83ccf356f6d90b57d812a66"
+        "hash": "267d73547f8d5f23c8d9f0be1940361cc87d625a0b3d1febdaf0dcfee8c501e9"
       }
     },
     {
-      "at": "2026-11-01T22:32:24.999Z",
+      "at": "2026-11-01T22:37:14.089Z",
       "action": "gate.approved",
       "runId": "run-contract",
       "actor": "ana",
@@ -242,7 +242,7 @@
       }
     },
     {
-      "at": "2026-11-01T22:32:25.004Z",
+      "at": "2026-11-01T22:37:14.092Z",
       "action": "run.advanced",
       "runId": "run-contract",
       "actor": "anonymous",
@@ -253,18 +253,18 @@
       }
     },
     {
-      "at": "2026-11-01T22:32:25.004Z",
+      "at": "2026-11-01T22:37:14.093Z",
       "action": "evidence.appended",
       "runId": "run-contract",
       "actor": "orchestrator",
       "detail": {
         "seq": 8,
         "kind": "compliance-report",
-        "hash": "d4207fd3a425c5765f0d73ade1d0c8fa3142676e665109680f822c16c22282a0"
+        "hash": "0307927a35c151c1358b38904915b64a059d7dc58550052f2e2ad8ef122895e6"
       }
     },
     {
-      "at": "2026-11-01T22:32:25.006Z",
+      "at": "2026-11-01T22:37:14.095Z",
       "action": "gate.approved",
       "runId": "run-contract",
       "actor": "ana",
@@ -275,18 +275,18 @@
       }
     },
     {
-      "at": "2026-11-01T22:32:25.014Z",
+      "at": "2026-11-01T22:37:14.104Z",
       "action": "evidence.appended",
       "runId": "run-contract",
       "actor": "orchestrator",
       "detail": {
         "seq": 10,
         "kind": "manuscript-render",
-        "hash": "9a4e671512ff2a16dfab53b4d4d03cb5aa29dd5ade1531e5a9623660dd784422"
+        "hash": "e81a4f49ee7fa35a66afc08cf9b534dd3c4054b4adf7ae44b17e8387c05d1c87"
       }
     },
     {
-      "at": "2026-11-01T22:32:25.015Z",
+      "at": "2026-11-01T22:37:14.105Z",
       "action": "stage.blocked",
       "runId": "run-contract",
       "actor": "anonymous",
@@ -298,14 +298,14 @@
       }
     },
     {
-      "at": "2026-11-01T22:32:25.015Z",
+      "at": "2026-11-01T22:37:14.105Z",
       "action": "evidence.appended",
       "runId": "run-contract",
       "actor": "orchestrator",
       "detail": {
         "seq": 9,
         "kind": "submission-package",
-        "hash": "191ba7cce93b966fc6681fcb5f66360d2666554cf8cceab0f2f4d1bd71d788d1"
+        "hash": "2b8f36c99c6913e51e83146f741f726a0363fd9739942ffa420ebf4063845e1c"
       }
     }
   ],

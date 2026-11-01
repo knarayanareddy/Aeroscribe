@@ -4,8 +4,8 @@
     "topic": "transonic wing drag prediction at Mach 0.85",
     "journal": "AIAA Journal",
     "status": "failed",
-    "createdAt": "2026-11-01T22:32:24.932Z",
-    "updatedAt": "2026-11-01T22:32:25.015Z",
+    "createdAt": "2026-11-01T22:37:14.020Z",
+    "updatedAt": "2026-11-01T22:37:14.104Z",
     "currentStage": 8,
     "noveltyScore": 0,
     "paperTitle": "Pending…",
@@ -22,8 +22,8 @@
           "keywordFit": "0%",
           "keywordsMatched": 0
         },
-        "startedAt": "2026-11-01T22:32:24.938Z",
-        "completedAt": "2026-11-01T22:32:24.944Z",
+        "startedAt": "2026-11-01T22:37:14.027Z",
+        "completedAt": "2026-11-01T22:37:14.035Z",
         "evidenceSeq": 0,
         "gateApproved": true
       },
@@ -40,8 +40,8 @@
           "papersRejected": 0,
           "providerErrors": 0
         },
-        "startedAt": "2026-11-01T22:32:24.944Z",
-        "completedAt": "2026-11-01T22:32:24.953Z",
+        "startedAt": "2026-11-01T22:37:14.035Z",
+        "completedAt": "2026-11-01T22:37:14.043Z",
         "evidenceSeq": 1,
         "gateApproved": true
       },
@@ -57,8 +57,8 @@
           "gaps": 1,
           "confidence": "insufficient-evidence"
         },
-        "startedAt": "2026-11-01T22:32:24.953Z",
-        "completedAt": "2026-11-01T22:32:24.958Z",
+        "startedAt": "2026-11-01T22:37:14.043Z",
+        "completedAt": "2026-11-01T22:37:14.051Z",
         "evidenceSeq": 2,
         "gateApproved": true
       },
@@ -74,8 +74,8 @@
           "verifiedReferences": 2,
           "gaps": 1
         },
-        "startedAt": "2026-11-01T22:32:24.958Z",
-        "completedAt": "2026-11-01T22:32:24.964Z",
+        "startedAt": "2026-11-01T22:37:14.051Z",
+        "completedAt": "2026-11-01T22:37:14.055Z",
         "evidenceSeq": 3,
         "gateApproved": true
       },
@@ -92,8 +92,8 @@
           "fineGciPercent": 0.000787,
           "apparentOrder": 2
         },
-        "startedAt": "2026-11-01T22:32:24.964Z",
-        "completedAt": "2026-11-01T22:32:24.975Z",
+        "startedAt": "2026-11-01T22:37:14.055Z",
+        "completedAt": "2026-11-01T22:37:14.066Z",
         "evidenceSeq": 4,
         "gateApproved": true
       },
@@ -111,8 +111,8 @@
           "plannedParagraphs": 12,
           "planSeq": 5
         },
-        "startedAt": "2026-11-01T22:32:24.975Z",
-        "completedAt": "2026-11-01T22:32:24.987Z",
+        "startedAt": "2026-11-01T22:37:14.066Z",
+        "completedAt": "2026-11-01T22:37:14.078Z",
         "evidenceSeq": 6,
         "gateApproved": true
       },
@@ -129,8 +129,8 @@
           "checksTotal": 7,
           "majorComments": 4
         },
-        "startedAt": "2026-11-01T22:32:24.987Z",
-        "completedAt": "2026-11-01T22:32:24.999Z",
+        "startedAt": "2026-11-01T22:37:14.078Z",
+        "completedAt": "2026-11-01T22:37:14.088Z",
         "evidenceSeq": 7,
         "gateApproved": true
       },
@@ -146,8 +146,8 @@
           "wordCount": 356,
           "issues": 2
         },
-        "startedAt": "2026-11-01T22:32:24.999Z",
-        "completedAt": "2026-11-01T22:32:25.006Z",
+        "startedAt": "2026-11-01T22:37:14.088Z",
+        "completedAt": "2026-11-01T22:37:14.094Z",
         "evidenceSeq": 8,
         "gateApproved": true
       },
@@ -166,8 +166,8 @@
           "typeset": "source-only",
           "figures": 1
         },
-        "startedAt": "2026-11-01T22:32:25.006Z",
-        "completedAt": "2026-11-01T22:32:25.015Z",
+        "startedAt": "2026-11-01T22:37:14.094Z",
+        "completedAt": "2026-11-01T22:37:14.104Z",
         "evidenceSeq": 9
       }
     ]

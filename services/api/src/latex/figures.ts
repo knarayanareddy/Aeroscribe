@@ -149,7 +149,9 @@ export function figureFromSeries(
     `${escapeLatex(quantity)}${escapeLatex(unitLabel(unit))} against cell count${
       hasGci ? ' (left) and Grid Convergence Index against cell count (right)' : ''
     }.`,
-    `Provenance: run ${escapeLatex(provenance.runId)}, evidence record #${provenance.seq}, sha256 ${escapeLatex(
+    // `#` is a macro parameter in a moving argument like \caption; it is
+    // escaped here exactly like text out of a record.
+    `Provenance: run ${escapeLatex(provenance.runId)}, evidence record \\#${provenance.seq}, sha256 ${escapeLatex(
       provenance.payloadHash,
     )}.`,
   ];
@@ -168,9 +170,11 @@ export function figureFromSeries(
     '  \\centering',
     '  \\begin{tikzpicture}',
     '  \\begin{groupplot}[',
-    `    group style={group size=${hasGci ? 2 : 1} by ${series.length}, horizontal sep=2.4cm},`,
-    '    width=0.46\\linewidth,',
-    '    height=0.34\\linewidth,',
+    // Two 0.42-linewidth panels plus a 1.6 cm gutter stay inside \linewidth,
+    // so the figure does not overfull the text block it is placed in.
+    `    group style={group size=${hasGci ? 2 : 1} by ${series.length}, horizontal sep=1.6cm},`,
+    '    width=0.42\\linewidth,',
+    '    height=0.32\\linewidth,',
     '    xmode=log,',
     '    grid=major,',
     '    tick label style={font=\\small},',
