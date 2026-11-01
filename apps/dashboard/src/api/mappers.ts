@@ -6,6 +6,7 @@ import type {
   EvidenceRecord,
   LiteraturePayload,
   ManuscriptPayload,
+  ManuscriptPlanPayload,
   ManuscriptRenderPayload,
   NoveltyPayload,
   ReferenceRecord,
@@ -213,6 +214,10 @@ export interface LiveManuscript {
   generatedAt: string;
   sections: Array<{ heading: string; body: string; words: number }>;
   references: ManuscriptPayload['references'];
+  /** The AIAA form each reference was set in; absent on a pre-G payload. */
+  citations: NonNullable<ManuscriptPayload['citations']>;
+  /** The plan record this text was rendered from, when the payload names one. */
+  planRef: ManuscriptPayload['planRef'] | null;
 }
 
 function countWords(text: string): number {
@@ -234,6 +239,46 @@ export function toLiveManuscript(payload: ManuscriptPayload): LiveManuscript {
       words: countWords(section.body),
     })),
     references: payload.references,
+    citations: payload.citations ?? [],
+    planRef: payload.planRef ?? null,
+  };
+}
+
+/* ───────────────────────────── the manuscript plan ───────────────────────── */
+
+export function isPlanPayload(payload: unknown): payload is ManuscriptPlanPayload {
+  return isObject(payload) && payload['stage'] === 'plan';
+}
+
+export interface LivePlan {
+  architecture: string;
+  generatedAt: string;
+  paragraphCount: number;
+  sections: Array<{
+    heading: string;
+    purpose: string;
+    paragraphs: Array<{ id: string; intent: string; targetWords: number; numberKeys: string[] }>;
+  }>;
+}
+
+export function toLivePlan(payload: ManuscriptPlanPayload): LivePlan {
+  return {
+    architecture: payload.architecture,
+    generatedAt: payload.generatedAt,
+    paragraphCount: payload.sections.reduce(
+      (total, section) => total + section.paragraphs.length,
+      0,
+    ),
+    sections: payload.sections.map((section) => ({
+      heading: section.heading,
+      purpose: section.purpose,
+      paragraphs: section.paragraphs.map((paragraph) => ({
+        id: paragraph.id,
+        intent: paragraph.intent,
+        targetWords: paragraph.targetWords,
+        numberKeys: paragraph.numberKeys,
+      })),
+    })),
   };
 }
 
@@ -259,7 +304,7 @@ export function toLiveReview(payload: ReviewPayload): LiveReview {
     reviewedAt: payload.reviewedAt,
     comments: payload.comments,
     checks: payload.checks,
-    passedChecks: payload.checks.filter((check) => check.passed).length,
+    passedChecks: payload.checks.filter((check) => check.passed && check.skipped !== true).length,
   };
 }
 

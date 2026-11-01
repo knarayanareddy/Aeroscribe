@@ -160,7 +160,7 @@ describe('a full nine-stage run', () => {
     expect((await registry.verify()).valid).toBe(true);
   });
 
-  it('appends one evidence record per stage, plus the typeset manuscript', async () => {
+  it('appends one evidence record per stage, plus the plan and the typeset manuscript', async () => {
     const run = await orchestrator.createRun({ topic: 'transonic wing drag prediction' });
 
     for (let stageId = 0; stageId < STAGE_COUNT; stageId += 1) {
@@ -172,8 +172,10 @@ describe('a full nine-stage run', () => {
     }
 
     const records = await orchestrator.evidence(run.id);
-    expect(records).toHaveLength(STAGE_COUNT + 1);
-    expect(records.map((record) => record.seq)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    // Nine stage records, the manuscript plan stage 5 writes before its own
+    // record, and the render stage 8 appends after its own.
+    expect(records).toHaveLength(STAGE_COUNT + 2);
+    expect(records.map((record) => record.seq)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     expect(records.every((record) => record.runId === run.id)).toBe(true);
 
     // Stage 8 appends its own record and the render it produced, in that order.
@@ -182,7 +184,20 @@ describe('a full nine-stage run', () => {
     expect(renders[0]!.stageId).toBe(STAGE_COUNT - 1);
     expect(renders[0]!.seq).toBe(records.length - 1);
 
-    const stageRecords = records.filter((record) => record.kind !== 'manuscript-render');
+    // Stage 5 writes the plan first and the manuscript second, so the manuscript
+    // can name the plan it was rendered from rather than the other way round.
+    const plan = records.find((record) => record.kind === 'manuscript-plan')!;
+    const manuscript = records.find((record) => record.kind === 'manuscript')!;
+    expect(plan.seq).toBe(manuscript.seq - 1);
+    expect(plan.stageId).toBe(5);
+    expect((manuscript.payload as { planRef: { seq: number; hash: string } }).planRef).toEqual({
+      seq: plan.seq,
+      hash: plan.payloadHash,
+    });
+
+    const stageRecords = records.filter(
+      (record) => record.kind !== 'manuscript-render' && record.kind !== 'manuscript-plan',
+    );
     expect(stageRecords.map((record) => record.stageId)).toEqual(
       PIPELINE_STAGES.map((stage) => stage.id),
     );

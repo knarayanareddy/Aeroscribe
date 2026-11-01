@@ -2,10 +2,12 @@ import { useState } from 'react';
 import type { RecheckStatus } from '@aeroscribe/contract';
 import {
   isManuscriptPayload,
+  isPlanPayload,
   isRecheckPayload,
   isRenderPayload,
   latestPayload,
   toLiveManuscript,
+  toLivePlan,
   toLiveRecheck,
   toLiveRender,
 } from '../api/mappers';
@@ -43,6 +45,8 @@ export default function ManuscriptLive() {
   const checks = recheckPayload ? toLiveRecheck(recheckPayload) : null;
   const renderPayload = latestPayload(records, 'manuscript-render', isRenderPayload);
   const rendered = renderPayload ? toLiveRender(renderPayload) : null;
+  const planPayload = latestPayload(records, 'manuscript-plan', isPlanPayload);
+  const plan = planPayload ? toLivePlan(planPayload) : null;
   const runId = activeRun?.id ?? '';
   const texUrl = rendered ? (artefactUrl?.(runId, 'tex') ?? null) : null;
   const pdfUrl = rendered?.typeset === 'pdf' ? (artefactUrl?.(runId, 'pdf') ?? null) : null;
@@ -120,6 +124,46 @@ export default function ManuscriptLive() {
         ))}
       </div>
 
+      {plan && (
+        <section
+          className="rounded-xl border border-slate-200 bg-white p-5"
+          data-testid="manuscript-plan"
+        >
+          <h2 className="mb-2 text-sm font-bold text-slate-900">Plan (written before the text)</h2>
+          <p className="text-sm text-slate-700">{plan.architecture}</p>
+          <p className="mt-1 text-xs text-slate-500">
+            {plan.paragraphCount} planned paragraphs across {plan.sections.length} sections. Stage 5
+            renders each paragraph from its intent; stage 6 reports any paragraph the text is
+            missing, any number it did not declare and any paragraph past its word budget.
+          </p>
+          <ul className="mt-3 space-y-2 text-xs">
+            {plan.sections.map((section) => (
+              <li key={section.heading}>
+                <span className="font-semibold text-slate-800">{section.heading}</span>{' '}
+                <span className="text-slate-500">— {section.purpose}</span>
+                <ul className="mt-1 ml-4 list-disc text-slate-600">
+                  {section.paragraphs.map((paragraph) => (
+                    <li key={paragraph.id}>
+                      <code className="font-mono text-[11px] text-slate-500">{paragraph.id}</code>{' '}
+                      {paragraph.intent} · target {paragraph.targetWords} words
+                      {paragraph.numberKeys.length > 0
+                        ? ` · numbers: ${paragraph.numberKeys.join(', ')}`
+                        : ' · no numbers'}
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+          {manuscript.planRef && (
+            <p className="mt-3 text-xs text-slate-500">
+              Bound to evidence record #{manuscript.planRef.seq} by its payload hash; the review
+              council fails the manuscript if that record is missing or hashes differently.
+            </p>
+          )}
+        </section>
+      )}
+
       <section className="space-y-2">
         <h2 className="text-sm font-bold text-slate-900">Sections</h2>
         {manuscript.sections.map((section) => {
@@ -148,12 +192,30 @@ export default function ManuscriptLive() {
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="mb-3 text-sm font-bold text-slate-900">References</h2>
         <ol className="space-y-2 text-sm text-slate-700">
-          {manuscript.references.map((reference) => (
-            <li key={reference.index} className="flex gap-2">
-              <span className="w-6 shrink-0 text-slate-400">[{reference.index}]</span>
-              <span>{reference.citation}</span>
-            </li>
-          ))}
+          {manuscript.references.map((reference) => {
+            const citation = manuscript.citations.find(
+              (entry) => entry.key === reference.record.key,
+            );
+            return (
+              <li key={reference.index} className="flex gap-2">
+                <span className="w-6 shrink-0 text-slate-400">[{reference.index}]</span>
+                <span>
+                  {reference.citation}
+                  {citation && (
+                    <span className="mt-0.5 block text-[11px] text-slate-500">
+                      {citation.style === 'incomplete'
+                        ? `No AIAA form fits this record: missing ${citation.missing.join(', ')}.`
+                        : `${citation.style}${
+                            citation.missing.length > 0
+                              ? ` · omitted (not recorded): ${citation.missing.join(', ')}`
+                              : ''
+                          }`}
+                    </span>
+                  )}
+                </span>
+              </li>
+            );
+          })}
           {manuscript.references.length === 0 && (
             <li className="italic text-slate-400">No references were admitted for this run.</li>
           )}

@@ -52,6 +52,7 @@ export function toReferenceRecord({ paper, index, verification }: ReferenceInput
     year: paper.year,
     venue: paper.containerTitle ?? (paper.source === 'arxiv' ? 'arXiv preprint' : null),
     volume: paper.volume ?? null,
+    issue: paper.issue ?? null,
     pages: paper.pages ?? null,
     publisher: paper.publisher ?? null,
     url: paper.url,

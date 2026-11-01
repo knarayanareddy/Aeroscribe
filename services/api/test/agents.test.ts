@@ -8,7 +8,8 @@ import { createFilesystemBlobStore } from '../src/blob';
 import { CfdService } from '../src/cfd';
 import { UnverifiableClaimError } from '../src/errors';
 import { LiteratureService, type ReferenceRecord } from '../src/literature';
-import { peerReview } from '../src/agents/review';
+import type { ManuscriptPayload } from '@aeroscribe/contract';
+import { complianceCheck, peerReview } from '../src/agents/review';
 import { evidenceGeneration } from '../src/agents/evidence';
 import {
   contributionFraming,
@@ -250,8 +251,9 @@ describe('literature archaeology — structured references', () => {
     };
 
     expect(payload.schemaVersion).toBe(2);
+    // RULE-032: the AIAA journal form, set from the record's fields only.
     expect(payload.references[0]!.citation).toBe(
-      '[1] A. Author, B. Author (2024). Transonic drag prediction on unstructured meshes. AIAA Journal. doi:10.2514/1.j060001',
+      '[1] A. Author and B. Author, "Transonic drag prediction on unstructured meshes," AIAA Journal, Vol. 62, 2024, pp. 1201–1215. doi:10.2514/1.j060001',
     );
     // The line and the record cannot drift: the record is stored beside it.
     expect(payload.references[0]!.record.venue).toBe('AIAA Journal');
@@ -372,16 +374,129 @@ describe('paper synthesis', () => {
     await expect(paperSynthesis(context(5))).rejects.toBeInstanceOf(UnverifiableClaimError);
   });
 
-  it('rejects a note that carries a number the evidence does not contain', async () => {
-    // Any prose copied into the manuscript is checked like any other claim, so a
-    // solver note quoting "4000 iterations" with no matching evidence blocks it.
+  it('does not quote a solver note that carries numbers of its own', async () => {
+    // A note is quoted only when it has no numeral: every number in a planned
+    // paragraph must be a declared key, and free text cannot be declared. The
+    // note stays in the cfd-run record; it is simply not prose.
     await runUpToEvidence({ cfdNotes: ['The solver ran 4000 iterations to 1e-9 residual.'] });
 
-    const error = await paperSynthesis(context(5)).catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(UnverifiableClaimError);
-    expect((error as UnverifiableClaimError).details).toMatchObject({
-      claims: expect.arrayContaining([expect.stringMatching(/4000/)]),
+    const outcome = await paperSynthesis(context(5));
+    const payload = outcome.payload as {
+      sections: Array<{ heading: string; body: string; paragraphs: Array<{ id: string }> }>;
+    };
+    const text = payload.sections.map((section) => section.body).join('\n');
+
+    expect(text).not.toContain('4000');
+    expect(
+      payload.sections.find((section) => section.heading === 'Method')!.paragraphs,
+    ).toHaveLength(1);
+  });
+
+  it('writes the plan before the manuscript and binds the text to it', async () => {
+    await runUpToEvidence();
+
+    const outcome = await paperSynthesis(context(5));
+    const payload = outcome.payload as {
+      planRef: { seq: number; hash: string };
+      sections: Array<{ heading: string; paragraphs: Array<{ id: string; text: string }> }>;
+    };
+
+    const records = await registry.list({ runId: run.id });
+    const planRecord = records.find((record) => record.kind === 'manuscript-plan');
+    expect(planRecord).toBeDefined();
+    // The plan is in the registry *before* the manuscript that points at it: the
+    // orchestrator appends the manuscript after the handler returns, so inside
+    // the handler the plan is the newest record of the run.
+    expect(records[records.length - 1]!.kind).toBe('manuscript-plan');
+
+    expect(payload.planRef.seq).toBe(planRecord!.seq);
+    expect(payload.planRef.hash).toBe(planRecord!.payloadHash);
+
+    const plan = planRecord!.payload as {
+      stage: string;
+      schemaVersion: number;
+      sections: Array<{ heading: string; purpose: string; paragraphs: Array<{ id: string }> }>;
+    };
+    expect(plan.stage).toBe('plan');
+    expect(plan.schemaVersion).toBe(1);
+    // Every planned paragraph has text, and every paragraph has an id the plan
+    // issued — that is what "the text is a projection of the plan" means.
+    const plannedIds = plan.sections.flatMap((section) =>
+      section.paragraphs.map((paragraph) => paragraph.id),
+    );
+    const writtenIds = payload.sections.flatMap((section) =>
+      section.paragraphs.map((paragraph) => paragraph.id),
+    );
+    expect(writtenIds).toEqual(plannedIds);
+    expect(new Set(plannedIds).size).toBe(plannedIds.length);
+    for (const section of payload.sections) {
+      for (const paragraph of section.paragraphs) expect(paragraph.text.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('orders the plan by the journal section order, then the disclosure', async () => {
+    await runUpToEvidence();
+    const outcome = await paperSynthesis(context(5));
+    const payload = outcome.payload as { sections: Array<{ heading: string }> };
+
+    expect(payload.sections.map((section) => section.heading)).toEqual([
+      'Introduction',
+      'Method',
+      'Results',
+      'Discussion',
+      'Conclusion',
+      'AI use disclosure',
+    ]);
+  });
+
+  it('sets every reference in an AIAA form and records what the form omitted', async () => {
+    const paper = {
+      id: 'crossref:10.2514/1.j060001',
+      source: 'crossref' as const,
+      title: 'Transonic drag prediction on unstructured meshes',
+      authors: ['A. Author', 'B. Author'],
+      year: 2024,
+      doi: '10.2514/1.j060001',
+      url: null,
+      abstract: 'transonic wing drag',
+      citationCount: 3,
+      containerTitle: 'AIAA Journal',
+      volume: '62',
+    };
+    const stub = {
+      name: 'crossref' as const,
+      requiresNetwork: true,
+      async search() {
+        return [paper];
+      },
+      async resolveDoi(doi: string) {
+        return { ...paper, doi };
+      },
+    };
+    const live = new LiteratureService({ offline: false, providers: [stub] });
+    const topic = await topicIntelligence(context(0));
+    await appendFake('stage-output', topic.payload, 0);
+    const found = await literatureArchaeology({
+      ...context(1, { paperLimit: 1, verifyTop: 1 }),
+      literature: live,
     });
+    await appendFake('literature-search', found.payload, 1);
+    await appendFake('novelty-report', { gapCount: 0, verifiedReferences: 1 }, 2);
+    const framing = await contributionFraming(context(3));
+    await appendFake('stage-output', framing.payload, 3);
+    const evidence = await evidenceGeneration(context(4));
+    await appendFake('cfd-run', evidence.payload, 4);
+
+    const manuscript = await paperSynthesis(context(5));
+    const payload = manuscript.payload as {
+      citations: Array<{ key: string; style: string; missing: string[] }>;
+    };
+
+    expect(payload.citations).toHaveLength(1);
+    expect(payload.citations[0]!.style).toBe('aiaa-journal');
+    // No issue number and no page range were recorded by the stub provider, so
+    // the form omits them and lists them instead of inventing a range.
+    expect(payload.citations[0]!.missing).toEqual(expect.arrayContaining(['issue', 'pages']));
   });
 });
 
@@ -412,6 +527,216 @@ describe('peer review', () => {
 
   it('cannot run without a manuscript record', async () => {
     await expect(peerReview(context(6))).rejects.toThrow(/requires a manuscript/i);
+  });
+
+  /**
+   * The projection checks, one per failure mode the plan can catch.
+   *
+   * Each test writes the manuscript stage 5 produced, tampers with one thing,
+   * and asserts that stage 6 names it. The tampering is the point: text and plan
+   * can only disagree if somebody edits one of them.
+   */
+  async function reviewAfter(tamper: (payload: ManuscriptPayload) => ManuscriptPayload): Promise<{
+    verdict: string;
+    comments: Array<{ severity: string; comment: string; section: string }>;
+    checks: Array<{ id: string; passed: boolean }>;
+  }> {
+    await runUpToEvidence();
+    const manuscript = await paperSynthesis(context(5));
+    await appendFake('manuscript', tamper(manuscript.payload as ManuscriptPayload), 5);
+    const outcome = await peerReview(context(6));
+    return outcome.payload as {
+      verdict: string;
+      comments: Array<{ severity: string; comment: string; section: string }>;
+      checks: Array<{ id: string; passed: boolean }>;
+    };
+  }
+
+  it('passes RULE-030 for the text stage 5 actually wrote', async () => {
+    const payload = await reviewAfter((manuscript) => manuscript);
+
+    expect(payload.checks.find((check) => check.id === 'RULE-030')).toMatchObject({
+      passed: true,
+    });
+    expect(payload.comments.filter((comment) => /paragraph p-/.test(comment.comment))).toEqual([]);
+  });
+
+  it('asks for revision when a planned paragraph is missing from the text', async () => {
+    const payload = await reviewAfter((manuscript) => ({
+      ...manuscript,
+      sections: manuscript.sections.map((section) =>
+        section.heading === 'Results'
+          ? { ...section, paragraphs: section.paragraphs!.slice(0, 1) }
+          : section,
+      ),
+    }));
+
+    const comment = payload.comments.find((entry) =>
+      /The plan's paragraph p-results-2/.test(entry.comment),
+    );
+    expect(comment).toMatchObject({ severity: 'major' });
+    expect(payload.verdict).toBe('revise');
+    expect(payload.checks.find((check) => check.id === 'RULE-030')).toMatchObject({
+      passed: false,
+    });
+  });
+
+  it('asks for revision when a paragraph prints a number its plan never declared', async () => {
+    const payload = await reviewAfter((manuscript) => ({
+      ...manuscript,
+      sections: manuscript.sections.map((section) =>
+        section.heading === 'Conclusion'
+          ? {
+              ...section,
+              paragraphs: section.paragraphs!.map((paragraph) =>
+                paragraph.id === 'p-conclusion-2'
+                  ? { ...paragraph, text: `${paragraph.text} The solver needed 41 iterations.` }
+                  : paragraph,
+              ),
+            }
+          : section,
+      ),
+    }));
+
+    expect(
+      payload.comments.find((entry) => /Paragraph p-conclusion-2 prints 41/.test(entry.comment)),
+    ).toMatchObject({ severity: 'major' });
+    expect(payload.verdict).toBe('revise');
+  });
+
+  it('records an overlong paragraph as a minor finding, not a blocking one', async () => {
+    const padding = Array.from({ length: 60 }, () => 'word').join(' ');
+    const payload = await reviewAfter((manuscript) => ({
+      ...manuscript,
+      sections: manuscript.sections.map((section) =>
+        section.heading === 'Conclusion'
+          ? {
+              ...section,
+              paragraphs: section.paragraphs!.map((paragraph) =>
+                paragraph.id === 'p-conclusion-2'
+                  ? { ...paragraph, text: `${paragraph.text} ${padding}` }
+                  : paragraph,
+              ),
+            }
+          : section,
+      ),
+    }));
+
+    const comment = payload.comments.find((entry) =>
+      /Paragraph p-conclusion-2 is \d+ words/.test(entry.comment),
+    );
+    expect(comment).toMatchObject({ severity: 'minor' });
+  });
+
+  it('asks for revision when planRef does not resolve to the plan record', async () => {
+    const payload = await reviewAfter((manuscript) => ({
+      ...manuscript,
+      planRef: { seq: manuscript.planRef!.seq, hash: '0'.repeat(64) },
+    }));
+
+    expect(
+      payload.comments.find((entry) => /planRef hashes evidence/.test(entry.comment)),
+    ).toMatchObject({ severity: 'major' });
+    expect(payload.verdict).toBe('revise');
+  });
+
+  it('cannot verify a projection it was never given', async () => {
+    const payload = await reviewAfter((manuscript) => ({
+      ...manuscript,
+      // A manuscript that predates the plan: text, no ids, no planRef.
+      planRef: undefined,
+      sections: manuscript.sections.map((section) => ({
+        heading: section.heading,
+        body: section.body,
+      })),
+    }));
+
+    const check = payload.checks.find((entry) => entry.id === 'RULE-030');
+    expect(check).toMatchObject({ passed: false, skipped: true });
+  });
+});
+
+describe('compliance — AIAA citation format (RULE-032)', () => {
+  const reference = (overrides: Partial<ReferenceRecord> = {}): ReferenceRecord => ({
+    key: 'ref-01',
+    index: 1,
+    doi: '10.2514/1.J060001',
+    title: 'Transonic drag prediction on unstructured meshes',
+    authors: ['A. Author', 'B. Author'],
+    year: 2024,
+    venue: 'AIAA Journal',
+    volume: '62',
+    issue: '3',
+    pages: '1201-1215',
+    publisher: 'AIAA',
+    url: null,
+    verified: { verifiedAt: null, provider: 'crossref', titleSimilarity: 1 },
+    ...overrides,
+  });
+
+  /** A manuscript that satisfies every other stage-7 check, so only the
+   *  citation-format rule can differ between these tests. */
+  async function complianceWith(citations: ManuscriptPayload['citations']) {
+    const record = reference();
+    const payload: ManuscriptPayload = {
+      stage: 'paper-synthesis',
+      schemaVersion: 2,
+      title: 'Transonic drag prediction',
+      journal: 'AIAA Journal',
+      journalId: 'aiaa-journal',
+      abstract: 'A short abstract.',
+      sections: ['Introduction', 'Method', 'Results', 'Discussion', 'Conclusion'].map(
+        (heading) => ({ heading, body: `${heading} text.` }),
+      ),
+      wordCount: 20,
+      referenceCount: 1,
+      references: [
+        {
+          index: 1,
+          citation:
+            '[1] A. Author and B. Author, "Transonic drag prediction on unstructured meshes," AIAA Journal, Vol. 62, No. 3, 2024, pp. 1201\u20131215. doi:10.2514/1.J060001',
+          doi: '10.2514/1.J060001',
+          record,
+        },
+      ],
+      numbers: {},
+      citations,
+      generatedAt: '2026-11-01T10:00:00.000Z',
+      synthetic: false,
+    };
+    await appendFake('manuscript', payload, 5);
+    const outcome = await complianceCheck(context(7));
+    return outcome.payload as {
+      compliant: boolean;
+      issues: Array<{ rule: string; severity: string; detail: string }>;
+    };
+  }
+
+  it('reports a minor note when the form omitted only optional fields', async () => {
+    const payload = await complianceWith([
+      { key: 'ref-01', style: 'aiaa-journal', missing: ['issue', 'pages'] },
+    ]);
+    const issue = payload.issues.find((entry) => entry.rule === 'citation-format')!;
+
+    expect(issue.severity).toBe('minor');
+    expect(issue.detail).toMatch(/set in AIAA form without issue, pages/);
+    expect(payload.compliant).toBe(true);
+  });
+
+  it('blocks a submission whose reference cannot be set in any AIAA form', async () => {
+    const payload = await complianceWith([
+      { key: 'ref-01', style: 'incomplete', missing: ['authors', 'title', 'year', 'venue'] },
+    ]);
+    const issue = payload.issues.find((entry) => entry.rule === 'citation-format')!;
+
+    expect(issue.severity).toBe('major');
+    expect(issue.detail).toMatch(/cannot be set in an AIAA form/);
+    expect(payload.compliant).toBe(false);
+  });
+
+  it('says nothing when the manuscript carries no citation records', async () => {
+    const payload = await complianceWith(undefined);
+    expect(payload.issues.some((entry) => entry.rule === 'citation-format')).toBe(false);
   });
 });
 

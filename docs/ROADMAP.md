@@ -1003,13 +1003,13 @@ export interface ManuscriptPlan {
 
 **Tasks.**
 
-- [ ] `services/api/src/agents/plan.ts`: `buildPlan(records, journal)` — deterministic, no
+- [x] `services/api/src/agents/plan.ts`: `buildPlan(records, journal)` — deterministic, no
       randomness, ordered by `journal.sectionOrder`.
-- [ ] Stage 5 renders from the plan; `manuscript-plan` kind wired end to end (registry, mapper,
+- [x] Stage 5 renders from the plan; `manuscript-plan` kind wired end to end (registry, mapper,
       docs, contract test).
-- [ ] Stage 6 projection checks + tests (missing paragraph, undeclared number, overlong
+- [x] Stage 6 projection checks + tests (missing paragraph, undeclared number, overlong
       paragraph).
-- [ ] Docs: `docs/BACKEND.md` § 3 stage 5/6; integrity table RULE-030 → **API (projection
+- [x] Docs: `docs/BACKEND.md` § 3 stage 5/6; integrity table RULE-030 → **API (projection
       checked)**; note that this is _not_ an LLM hierarchy.
 
 **Size.** 2 d.
@@ -1041,12 +1041,12 @@ export function parseAiaa(text: string): ParsedCitation | null; // for the round
 
 **Tasks.**
 
-- [ ] `citation.ts` + table-driven tests for the three forms, `et al.`, missing volume/pages,
+- [x] `citation.ts` + table-driven tests for the three forms, `et al.`, missing volume/pages,
       Unicode names, a DOI with a trailing slash.
-- [ ] Round-trip validator + stage 5 wiring.
-- [ ] Compliance rule + tests; `citation` string in the manuscript payload produced by the
+- [x] Round-trip validator + stage 5 wiring.
+- [x] Compliance rule + tests; `citation` string in the manuscript payload produced by the
       formatter.
-- [ ] Integrity table RULE-032 → **API**; `IMPLEMENTATION_STATUS` manuscript row notes the style.
+- [x] Integrity table RULE-032 → **API**; `IMPLEMENTATION_STATUS` manuscript row notes the style.
 
 **Size.** 1.5 d.
 
@@ -1065,13 +1065,76 @@ export function parseAiaa(text: string): ParsedCitation | null; // for the round
 
 **Tasks.**
 
-- [ ] `figures.ts` + tests on generated source (axis labels, units, legend presence/absence,
+- [x] `figures.ts` + tests on generated source (axis labels, units, legend presence/absence,
       caption hash, determinism, invalid-study caption).
-- [ ] Wired into `render.ts` (B) so figures are included in the manuscript.
-- [ ] Integrity table RULE-033 → **API** (source generated and checked; compilation depends on the
+- [x] Wired into `render.ts` (B) so figures are included in the manuscript.
+- [x] Integrity table RULE-033 → **API** (source generated and checked; compilation depends on the
       toolchain from B).
 
 **Size.** 1.5 d.
+
+### Status of G
+
+**All three rules are implemented and executed. RULE-030 is still deliberately _not_ an LLM
+hierarchy: the plan is a typed record written before the text, and stage 6 checks the text
+against it.**
+
+**G1 — the plan is a record, not a prompt.** Stage 5 now writes two records in order: a
+`manuscript-plan` and the `manuscript` that names it through `planRef = { seq, hash }`.
+`agents/plan.ts` builds the plan deterministically from the evidence the run already holds —
+sections in `journal.sectionOrder`, each paragraph carrying an id (`p-results-2`), an intent,
+the evidence records it may draw on (`cfd-run#6`) and the number keys it may print. Rendering
+goes through `renderPlan`, where a paragraph asks for a number by key and the renderer throws
+if the key was not declared, so an undeclared number cannot reach the text in the first place.
+Stage 6 then compares the two records. Eleven unit tests drive `checkProjection` over the text
+the plan produced, a missing planned paragraph, an unplanned one, an undeclared number (and the
+same number rounded to fewer digits, which passes), a declared key the numbers table does not
+carry, an overlong paragraph, a `planRef` that does not resolve / points at another kind / lies
+about the hash, and a pre-plan manuscript; six more drive stage 6 end to end over a manuscript
+stage 5 actually wrote and then tampered with. The
+missing/undeclared/`planRef` findings are `major`, so the verdict becomes `revise` and stage 8
+stays blocked; an overlong paragraph is `minor`, because length is a budget rather than a claim;
+and a pre-plan manuscript is recorded as `skipped`, never as a pass.
+
+**G2 — AIAA citations, checked by inverting them.** `agents/citation.ts` sets the journal,
+conference and book forms from the structured record, collapses four or more authors to three
+and `et al.`, prints DOIs without a resolver prefix or trailing slash, and lists every field
+the form omits in `missing`. `validateCitations` formats each entry, parses it back and fails
+the stage if a printed field was lost; 21 tests cover the three forms, the `et al.` boundary,
+missing volume and pages, Unicode names, a single-page entry, a DOI with a trailing slash, the
+`incomplete` style for a legacy record, and the one input that genuinely cannot round-trip (an
+author name containing a comma), which fails loudly instead of producing a wrong citation.
+Stage 7 adds a `citation-format` issue: `major` when the formatter could not set a reference,
+`minor` when it only omitted optional fields, absent when the payload predates citations.
+
+**G3 — figures as diffable source.** `figure-gci.tex` + `figure-gci.dat`: two pgfplots panels,
+labels taking quantity and unit from the payload, `nan` where no GCI is reported, and a header
+(`% provenance: run <id>, evidence seq <n>, sha256 <hash>`) plus a caption that repeat the run,
+the record and the artefact digest. No `\includegraphics` anywhere. Rendering the same record
+twice produces byte-identical files, which the suite asserts rather than assumes.
+
+**Deviations from the plan above, stated rather than quietly taken.**
+
+1. **The plan ships at `schemaVersion: 1`, not 2.** The sketch above said 2; the kind is new in
+   G, and numbering a first version 2 would imply a version 1 that never existed.
+2. **Free text is quoted only when it carries no numeral.** Solver notes, disclaimers and
+   rejection reasons that contain digits stay in the `cfd-run` record instead of being copied
+   into prose: a paragraph's numbers must all be declared keys, and free text cannot be
+   declared. The rejection reason is still quoted by stage 6's own comment, where it belongs.
+3. **The abstract is not a planned section.** It has no heading to attach a paragraph id to, so
+   the plan covers the numbered sections plus the disclosure; the abstract is still verified
+   and length-checked. Stated here rather than left to be discovered.
+4. **An invalid study draws one panel, not two.** The value panel is still plotted (the mesh
+   values are real evidence) and the caption says in one sentence that the study did not reach
+   the asymptotic range and no interval is reported; an empty GCI axis would suggest a study
+   that produced GCI where none did.
+5. **The legend exists only for a multi-series figure, and production always passes one
+   series.** `figureFromSeries` is what the multi-series test exercises; `cfdFigure` is the
+   single-study wrapper the pipeline uses.
+6. **`ManuscriptPayload` stays at `schemaVersion: 2`.** `planRef`, `citations` and per-section
+   `paragraphs` are additive; per BACKEND § 6 a field that is added does not bump a version.
+   Records written before G simply lack them, and every reader treats absence as "before G",
+   never as "lost".
 
 ---
 
