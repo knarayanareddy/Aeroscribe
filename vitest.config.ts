@@ -24,7 +24,7 @@ export default defineConfig({
       thresholds: {
         // The whole repository: UI components are exercised through behaviour
         // tests rather than every branch, so the floor is deliberately lower.
-        global: { statements: 78, branches: 67, functions: 72, lines: 80 },
+        global: { statements: 79, branches: 68, functions: 73, lines: 81 },
         // The service holds the integrity machinery: every stage handler, the
         // chain, the claim verifier. This is the part that must not rot.
         // Measured on the glob, which istanbul sums per matched file; the

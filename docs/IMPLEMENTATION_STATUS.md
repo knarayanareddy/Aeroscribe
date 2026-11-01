@@ -12,7 +12,7 @@ everything still missing is planned in [`ROADMAP.md`](./ROADMAP.md).
 | Landing page              | **Implemented**          | Static site, keyboard accessible, self-hosted fonts, no third-party requests.                                                                                                                                                                                                             |
 | Researcher dashboard (UI) | **Implemented**          | Nine views, responsive down to 360 px. Fixture mode is the default build; live mode (Overview, Pipeline, Literature, CFD, Settings) is opt-in.                                                                                                                                            |
 | Pipeline state machine    | **Implemented**          | Pure reducer in `packages/pipeline`; gate approval, revision requests, run creation.                                                                                                                                                                                                      |
-| Automated tests           | **Implemented**          | Vitest + Testing Library: 495 tests across 45 files, apps and API; CI enforces coverage thresholds (78 / 67 / 72 / 80 % global, 91 / 79 / 89 / 93 % for the service).                                                                                                                     |
+| Automated tests           | **Implemented**          | Vitest + Testing Library: 508 tests across 47 files, apps and API; CI enforces coverage thresholds (79 / 68 / 73 / 81 % global, 91 / 79 / 89 / 93 % for the service).                                                                                                                     |
 | CI / deployment           | **Implemented**          | Typecheck, lint, format check, coverage thresholds, both app builds and the API image (built and health-checked) on every PR.                                                                                                                                                             |
 | Agent runtime (backend)   | **Implemented**          | `services/api`: 9 stage handlers, orchestrator, gates, revisions, audit trail.                                                                                                                                                                                                            |
 | Literature APIs           | **Implemented**          | Crossref, arXiv and Semantic Scholar clients with DTO mapping, retries and politeness. Offline fixtures carry no DOIs.                                                                                                                                                                    |
@@ -113,8 +113,10 @@ stating plainly:
   `AEROSCRIBE_COORDINATION=redis` is configured. With Redis both are shared — one budget across
   instances, and `advance` on a run another instance holds answers `409` — and `/health` names
   which backend is in force.
-- CFD working directories and rendered manuscripts are local files in both modes; their
-  durable record is the SHA-256 in the evidence chain. Object storage (D4) is not built.
+- Artefact bytes are content-addressed local files in both modes, served by
+  `GET /api/v1/evidence/:seq/artefacts/:name` after a re-hash (`409` if they no longer match the
+  record). Object storage (ROADMAP § 8 D4b) is not built, so a multi-host deployment cannot
+  share them and a redeploy without a volume loses them.
 - **A PDF is not guaranteed.** Without `LATEX_BINARY` — unset on the deployed machine, and in
   the default container image — the run records `typeset: "source-only"`, `/manuscript.pdf`
   answers `503 capability_unavailable`, and stage 8 refuses to submit with

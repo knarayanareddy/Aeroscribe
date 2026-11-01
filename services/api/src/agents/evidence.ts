@@ -18,7 +18,7 @@ function finiteOrNull(value: number): number | null {
  * solver behind the operator's back.
  */
 export const evidenceGeneration: StageHandler = async (context): Promise<StageOutcome> => {
-  const { cfd, options, now } = context;
+  const { cfd, blobs, options, now } = context;
 
   const result = await cfd.run(
     {
@@ -30,6 +30,25 @@ export const evidenceGeneration: StageHandler = async (context): Promise<StageOu
     },
     { solver: options.solver },
   );
+
+  // Store the bytes the digests describe before recording them. A record that
+  // names a hash nobody can fetch is a claim; storing first means the endpoint
+  // can always serve what the record says it hashed.
+  const artefacts = [];
+  for (const artefact of result.artefacts) {
+    const stored = await blobs.put(artefact.content, artefact.mediaType);
+    if (stored.sha256 !== artefact.sha256) {
+      throw new Error(
+        `Artefact ${artefact.name} hashed to ${stored.sha256} after being computed as ${artefact.sha256}.`,
+      );
+    }
+    artefacts.push({
+      name: artefact.name,
+      sha256: stored.sha256,
+      bytes: stored.bytes,
+      mediaType: stored.mediaType,
+    });
+  }
 
   const study = result.study;
   const payload: CfdEvidencePayload = {
@@ -58,7 +77,7 @@ export const evidenceGeneration: StageHandler = async (context): Promise<StageOu
           reason: study.reason,
         }
       : null,
-    artefacts: result.artefacts,
+    artefacts,
     computedAt: now().toISOString(),
   };
 

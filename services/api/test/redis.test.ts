@@ -8,6 +8,7 @@ import type { Config } from '../src/config';
 import { describeCapabilities } from '../src/config';
 import { createCoordinator, createRedisCoordinator, redactRedisUrl } from '../src/coord';
 import { CoordinationUnavailableError } from '../src/errors';
+import { createFilesystemBlobStore } from '../src/blob';
 import { CfdService } from '../src/cfd';
 import { createApp } from '../src/http/app';
 import { LiteratureService } from '../src/literature';
@@ -111,6 +112,7 @@ describe.skipIf(!availability.available)(
       coordination?: ReturnType<typeof coordinator>,
     ): Orchestrator =>
       new Orchestrator({
+        blobs: createFilesystemBlobStore({ dataDir: directory, name }),
         runs: new FilesystemRunStore(join(directory, name, 'runs')),
         registry: new FilesystemEvidenceStore(join(directory, name, 'registry.ndjson')),
         audit: new FilesystemAuditStore(join(directory, name, 'audit.ndjson')),

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Config } from '../src/config';
 import { describeCapabilities } from '../src/config';
+import { createFilesystemBlobStore } from '../src/blob';
 import { CfdService } from '../src/cfd';
 import { computeGci } from '../src/cfd/gci';
 import { createApp } from '../src/http/app';
@@ -63,6 +64,7 @@ function buildServer() {
     workDir: join(directory, 'cfd'),
   });
   const orchestrator = new Orchestrator({
+    blobs: createFilesystemBlobStore({ dataDir: directory }),
     runs: new FilesystemRunStore(join(directory, 'runs')),
     registry: new FilesystemEvidenceStore(join(directory, 'registry.ndjson')),
     audit: new FilesystemAuditStore(join(directory, 'audit.ndjson')),

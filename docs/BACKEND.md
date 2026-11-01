@@ -605,6 +605,7 @@ set (`Authorization: Bearer <key>`); `/health` is always open. Errors are always
 | POST   | `/api/v1/runs/:id/gates/:gateId/reject`  | send the stage back for revision (`note`)       |
 | GET    | `/api/v1/runs/:id/evidence?kind=`        | registry records for the run                    |
 | GET    | `/api/v1/evidence/verify`                | re-hash the whole chain from disk               |
+| GET    | `/api/v1/evidence/:seq/artefacts/:name`  | artefact bytes, re-hashed; `409` on a mismatch  |
 | GET    | `/api/v1/audit?runId=&limit=`            | audit trail (read-only)                         |
 | GET    | `/api/v1/literature/search?q=&limit=`    | live/offline search                             |
 | POST   | `/api/v1/literature/verify-doi`          | `{ doi, expectedTitle? }` → 200 or 422          |
@@ -806,8 +807,8 @@ a chain without recomputing a digest.
 function and walk with the same verifier, so "verifies" cannot mean two different things
 depending on which store a deployment happens to use.
 
-**`/health`** reports `store: { backend, ok, detail }` and answers `503` when the probe
-fails. The probe is a real round trip, not a configuration read: a data directory that
+**`/health`** reports `store: { backend, ok, detail }` and `blobs: { backend, ok, detail }`,
+and answers `503` when either probe fails. The probe is a real round trip, not a configuration read: a data directory that
 cannot hold a file, or a database that cannot answer `SELECT 1`, means nothing can be
 saved. `ok:false` is the honest answer, and a `200` would tell a load balancer to keep
 sending work here.
@@ -889,6 +890,35 @@ locally the harness uses `AEROSCRIBE_TEST_REDIS_URL`, a `redis-server` binary on
 Object storage (artefacts) is ROADMAP § 8 D4 and is not built; `AEROSCRIBE_S3_*` does not exist
 yet.
 
+#### Artefact bytes
+
+An evidence record names its artefacts by SHA-256. That proves the record was not edited; it
+does not let anyone read the file. `services/api/src/blob/` closes the gap with a
+content-addressed store: `put` hashes the bytes, writes them under their digest
+(`<dataDir>/blobs/sha256/<aa>/<rest>`) with an atomic rename, and returns the reference that
+goes into the record. `get` returns `null` for an object that was never stored — an old record,
+not an outage — and throws a `503`-mapped error only when the disk itself fails.
+
+```
+GET /api/v1/evidence/:seq/artefacts/:name
+```
+
+Three outcomes, and they mean different things to whoever is investigating:
+
+| Answer | Meaning                                                                                   |
+| ------ | ----------------------------------------------------------------------------------------- |
+| `200`  | The bytes, with `x-content-sha256` and an `etag` derived from the recorded digest.        |
+| `409`  | The stored bytes no longer hash to the digest in the record (`artefact_hash_mismatch`).   |
+| `404`  | No such record, no such artefact in it, or a record written before its bytes were stored. |
+
+The `409` is the point: the route re-hashes on the way out, so the API cannot be used to pass
+off altered evidence. It reports both digests and returns no bytes. A record that names a file
+whose bytes are not in the store says exactly that instead of answering `404 not found`, which
+would claim the artefact never existed.
+
+Storage is local in every mode today. Object storage (ROADMAP § 8 D4) would add an adapter
+behind `BlobStore`; the route, the stage handlers and these tests would not change.
+
 Data layout under `AEROSCRIBE_DATA_DIR`:
 
 ```
@@ -896,6 +926,7 @@ registry.ndjson          append-only evidence chain (never rewritten)
 audit.ndjson             append-only audit trail
 runs/<runId>.json        run state (atomic replace)
 runs/<runId>.options.json run options (survive restarts)
+blobs/sha256/<aa>/<rest> artefact bytes, named by their digest
 cfd/study-<uuid>/        SU2 working directories: history.csv per mesh level
 manuscripts/<runId>/     manuscript.tex, references.bib, figure-N.tex|.dat, PDF when typeset
 ```

@@ -77,6 +77,26 @@ export class UpstreamError extends ApiError {
   }
 }
 
+/**
+ * The bytes served for an artefact do not hash to the digest the record holds.
+ *
+ * `409`, not `500`: the run is intact and the record is intact — what changed
+ * is the file. Returning the bytes anyway would make the API an accomplice in
+ * passing off altered evidence, and returning `404` would say the artefact never
+ * existed, which is a different (and false) statement.
+ */
+export class ArtefactIntegrityError extends ApiError {
+  constructor(name: string, expected: string, actual: string) {
+    super(
+      409,
+      'artefact_hash_mismatch',
+      `Artefact "${name}" does not hash to the digest recorded in the evidence chain.`,
+      { expected, actual },
+    );
+    this.name = 'ArtefactIntegrityError';
+  }
+}
+
 /** A generated manuscript contained a number that no registry record backs. */
 export class UnverifiableClaimError extends ApiError {
   constructor(claims: readonly string[]) {

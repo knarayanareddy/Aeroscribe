@@ -1,9 +1,22 @@
-import { hashPayload } from '../lib/canonical';
+import { canonicalJson, hashPayload } from '../lib/canonical';
+import { hashBytes } from '../store/evidence';
 import { computeGci, gciUncertainty } from './gci';
 import type { CfdStudyRequest, CfdStudyResult, MeshSample } from './types';
 
 /** The exact order the synthetic solver imitates, so tests can check the inverse. */
 export const SYNTHETIC_TRUE_ORDER = 2;
+
+/**
+ * One artefact: the canonical JSON a reader can fetch, and the digest of
+ * exactly those bytes.
+ *
+ * `hashPayload` hashes `canonicalJson`, so storing that same string is what
+ * makes the recorded digest checkable rather than merely plausible.
+ */
+function artefact(name: string, payload: unknown) {
+  const content = Buffer.from(canonicalJson(payload), 'utf8');
+  return { name, sha256: hashBytes(content), mediaType: 'application/json', content };
+}
 
 export const SYNTHETIC_DISCLAIMER =
   'Computed by the synthetic throwaway solver that ships with the prototype. The number is ' +
@@ -57,9 +70,6 @@ export function runSyntheticStudy(request: CfdStudyRequest): CfdStudyResult {
         : `GCI study rejected: ${study.reason ?? 'unknown reason'}.`,
     ],
     disclaimer: SYNTHETIC_DISCLAIMER,
-    artefacts: [
-      { name: 'mesh-levels.json', sha256: hashPayload(samples) },
-      { name: 'gci-study.json', sha256: hashPayload(study) },
-    ],
+    artefacts: [artefact('mesh-levels.json', samples), artefact('gci-study.json', study)],
   };
 }

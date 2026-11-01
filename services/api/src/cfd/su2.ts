@@ -155,7 +155,8 @@ export interface Su2StudyOptions {
  */
 export async function runSu2Study(options: Su2StudyOptions): Promise<CfdStudyResult> {
   const samples: MeshSample[] = [];
-  const artefacts: Array<{ name: string; sha256: string }> = [];
+  const artefacts: Array<{ name: string; sha256: string; mediaType: string; content: Uint8Array }> =
+    [];
 
   // SU2 writes a fixed `history.csv` in its working directory, so two concurrent
   // studies sharing one directory would read each other's results. Each study
@@ -194,9 +195,12 @@ export async function runSu2Study(options: Su2StudyOptions): Promise<CfdStudyRes
       );
     }
 
+    const content = Buffer.from(history, 'utf8');
     artefacts.push({
       name: `history-${config.level}.csv`,
-      sha256: hashBytes(Buffer.from(history)),
+      sha256: hashBytes(content),
+      mediaType: 'text/csv',
+      content,
     });
     samples.push({
       level: config.level,

@@ -58,5 +58,13 @@ export interface CfdStudyResult {
   notes: string[];
   /** Present whenever the numbers are not the output of a real solver. */
   disclaimer?: string;
-  artefacts: Array<{ name: string; sha256: string }>;
+  /**
+   * Files the study produced, with the bytes that were hashed.
+   *
+   * The bytes are here rather than only on the study's working directory
+   * because a checksum nobody can re-check is a claim, not evidence: the
+   * orchestrator stores these in the blob store so `GET
+   * /api/v1/evidence/:seq/artefacts/:name` can serve them and re-hash them.
+   */
+  artefacts: Array<{ name: string; sha256: string; mediaType: string; content: Uint8Array }>;
 }
