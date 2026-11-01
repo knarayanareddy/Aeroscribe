@@ -600,10 +600,19 @@ export interface Capabilities {
   registry: { algorithm: 'sha256'; path: string };
   auth: { required: boolean };
   storage: {
-    /** Which store adapter the server is using (`AEROSCRIBE_STORE`). */
-    backend: 'filesystem';
+    /**
+     * Which store adapter the server is using (`AEROSCRIBE_STORE`).
+     *
+     * `filesystem` keeps runs, the evidence chain and the audit trail in
+     * `AEROSCRIBE_DATA_DIR`; `postgres` keeps them in the database at
+     * `database`. Only `filesystem` is single-writer.
+     */
+    backend: 'filesystem' | 'postgres';
+    /** Where the filesystem adapter writes; empty when it is not in use. */
     runsDir: string;
     auditPath: string;
+    /** The database, with any password removed; `null` for `filesystem`. */
+    database: string | null;
   };
 }
 

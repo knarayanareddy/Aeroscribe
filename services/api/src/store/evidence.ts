@@ -1,7 +1,7 @@
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { GENESIS_HASH, canonicalJson, hashEquals, hashPayload, sha256 } from '../lib/canonical';
+import { GENESIS_HASH, hashPayload } from '../lib/canonical';
 
 /**
  * What a stage can write. One record per stage, so the list is the union of the
@@ -15,6 +15,7 @@ import { GENESIS_HASH, canonicalJson, hashEquals, hashPayload, sha256 } from '..
 // it and the HTTP layer validates `?kind=` against it, so it is defined once.
 import { EVIDENCE_KINDS } from '@aeroscribe/contract';
 import type { EvidenceKind, EvidenceRecord, RegistryVerification } from '@aeroscribe/contract';
+import { digestRecord, verifyChain, type HashedFields } from './chain';
 import type { AppendEvidenceInput, EvidenceQuery, EvidenceStore } from './ports';
 
 export { EVIDENCE_KINDS };
@@ -29,22 +30,6 @@ export type { EvidenceKind, EvidenceRecord, RegistryVerification };
  * RULE-041 (checksum every computed artefact) and RULE-043 (append-only).
  * The shape itself is the wire contract — see `EvidenceRecord` there.
  */
-interface HashedFields {
-  seq: number;
-  id: string;
-  kind: EvidenceKind;
-  runId: string;
-  stageId: number | null;
-  label: string;
-  createdAt: string;
-  payloadHash: string;
-  prevHash: string;
-}
-
-function digestRecord(fields: HashedFields): string {
-  return sha256(canonicalJson(fields));
-}
-
 /**
  * Append-only, hash-chained evidence registry backed by one NDJSON file.
  *
@@ -165,65 +150,7 @@ export class FilesystemEvidenceStore implements EvidenceStore {
       };
     }
 
-    let previous = GENESIS_HASH;
-
-    for (const [index, record] of onDisk.entries()) {
-      if (record.seq !== index) {
-        return {
-          valid: false,
-          records: onDisk.length,
-          head: onDisk.at(-1)?.hash ?? GENESIS_HASH,
-          brokenAt: index,
-          reason: `expected seq ${index}, found ${record.seq}`,
-        };
-      }
-
-      if (record.prevHash !== previous) {
-        return {
-          valid: false,
-          records: onDisk.length,
-          head: onDisk.at(-1)?.hash ?? GENESIS_HASH,
-          brokenAt: record.seq,
-          reason: 'prevHash does not match the previous record',
-        };
-      }
-
-      if (record.payloadHash !== hashPayload(record.payload)) {
-        return {
-          valid: false,
-          records: onDisk.length,
-          head: onDisk.at(-1)?.hash ?? GENESIS_HASH,
-          brokenAt: record.seq,
-          reason: 'payload does not match its recorded payloadHash',
-        };
-      }
-
-      const expected = digestRecord({
-        seq: record.seq,
-        id: record.id,
-        kind: record.kind,
-        runId: record.runId,
-        stageId: record.stageId,
-        label: record.label,
-        createdAt: record.createdAt,
-        payloadHash: record.payloadHash,
-        prevHash: record.prevHash,
-      });
-
-      if (!hashEquals(expected, record.hash)) {
-        return {
-          valid: false,
-          records: onDisk.length,
-          head: onDisk.at(-1)?.hash ?? GENESIS_HASH,
-          brokenAt: record.seq,
-          reason: 'record hash does not recompute (metadata was edited)',
-        };
-      }
-
-      previous = record.hash;
-    }
-
-    return { valid: true, records: onDisk.length, head: previous };
+    return verifyChain(onDisk);
   }
 
   private async readAll(): Promise<EvidenceRecord[]> {

@@ -1,7 +1,7 @@
 import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseLogLevel, type LogLevel } from './lib/logger';
-import type { StoreBackend } from './store';
+import { redactDatabaseUrl, type StoreBackend } from './store';
 
 export interface Config {
   host: string;
@@ -36,6 +36,11 @@ export interface Config {
    * typo fails at boot instead of being ignored.
    */
   store: StoreBackend;
+  /**
+   * `AEROSCRIBE_DATABASE_URL`, required by the `postgres` adapter. Never
+   * returned to a client: capabilities expose `redactDatabaseUrl()` instead.
+   */
+  databaseUrl: string | null;
   /** Verbosity of the JSON log stream (RULE-053). */
   logLevel: LogLevel;
   /** Release identifier reported by `/health`; the build sets it. */
@@ -72,9 +77,9 @@ function envBool(env: NodeJS.ProcessEnv, key: string, fallback: boolean): boolea
 function parseStore(env: NodeJS.ProcessEnv): StoreBackend {
   const raw = envString(env, 'AEROSCRIBE_STORE').toLowerCase();
   if (raw === '' || raw === 'filesystem') return 'filesystem';
+  if (raw === 'postgres') return 'postgres';
   throw new Error(
-    `AEROSCRIBE_STORE="${raw}" is not a supported store. Supported: filesystem. ` +
-      'A Postgres adapter is planned (ROADMAP § 8, D2) and does not exist yet.',
+    `AEROSCRIBE_STORE="${raw}" is not a supported store. Supported: filesystem, postgres.`,
   );
 }
 
@@ -86,6 +91,25 @@ function parseStore(env: NodeJS.ProcessEnv): StoreBackend {
  * state for a local development server and a dangerous one for a deployment.
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+  const store = parseStore(env);
+  const databaseUrl = envString(env, 'AEROSCRIBE_DATABASE_URL') || null;
+
+  // Refuse an unusable combination at boot rather than at the first write. A
+  // process told to use Postgres that starts without a URL and then answers
+  // every request with a `500` is worse than one that never started.
+  if (store === 'postgres' && databaseUrl === null) {
+    throw new Error(
+      'AEROSCRIBE_STORE=postgres requires AEROSCRIBE_DATABASE_URL (postgres://user:password@host:5432/database).',
+    );
+  }
+  if (store === 'filesystem' && databaseUrl !== null) {
+    throw new Error(
+      'AEROSCRIBE_DATABASE_URL is set but AEROSCRIBE_STORE is filesystem. ' +
+        'Set AEROSCRIBE_STORE=postgres to use the database, or unset the URL — ' +
+        'silently writing files while a database is configured is how two sources of truth start.',
+    );
+  }
+
   return {
     host: envString(env, 'HOST', '127.0.0.1'),
     port: envInt(env, 'PORT', 8787),
@@ -107,7 +131,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     upstreamTimeoutMs: envInt(env, 'AEROSCRIBE_UPSTREAM_TIMEOUT_MS', 15_000),
     retryBaseDelayMs: envInt(env, 'AEROSCRIBE_RETRY_BASE_MS', 2_000),
     doiMaxAgeDays: envInt(env, 'AEROSCRIBE_DOI_MAX_AGE_DAYS', 30),
-    store: parseStore(env),
+    store,
+    databaseUrl,
     logLevel: parseLogLevel(env.LOG_LEVEL),
     version: envString(env, 'AEROSCRIBE_VERSION', 'dev'),
     commit: envString(env, 'GIT_SHA', 'unknown'),
@@ -171,8 +196,11 @@ export async function describeCapabilities(config: Config): Promise<Capabilities
     auth: { required: config.apiKey !== '' },
     storage: {
       backend: config.store,
-      runsDir: `${config.dataDir}/runs`,
-      auditPath: `${config.dataDir}/audit.ndjson`,
+      // Kept for the filesystem adapter and for a reader comparing two
+      // deployments; empty when the documents live in a database instead.
+      runsDir: config.store === 'filesystem' ? `${config.dataDir}/runs` : '',
+      auditPath: config.store === 'filesystem' ? `${config.dataDir}/audit.ndjson` : '',
+      database: config.databaseUrl === null ? null : redactDatabaseUrl(config.databaseUrl),
     },
   };
 }

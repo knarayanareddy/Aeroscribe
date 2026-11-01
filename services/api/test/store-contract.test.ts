@@ -2,10 +2,12 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createRun } from '@aeroscribe/pipeline';
 import type { EvidenceRecord } from '@aeroscribe/contract';
 import { createStores, type Stores } from '../src/store';
+import type { Pool } from 'pg';
+import { databaseNameOf, startPostgres, type PostgresFixture } from './support/postgres';
 
 /**
  * One suite, every backend.
@@ -18,26 +20,28 @@ import { createStores, type Stores } from '../src/store';
  * becomes a failing test rather than a review note.
  *
  * A harness states what it cannot do. The filesystem adapter is single-writer
- * by construction, so `multipleWriters: false` skips the cross-instance test and
- * the suite asserts the skip reason is deliberate rather than forgotten.
+ * by construction, so `multipleWriters: false` skips the cross-instance test;
+ * the skip is deliberate and named, not an accident of a missing fixture.
  */
 
 interface Harness {
-  /** Backend name, used in the test title. */
-  name: string;
+  /** Backend name, used in the test title and asserted on the probe. */
+  name: 'filesystem' | 'postgres';
   /** Whether two independent instances may write to the same store. */
   multipleWriters: boolean;
   /**
-   * Open a handle on the *same configured* store, reset to empty.
+   * Open a handle on a fresh, empty store.
    *
-   * An adapter that supports multiple writers must map every handle onto the
-   * same data (one database, one table set), because that is what the
-   * cross-instance scenario means: two processes, one chain.
+   * An adapter that supports multiple writers must map `sibling()` onto the
+   * same data as this handle, because that is what the cross-instance scenario
+   * means: two processes, one chain.
    */
   open(): Promise<Stores>;
-  /** Break the chain the way an operator with a text editor would. */
+  /** A second handle on the same data, for the multi-writer scenario. */
+  sibling?(stores: Stores): Promise<Stores>;
+  /** Break the chain the way somebody with database or filesystem access would. */
   tamper(stores: Stores, how: 'payload' | 'delete' | 'reorder'): Promise<void>;
-  /** Free whatever `open` allocated (a directory, a schema, …). */
+  /** Free whatever `open` allocated (a directory, a database, …). */
   dispose(stores: Stores): Promise<void>;
 }
 
@@ -61,10 +65,10 @@ const filesystem: Harness = {
     // one place in the suite that knows it: every other scenario goes through
     // the ports.
     const path = (stores.evidence as unknown as { filePath: string }).filePath;
-    const lines = (await readFile(path, 'utf8'))
+    const records = (await readFile(path, 'utf8'))
       .split('\n')
-      .filter((line) => line.trim().length > 0);
-    const records = lines.map((line) => JSON.parse(line) as EvidenceRecord);
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line) as EvidenceRecord);
 
     if (how === 'payload') {
       const [first] = records;
@@ -93,7 +97,80 @@ const filesystem: Harness = {
   },
 };
 
-const HARNESSES: Harness[] = [filesystem];
+let postgres: PostgresFixture | undefined;
+const postgresDatabases: string[] = [];
+
+/**
+ * The Postgres harness.
+ *
+ * Tampering goes through the trigger's own escape hatch — `DISABLE TRIGGER` —
+ * because with the trigger armed the database refuses the edit outright
+ * (`postgres.test.ts` asserts that separately). The point here is the second,
+ * independent mechanism: even with the table guard switched off, the hash chain
+ * still reports where history was rewritten.
+ */
+const postgresHarness: Harness = {
+  name: 'postgres',
+  multipleWriters: true,
+  async open() {
+    if (!postgres) throw new Error('the Postgres fixture did not start');
+    const url = await postgres.createDatabase();
+    postgresDatabases.push(databaseNameOf(url));
+    return createStores({
+      dataDir: await filesystemDirectory(),
+      store: 'postgres',
+      databaseUrl: url,
+    });
+  },
+  async sibling(stores) {
+    const url = (stores.evidence as unknown as { databaseUrl: string }).databaseUrl;
+    return createStores({
+      dataDir: await filesystemDirectory(),
+      store: 'postgres',
+      databaseUrl: url,
+    });
+  },
+  async tamper(stores, how) {
+    // `createStores` returns the port surface; the pool is reachable through the
+    // adapter underneath it, which is the only way to run raw SQL in a test.
+    const client = await (stores.evidence as unknown as { pool: Pool }).pool.connect();
+    try {
+      await client.query('ALTER TABLE evidence DISABLE TRIGGER USER');
+      if (how === 'payload') {
+        await client.query(
+          `UPDATE evidence SET payload = '{"tampered":true}'::jsonb WHERE seq = 0`,
+        );
+      } else if (how === 'delete') {
+        await client.query('DELETE FROM evidence WHERE seq = 1');
+      } else {
+        // Swap two links. The primary key forbids a temporary duplicate, so the
+        // first row parks on a free sequence number for the duration.
+        await client.query('UPDATE evidence SET seq = 1000 WHERE seq = 0');
+        await client.query('UPDATE evidence SET seq = 0 WHERE seq = 1');
+        await client.query('UPDATE evidence SET seq = 1 WHERE seq = 1000');
+      }
+      await client.query('ALTER TABLE evidence ENABLE TRIGGER USER');
+    } finally {
+      client.release();
+    }
+  },
+  async dispose(stores) {
+    await stores.close?.();
+  },
+};
+
+const HARNESSES: Harness[] = [filesystem, postgresHarness];
+
+beforeAll(async () => {
+  postgres = await startPostgres();
+}, 120_000);
+
+afterAll(async () => {
+  for (const name of postgresDatabases.splice(0)) {
+    await postgres?.dropDatabase(name).catch(() => undefined);
+  }
+  await postgres?.stop();
+});
 
 afterEach(async () => {
   await Promise.all(
@@ -183,6 +260,9 @@ describe.each(HARNESSES)('store contract: $name', (harness) => {
     expect([first.seq, second.seq, third.seq]).toEqual([0, 1, 2]);
     expect(second.prevHash).toBe(first.hash);
     expect(third.prevHash).toBe(second.hash);
+    // The timestamp is inside every hash, so a backend that rounds it would
+    // make the chain unverifiable. Assert the exact value came back.
+    expect(await stores.evidence.get(0)).toMatchObject({ createdAt: '2026-01-01T00:00:00.000Z' });
 
     expect((await stores.evidence.list({ runId: 'run-1' })).map((r) => r.seq)).toEqual([0, 1]);
     expect((await stores.evidence.list({ kind: 'cfd-run' })).map((r) => r.seq)).toEqual([1]);
@@ -196,7 +276,7 @@ describe.each(HARNESSES)('store contract: $name', (harness) => {
     await harness.dispose(stores);
   });
 
-  it('serialises concurrent appends within one instance', async () => {
+  it('serialises concurrent appends', async () => {
     const stores = await harness.open();
     // A stage appends while a re-check appends: the port promises one chain,
     // not one caller at a time.
@@ -223,8 +303,10 @@ describe.each(HARNESSES)('store contract: $name', (harness) => {
     'keeps one chain when two instances write to the same store',
     async () => {
       const stores = await harness.open();
-      const other = await harness.open();
+      const other = await harness.sibling!(stores);
 
+      // Two independent connections — the same situation the advisory lock
+      // exists for, whether or not they are in one process.
       await Promise.all(
         Array.from({ length: 20 }, async (_, index) => {
           const target = index % 2 === 0 ? stores : other;
@@ -237,10 +319,8 @@ describe.each(HARNESSES)('store contract: $name', (harness) => {
         }),
       );
 
-      // Both instances must agree on the chain, and it must still verify: that
-      // is what a unique `seq` plus a lock buys over an append to a file.
       expect(await stores.evidence.verify()).toMatchObject({ valid: true, records: 20 });
-      await harness.dispose(other);
+      await other.close?.();
       await harness.dispose(stores);
     },
   );
@@ -343,7 +423,8 @@ describe('the filesystem probe', () => {
 
 /** Three records, which every tamper scenario needs. */
 async function seed(stores: Stores): Promise<void> {
-  for (const [index, kind] of ['stage-output', 'cfd-run', 'manuscript'] as const) {
+  const kinds = ['stage-output', 'cfd-run', 'manuscript'] as const;
+  for (const [index, kind] of kinds.entries()) {
     await stores.evidence.append({
       kind,
       runId: 'run-1',

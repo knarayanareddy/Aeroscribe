@@ -21,14 +21,15 @@
   },
   "registry": {
     "algorithm": "sha256",
-    "path": "/tmp/aeroscribe-contract-qL529Y/registry.ndjson"
+    "path": "/tmp/aeroscribe-contract-irTVQN/registry.ndjson"
   },
   "auth": {
     "required": false
   },
   "storage": {
     "backend": "filesystem",
-    "runsDir": "/tmp/aeroscribe-contract-qL529Y/runs",
-    "auditPath": "/tmp/aeroscribe-contract-qL529Y/audit.ndjson"
+    "runsDir": "/tmp/aeroscribe-contract-irTVQN/runs",
+    "auditPath": "/tmp/aeroscribe-contract-irTVQN/audit.ndjson",
+    "database": null
   }
 }

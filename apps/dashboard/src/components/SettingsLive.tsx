@@ -71,19 +71,26 @@ export default function SettingsLive() {
     },
     {
       label: 'Storage adapter',
-      value:
-        capabilities.storage.backend === 'filesystem' ? 'Filesystem' : capabilities.storage.backend,
+      value: capabilities.storage.backend === 'postgres' ? 'Postgres' : 'Filesystem',
       ok: true,
       // Naming the backend is the point: a reader must be able to tell whether
-      // this instance is single-writer before trusting it with two replicas.
-      note: `AEROSCRIBE_STORE = ${capabilities.storage.backend} · single writer`,
+      // this instance can run beside a second one before adding a replica.
+      note:
+        capabilities.storage.backend === 'postgres'
+          ? `AEROSCRIBE_STORE = postgres · ${capabilities.storage.database ?? 'database'}`
+          : 'AEROSCRIBE_STORE = filesystem · single writer',
     },
-    {
-      label: 'Data directory',
-      value: 'On disk',
-      ok: true,
-      note: `runs: ${capabilities.storage.runsDir} · audit: ${capabilities.storage.auditPath}`,
-    },
+    ...(capabilities.storage.backend === 'filesystem'
+      ? [
+          {
+            label: 'Data directory',
+            value: 'On disk',
+            ok: true,
+            note: `runs: ${capabilities.storage.runsDir} · audit: ${capabilities.storage.auditPath}`,
+          },
+        ]
+      : []),
+
     {
       label: 'Language model',
       value: 'Not used',

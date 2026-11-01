@@ -39,6 +39,7 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
     latexBinary: null,
     latexTimeoutMs: 5_000,
     store: 'filesystem',
+    databaseUrl: null,
     doiMaxAgeDays: 30,
     logLevel: 'silent',
     version: 'test',

@@ -12,13 +12,21 @@
     "smoke:literature": "tsx scripts/literature-smoke.ts",
     "smoke:cfd": "tsx scripts/cfd-smoke.ts",
     "recheck": "tsx scripts/recheck.ts",
-    "smoke:latex": "tsx scripts/latex-smoke.ts"
+    "smoke:latex": "tsx scripts/latex-smoke.ts",
+    "db:migrate": "tsx scripts/db-migrate.ts",
+    "db:verify": "tsx scripts/db-verify.ts",
+    "db:import": "tsx scripts/db-import.ts"
   },
   "dependencies": {
     "@aeroscribe/contract": "0.1.0",
     "@aeroscribe/pipeline": "0.1.0",
     "@hono/node-server": "^2.1.5",
     "hono": "^4.10.7",
+    "pg": "^8.23.1",
     "tsx": "^4.20.6"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1",
+    "embedded-postgres": "^18.6.0-beta.19"
   }
 }

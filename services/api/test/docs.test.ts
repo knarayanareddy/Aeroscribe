@@ -137,6 +137,51 @@ describe('docs/BACKEND.md matches the configuration loader', () => {
   });
 });
 
+describe('docs/OPERATIONS.md matches the scripts', () => {
+  it('documents every db:* script the package defines', async () => {
+    const [packageJson, operations] = await Promise.all([
+      readRepoFile('services/api/package.json'),
+      readRepoFile('docs/OPERATIONS.md'),
+    ]);
+
+    const scripts = Object.keys(
+      (JSON.parse(packageJson) as { scripts: Record<string, string> }).scripts,
+    ).filter((name) => name.startsWith('db:'));
+
+    // The commands an operator reaches for after an incident have to be in the
+    // runbook, not only in package.json.
+    expect(scripts.length).toBeGreaterThanOrEqual(3);
+    for (const script of scripts) {
+      expect(operations, `${script} is not in docs/OPERATIONS.md`).toContain(`npm run ${script}`);
+    }
+  });
+
+  it('does not promise a command that does not exist', async () => {
+    const [packageJson, operations] = await Promise.all([
+      readRepoFile('services/api/package.json'),
+      readRepoFile('docs/OPERATIONS.md'),
+    ]);
+
+    // Commands can live in the workspace or in the root, and the runbook is
+    // written from the root: both are real.
+    const rootPackage = JSON.parse(await readRepoFile('package.json')) as {
+      scripts: Record<string, string>;
+    };
+    const scripts = new Set([
+      ...Object.keys((JSON.parse(packageJson) as { scripts: Record<string, string> }).scripts),
+      ...Object.keys(rootPackage.scripts),
+    ]);
+    const mentioned = Array.from(operations.matchAll(/npm run ([a-z:]+)/g), (m) => m[1]!);
+    expect(mentioned.length).toBeGreaterThan(0);
+    for (const name of new Set(mentioned)) {
+      expect(
+        scripts.has(name),
+        `docs/OPERATIONS.md mentions npm run ${name}, which does not exist`,
+      ).toBe(true);
+    }
+  });
+});
+
 describe('docs/BACKEND.md matches the stage catalogue', () => {
   it('lists each stage name once, in pipeline order', async () => {
     const [stages, docs] = await Promise.all([

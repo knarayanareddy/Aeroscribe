@@ -85,6 +85,7 @@ function buildServer() {
     latexBinary: null,
     latexTimeoutMs: 5_000,
     store: 'filesystem',
+    databaseUrl: null,
     logLevel: 'silent',
     version: 'test',
     commit: 'test',

@@ -680,7 +680,8 @@ that adds, removes or retypes a field fails that test until the dashboard's mapp
 | `HOST`                           | `127.0.0.1`                                   | bind address (use `0.0.0.0` in a container)                                     |
 | `PORT`                           | `8787`                                        | bind port                                                                       |
 | `AEROSCRIBE_DATA_DIR`            | `./data`                                      | registry, runs, audit, CFD studies                                              |
-| `AEROSCRIBE_STORE`               | `filesystem`                                  | storage adapter; `filesystem` is the only one implemented (ROADMAP § 8)         |
+| `AEROSCRIBE_STORE`               | `filesystem`                                  | `filesystem` or `postgres`; anything else stops the process at boot             |
+| `AEROSCRIBE_DATABASE_URL`        | _unset_                                       | required by `postgres`, refused when the store is `filesystem`                  |
 | `AEROSCRIBE_API_KEY`             | _unset_                                       | unset ⇒ **no authentication**; `/health` says `authRequired:false`              |
 | `AEROSCRIBE_CONTACT_EMAIL`       | _unset_                                       | Crossref polite-pool `mailto`                                                   |
 | `AEROSCRIBE_OFFLINE`             | `false`                                       | `true` ⇒ fixture corpus, no network                                             |
@@ -742,7 +743,19 @@ docker run --rm -p 8787:8787 \
   -e AEROSCRIBE_CONTACT_EMAIL=you@example.org \
   -v aeroscribe-data:/data \
   aeroscribe-api
+
+# Same image, state in Postgres instead of the volume
+docker run --rm -p 8787:8787 \
+  -e AEROSCRIBE_API_KEY="$(openssl rand -hex 32)" \
+  -e AEROSCRIBE_STORE=postgres \
+  -e AEROSCRIBE_DATABASE_URL='postgres://aeroscribe:…@db:5432/aeroscribe' \
+  aeroscribe-api
 ```
+
+The Postgres variant still wants a volume for `/data`: CFD working directories and rendered
+manuscripts are local files in both modes. `pg` is a runtime dependency, so it is installed by
+the image's `npm ci --omit=dev`; the embedded server the tests use is a dev dependency and is
+not in the image. Run `npm run db:migrate` against the database before the first start.
 
 A PDF needs a TeX engine in the image, which is opt-in because it costs about 250 MB:
 
@@ -772,20 +785,68 @@ opposite outcome — the `.tex` is written, `typeset` is `"source-only"` and the
 
 The API writes three things — runs, the evidence chain and the audit trail — through the
 ports in `services/api/src/store/ports.ts`. One factory (`createStores`) picks the adapter
-from `AEROSCRIBE_STORE`, and no route or stage ever sees a concrete class. `filesystem` is
-the only adapter that exists: each port method has one implementation in
-`store/{runs,evidence,audit}.ts`, and `services/api/test/store-contract.test.ts` runs the
-same scenarios against whatever the factory returns, so a second adapter inherits the tests
-rather than the assumptions.
+from `AEROSCRIBE_STORE`, and no route or stage ever sees a concrete class.
 
-`/health` reports `store: { backend, ok, detail }` and answers `503` when the probe fails.
-The probe is a real write, not a configuration read: a data directory that cannot hold a
-file means no run, no evidence record and no audit line can be saved. `ok:false` is the
-honest answer, and a `200` would tell a load balancer to keep sending work here.
+| `AEROSCRIBE_STORE`     | Adapter                          | Where the data lives      | Writers |
+| ---------------------- | -------------------------------- | ------------------------- | ------- |
+| `filesystem` (default) | `store/{runs,evidence,audit}.ts` | `AEROSCRIBE_DATA_DIR`     | **one** |
+| `postgres`             | `store/postgres/`                | `AEROSCRIBE_DATABASE_URL` | many    |
 
-`AEROSCRIBE_STORE=postgres` is rejected at boot with one sentence rather than silently
-falling back to disk. That adapter, plus Redis for the rate limit and object storage for
-artefacts, is ROADMAP § 8 (D2–D4) and is not built.
+Both adapters are exercised by the same suite,
+`services/api/test/store-contract.test.ts`: chains, filters, tamper detection, concurrent
+appends, audit reads and the probe run through the ports, so a backend that behaves
+differently fails a test rather than surprising an operator.
+`services/api/test/postgres.test.ts` adds what only a database can prove — the append-only
+trigger, two writers keeping one chain, migrations re-run safely, and an import that copies
+a chain without recomputing a digest.
+
+**The chain algorithm is written once** (`store/chain.ts`): both adapters hash with the same
+function and walk with the same verifier, so "verifies" cannot mean two different things
+depending on which store a deployment happens to use.
+
+**`/health`** reports `store: { backend, ok, detail }` and answers `503` when the probe
+fails. The probe is a real round trip, not a configuration read: a data directory that
+cannot hold a file, or a database that cannot answer `SELECT 1`, means nothing can be
+saved. `ok:false` is the honest answer, and a `200` would tell a load balancer to keep
+sending work here.
+
+**When the database is down**, every write fails with `503 store_unavailable` and _no_ file
+is created on disk. There is no fallback in either direction: a process configured for
+Postgres never writes JSON, and a process configured for the filesystem never opens a
+connection.
+
+#### Postgres
+
+```
+npm run db:migrate            # apply the migrations, safe to re-run
+npm run db:verify             # recompute the whole chain from a separate connection
+npm run db:import -- ./data   # copy an existing filesystem deployment in, verbatim
+```
+
+The schema lives in `services/api/src/store/postgres/migrations/`, applied in file-name
+order, one transaction each, recorded in `schema_migrations`.
+
+Append-only is enforced **in the database**: `evidence_append_only` raises on `UPDATE` and
+`DELETE`, and `evidence_no_truncate` covers `TRUNCATE`, which bypasses row triggers. The
+trigger is there so a bug — or a `psql` session — cannot rewrite history. The hash chain
+remains the independent check if somebody drops the trigger, and the contract suite proves
+it by disabling the trigger and tampering on purpose.
+
+A single append is one transaction holding
+`pg_advisory_xact_lock(hashtext('aeroscribe.evidence'))` around "read the head, insert the
+next link". That lock replaces the filesystem adapter's in-process queue and is what makes
+two API instances safe. `seq` is the primary key, so even a writer that ignored the lock
+cannot fork the chain. The lock is global rather than per-run: at a handful of appends per
+stage the contention is irrelevant, and the fix if it ever matters is partitioning the key,
+not removing the lock.
+
+`db:import` inserts every record with its original `seq`, `id`, `prevHash`, `hash` and
+`createdAt`, verifies the result, and refuses a non-empty target — two chains have no
+defined merge. The import is one-way; the rollback is "keep writing files until the import
+is verified".
+
+Redis (rate limit, run lock) and object storage (artefacts) are ROADMAP § 8 D3–D4 and are
+not built; `AEROSCRIBE_REDIS_URL` and `AEROSCRIBE_S3_*` do not exist yet.
 
 Data layout under `AEROSCRIBE_DATA_DIR`:
 

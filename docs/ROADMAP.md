@@ -603,54 +603,70 @@ copy is deleted after upload.
 **Tasks.**
 
 - [x] D1 ports + adapter names (`FilesystemRunStore`, …) and a `store` factory.
-- [ ] D2 schema, migrations, three stores, `db:migrate`, `db:verify`, `db:import`, trigger.
+- [x] D2 schema, migrations, three stores, `db:migrate`, `db:verify`, `db:import`, trigger.
 - [ ] D3 Redis limiter and run lock; `/health` reports both.
 - [ ] D4 blob store, artefact endpoint, artefact `uri` in records.
-- [ ] **Contract suite**: `services/api/test/store-contract.test.ts` runs the same scenarios
+- [x] **Contract suite**: `services/api/test/store-contract.test.ts` runs the same scenarios
       against every configured backend (create/get/list, append/verify, tamper detection,
-      concurrent appends from two clients, audit read). CI runs it twice: filesystem always,
-      Postgres/Redis/MinIO via service containers.
-- [ ] `.github/workflows/ci.yml`: `services: postgres:16, redis:7, minio` in the API job;
-      `AEROSCRIBE_TEST_*` env. Tests skip with a loud `describe.skip` reason when the variable is
-      absent locally.
+      concurrent appends from two clients, audit read), on filesystem and Postgres.
+- [x] CI: the Postgres suite runs in the ordinary `api` job. It needs no service container —
+      `embedded-postgres` (a dev dependency) starts real Postgres binaries in a temporary
+      directory — and `AEROSCRIBE_TEST_DATABASE_URL` points the same harness at an external
+      server, so a compose stack and CI run identical tests. A mock was not an option: the
+      advisory lock, the trigger and `jsonb` round-trips are the behaviour under test.
+- [ ] `.github/workflows/ci.yml`: `services: redis:7, minio` in the API job, once D3/D4
+      exist. Postgres already runs there through the embedded server.
 - [ ] `compose.yaml` (shared with E) so the same stack runs on a laptop.
-- [ ] Docs: `docs/BACKEND.md` § 9 rewritten (store matrix, backup, migration), new
-      `docs/OPERATIONS.md` (migrate, verify, restore, rotate keys, recheck cron), integrity table
-      RULE-011/043/044 rows re-worded, `IMPLEMENTATION_STATUS` persistence row.
+- [x] Docs: `docs/BACKEND.md` § 9 rewritten (store matrix, `/health`, Postgres, migration),
+      new `docs/OPERATIONS.md` (run, migrate, verify, import, restore, rotate keys, recheck
+      cron, incident runbook, what is not built), integrity table RULE-011/043/044 rows
+      re-worded, `IMPLEMENTATION_STATUS` persistence row.
 
 ### Status of D
 
-**D1 is done; D2–D4 have not been started.** `services/api/src/store/ports.ts` defines
-`RunStore`, `EvidenceStore` and `AuditStore`; the three filesystem adapters implement them
-unchanged (`FilesystemRunStore`, `FilesystemEvidenceStore`, `FilesystemAuditStore`), and
-`createStores()` is the only place that picks one. The orchestrator, the stage context and the
-HTTP layer take the ports, so a second adapter changes no caller.
-`services/api/test/store-contract.test.ts` runs one set of scenarios against whatever the
-factory returns — chains, filters, tamper detection, concurrent appends, audit reads, and a
-probe — and states per adapter what it cannot promise (the filesystem adapter is
-single-writer, so the cross-instance scenario is skipped with a reason rather than passing
-by accident). `AEROSCRIBE_STORE` is read and validated at boot: any value other than
-`filesystem` stops the process instead of falling back to disk, and `/health` reports
-`store: { backend, ok, detail }`, answering `503` when a real write to the data directory
-fails.
+**D1 and D2 are done. D3 (Redis) and D4 (object storage) are not started.**
 
-**Why D2–D4 are not done here.** Each one needs a live backend to be more than code: a
-Postgres server (advisory lock, unique `seq`, the append-only trigger), a Redis server
-(`SET NX PX`, `INCR`/`EXPIRE`) and an S3/MinIO endpoint (content-addressed round trip, a
-flipped byte returning `409`). None is reachable from this development container — no
-`docker`, no server packages, and the only outbound network is the package registry — so
-writing the adapters and marking them built would be exactly the claim this plan forbids.
-D2–D4 land when a backend is reachable: CI service containers (`postgres:16`, `redis:7`,
-minio) cover every acceptance item below except "two processes behind one Redis", which the
-compose stack in E provides.
+**D1 — ports.** `services/api/src/store/ports.ts` defines `RunStore`, `EvidenceStore` and
+`AuditStore`; `createStores()` is the only place an adapter is chosen, and the orchestrator,
+the stage context and the HTTP layer take the ports.
 
-**Acceptance (D2–D4, not yet met).**
+**D2 — Postgres.** `services/api/src/store/postgres/` holds the schema
+(`migrations/001_initial.sql`), the migration runner, the three stores, an importer and the
+pool/error classification. What it guarantees, each with a test that fails if it stops being
+true:
 
-1. Same test suite green on filesystem and Postgres; two processes appending 50 records each
-   produce a chain that `db:verify` accepts.
-2. `UPDATE evidence SET payload = …` fails at the database with the trigger's message.
-3. `AEROSCRIBE_STORE=postgres` with the database stopped: `/health` says unreachable, writes
-   return `503`, and **no** file is created on disk.
+- An append is one transaction holding `pg_advisory_xact_lock`, so two instances keep one
+  chain; `seq` is the primary key as the backstop. Two writers × 50 appends produce 100
+  linked records that both instances verify.
+- `UPDATE`, `DELETE` and `TRUNCATE` on `evidence` are refused **by the database**, each
+  caught by the trigger's own message.
+- The chain algorithm is shared with the filesystem adapter (`store/chain.ts`), so
+  "verifies" cannot mean two things; the contract suite proves both adapters return the same
+  verdict for the same tampering.
+- `db:migrate` is idempotent, `db:verify` recomputes the whole chain over a separate
+  connection, and `db:import` copies a filesystem deployment verbatim, verifies it, and
+  refuses to merge two chains.
+- `AEROSCRIBE_STORE=postgres` without a URL stops the process at boot; an unreachable
+  database makes `/health` answer `503` and every write return `503 store_unavailable` with
+  **no file created on disk**. The database password is redacted from every report.
+
+**Why D3 and D4 are not here.** Redis and MinIO have no bundled-binary package this
+environment can install: their installers fetch from `download.redis.io` and `dl.min.io`,
+which are unreachable, and there is no Docker daemon for a service container. Both are still
+the right design — `INCR`/`EXPIRE` for the rate limit, `SET NX PX` for stage execution — but
+writing adapters whose locking behaviour could not be exercised (the entire point of a
+distributed lock) would be a claim, not a fix. They land when an endpoint is reachable; the
+contract suite already has the harness pattern to take them.
+
+**Acceptance (D2 met; the D3/D4 items remain).**
+
+1. **Met.** The contract suite is green on both backends, and `postgres.test.ts` runs two
+   connections appending 50 records each into one chain that a second reader verifies.
+2. **Met.** `UPDATE evidence SET payload = …` fails with `the evidence registry is
+append-only: UPDATE on evidence is not permitted`; so do `DELETE` and `TRUNCATE`.
+3. **Met.** With the database stopped, `/health` answers `503` naming the unreachable
+   database, `/api/v1/runs` answers `503 store_unavailable`, and the data directory is
+   still empty.
 4. Two API instances behind one Redis enforce a combined 60 req/min, and a second `advance` on
    the same run from the _other_ instance is rejected.
 5. An artefact uploaded to MinIO round-trips through the new endpoint with a matching digest; a
@@ -946,14 +962,15 @@ Every workstream above adds tests in the first three rows; only D adds the fourt
 Adding a dependency needs a sentence in the PR saying why 50 lines of our own are worse. The plan
 needs exactly six:
 
-| Package                                                  | Used by | Why not our own                                      |
-| -------------------------------------------------------- | ------- | ---------------------------------------------------- |
-| `pg`                                                     | D2      | protocol + pooling + types; not a thing to hand-roll |
-| `ioredis`                                                | D3      | cluster/retry semantics, `SET NX PX`, Lua            |
-| `@aws-sdk/client-s3`                                     | D4      | SigV4 signing and multipart are error-prone          |
-| `jose`                                                   | F       | JWT/JWKS verification is security-critical           |
-| `docker/build-push-action`, `docker/setup-buildx-action` | E       | CI only                                              |
-| `actions/*` already in use                               | E       | CI only                                              |
+| Package                                                  | Used by | Why not our own                                                                      |
+| -------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------ |
+| `pg` (added)                                             | D2      | protocol + pooling + types; not a thing to hand-roll                                 |
+| `embedded-postgres` (dev only, added)                    | D2      | real Postgres binaries for the tests; CI runs the same suite without a Docker daemon |
+| `ioredis`                                                | D3      | cluster/retry semantics, `SET NX PX`, Lua                                            |
+| `@aws-sdk/client-s3`                                     | D4      | SigV4 signing and multipart are error-prone                                          |
+| `jose`                                                   | F       | JWT/JWKS verification is security-critical                                           |
+| `docker/build-push-action`, `docker/setup-buildx-action` | E       | CI only                                                                              |
+| `actions/*` already in use                               | E       | CI only                                                                              |
 
 Explicitly rejected: an ORM (SQL is ~200 lines here and the schema is three tables), a state
 library (the source interface is smaller than the config), React Query (one `useResource` hook,
@@ -996,7 +1013,7 @@ Only after the acceptance criteria hold.
 | -------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `IMPLEMENTATION_STATUS.md` → dashboard | Implemented, fixture data                                | Implemented; **live against the API** when `VITE_API_URL` is set, fixtures otherwise, labelled either way                                                                       |
 | → LaTeX compilation                    | Implemented (B, § 6)                                     | `.tex` + inline bibliography + pgfplots figures always; PDF and a toolchain version when `LATEX_BINARY` answers, otherwise `typeset: "source-only"` and a named stage-8 blocker |
-| → Persistence                          | Implemented (server), single writer                      | Implemented: filesystem **or** Postgres; Redis for shared limits/locks; S3 for artefacts                                                                                        |
+| → Persistence                          | Implemented: filesystem **or** Postgres (D1–D2)          | Implemented: filesystem **or** Postgres; Redis for shared limits/locks; S3 for artefacts                                                                                        |
 | → Authentication                       | Partial: one bearer token                                | OIDC accounts + roles; token mode for scripts; audit actor from the verified subject                                                                                            |
 | → CI / deployment                      | Typecheck, lint, coverage, builds, image build           | … plus image publish (GHCR, multi-arch, SBOM) and a staging deploy gated by a post-deploy smoke                                                                                 |
 | → CFD solver adapter                   | Real SU2 + synthetic                                     | unchanged — this plan does not touch the solver                                                                                                                                 |

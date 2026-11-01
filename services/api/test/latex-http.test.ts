@@ -89,6 +89,7 @@ function build(engine: LatexCapability): ReturnType<typeof createApp> {
     latexBinary: engine.binary,
     latexTimeoutMs: 5_000,
     store: 'filesystem',
+    databaseUrl: null,
     corsOrigins: ['http://localhost:5174'],
     upstreamTimeoutMs: 5_000,
     retryBaseDelayMs: 1,

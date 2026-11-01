@@ -25,7 +25,7 @@ import type { PipelineRun } from '@aeroscribe/pipeline';
  */
 
 /** Storage the API can be configured to use. Grows as adapters land. */
-export type StoreBackend = 'filesystem';
+export type StoreBackend = 'filesystem' | 'postgres';
 
 /** What the configured backend supports, so a client cannot assume the rest. */
 export interface StoreProbe {
@@ -104,4 +104,10 @@ export interface Stores {
   audit: AuditStore;
   /** Cheap liveness check; a database adapter pings the database here. */
   probe(): Promise<StoreProbe>;
+  /**
+   * Release whatever the adapter holds (a connection pool, a file handle).
+   * The filesystem adapter holds nothing and omits it; a caller that owns the
+   * process lifetime should await it on shutdown.
+   */
+  close?(): Promise<void>;
 }
