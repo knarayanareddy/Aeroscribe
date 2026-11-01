@@ -682,6 +682,8 @@ that adds, removes or retypes a field fails that test until the dashboard's mapp
 | `AEROSCRIBE_DATA_DIR`            | `./data`                                      | registry, runs, audit, CFD studies                                              |
 | `AEROSCRIBE_STORE`               | `filesystem`                                  | `filesystem` or `postgres`; anything else stops the process at boot             |
 | `AEROSCRIBE_DATABASE_URL`        | _unset_                                       | required by `postgres`, refused when the store is `filesystem`                  |
+| `AEROSCRIBE_COORDINATION`        | `process`                                     | `process` or `redis`; where the rate limit and the stage lock live              |
+| `AEROSCRIBE_REDIS_URL`           | _unset_                                       | required by `redis`, refused when coordination is `process`                     |
 | `AEROSCRIBE_API_KEY`             | _unset_                                       | unset ⇒ **no authentication**; `/health` says `authRequired:false`              |
 | `AEROSCRIBE_CONTACT_EMAIL`       | _unset_                                       | Crossref polite-pool `mailto`                                                   |
 | `AEROSCRIBE_OFFLINE`             | `false`                                       | `true` ⇒ fixture corpus, no network                                             |
@@ -845,8 +847,47 @@ not removing the lock.
 defined merge. The import is one-way; the rollback is "keep writing files until the import
 is verified".
 
-Redis (rate limit, run lock) and object storage (artefacts) are ROADMAP § 8 D3–D4 and are
-not built; `AEROSCRIBE_REDIS_URL` and `AEROSCRIBE_S3_*` do not exist yet.
+#### Coordination (rate limit and stage lock)
+
+Two decisions are only correct if every instance makes the same one: how much budget a client
+has spent, and whether a stage is already running. `services/api/src/coord/` is the port for
+both (`Coordinator`), with two implementations.
+
+| `AEROSCRIBE_COORDINATION` | Adapter         | Where the counter and the lock live | Shared between instances |
+| ------------------------- | --------------- | ----------------------------------- | ------------------------ |
+| `process` (default)       | `coord/process` | memory                              | **no**                   |
+| `redis`                   | `coord/redis`   | `AEROSCRIBE_REDIS_URL`              | yes                      |
+
+Setting the URL without the backend, or the backend without the URL, stops the process at
+boot — the same contract as `AEROSCRIBE_STORE`/`AEROSCRIBE_DATABASE_URL`. A `REDIS_URL`
+inherited from a compose file therefore cannot quietly put a network round trip on every
+request in a single-instance deployment, and a process told to share its budget cannot keep
+counting locally.
+
+Both Redis operations are scripts, because the read-then-write versions are wrong under
+concurrency:
+
+- **Rate limit** — `INCR` then `PEXPIRE` on the first hit, returning the count and the remaining
+  TTL. Two instances cannot both spend the last request in a window.
+- **Stage lock** — `SET key owner NX PX ttl` claims it. A heartbeat extends it only if the
+  caller is still the owner, and release is a compare-and-delete. A lease that expires while a
+  slow solver runs is intentional (the TTL is the honest limit); the instance that lost it must
+  not delete the winner's lock when it finally returns. `advance` on a run another instance is
+  running answers `409` before any work starts.
+
+`/health` reports `coordination: { backend, ok, detail }` and answers `503` when a configured
+Redis cannot be reached — a limit that is not being enforced is not a healthy state. A request
+the limiter cannot count answers `503 coordination_unavailable`; it is never allowed through on
+a local counter. When Redis comes back the process reconnects on its own; no restart needed.
+
+The tests (`services/api/test/redis.test.ts`) run against a real server: two apps sharing a
+budget, a lease taken across instances, an expired lease handed over, a heartbeat keeping a
+long stage alive, and an unreachable Redis answering `503`. CI starts `redis:7` as a service;
+locally the harness uses `AEROSCRIBE_TEST_REDIS_URL`, a `redis-server` binary on `PATH` (or
+`AEROSCRIBE_REDIS_SERVER`), and skips with a named reason when neither exists.
+
+Object storage (artefacts) is ROADMAP § 8 D4 and is not built; `AEROSCRIBE_S3_*` does not exist
+yet.
 
 Data layout under `AEROSCRIBE_DATA_DIR`:
 

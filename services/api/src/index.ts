@@ -11,6 +11,7 @@ import {
 } from './literature';
 import { CfdService } from './cfd';
 import { createStores } from './store';
+import { createCoordinator } from './coord';
 import { detectSu2, detectLatex } from './config';
 import { LatexService } from './latex';
 import { createLogger } from './lib/logger';
@@ -75,6 +76,14 @@ export async function buildServer(env: NodeJS.ProcessEnv = process.env) {
     ),
   });
 
+  // Where the rate limit and the stage lock live. The default is per process,
+  // which `/health` reports as such rather than implying a shared budget.
+  const coordination = createCoordinator({
+    backend: config.coordination,
+    redisUrl: config.redisUrl,
+    logger,
+  });
+
   const orchestrator = new Orchestrator({
     runs: stores.runs,
     registry: stores.evidence,
@@ -82,6 +91,7 @@ export async function buildServer(env: NodeJS.ProcessEnv = process.env) {
     literature,
     cfd,
     latex,
+    coordination,
     logger,
     doiMaxAgeDays: config.doiMaxAgeDays,
   });
@@ -91,10 +101,11 @@ export async function buildServer(env: NodeJS.ProcessEnv = process.env) {
     config,
     capabilities: () => describeCapabilities(config),
     stores,
+    coordinator: coordination,
     logger,
   });
 
-  return { app, config, orchestrator, logger, stores };
+  return { app, config, orchestrator, logger, stores, coordination };
 }
 
 const isMain = process.argv[1]?.endsWith('index.ts') ?? false;
@@ -115,7 +126,7 @@ export interface StartServerOptions {
  * without opening a socket or signalling the test runner.
  */
 export function startServer(
-  { app, config, logger, stores }: Awaited<ReturnType<typeof buildServer>>,
+  { app, config, logger, stores, coordination }: Awaited<ReturnType<typeof buildServer>>,
   {
     serve: serveFn = serve,
     // RULE-053 bans `console.log` in production code: the lifecycle lines go
@@ -132,7 +143,8 @@ export function startServer(
     );
     log(
       `literature: ${config.offline ? 'offline corpus' : 'live providers'} · ` +
-        `store: ${config.store}${config.store === 'filesystem' ? ` (${config.dataDir})` : ''}`,
+        `store: ${config.store}${config.store === 'filesystem' ? ` (${config.dataDir})` : ''}` +
+        ` · coordination: ${config.coordination}`,
     );
   });
 
@@ -145,14 +157,18 @@ export function startServer(
     // instead of by us.
     close: (onClosed) =>
       server.close(() => {
-        const draining = stores.close?.();
+        // Drain every connection the process owns: the pool behind the store
+        // and the Redis client behind the coordinator.
+        const draining = [stores.close?.(), coordination.close?.()].filter(
+          (closing): closing is Promise<void> | void => closing !== undefined,
+        );
         // The filesystem adapter holds nothing, so its shutdown stays
         // synchronous; a pool is drained before the process is allowed to go.
-        if (draining === undefined) {
+        if (draining.length === 0) {
           onClosed();
           return;
         }
-        void Promise.resolve(draining)
+        void Promise.all(draining.map((closing) => Promise.resolve(closing).catch(() => undefined)))
           .catch(() => undefined)
           .finally(onClosed);
       }),
@@ -172,6 +188,7 @@ if (isMain) {
 export * from './orchestrator';
 export * from './config';
 export * from './store';
+export * from './coord';
 export * from './literature';
 export * from './cfd';
 export * from './claims/verify';

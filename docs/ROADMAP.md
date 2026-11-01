@@ -587,11 +587,18 @@ FUNCTION raise_immutable()`; the application role gets `INSERT`/`SELECT` only.
   URL fails at boot with one sentence; an unreachable database fails `/health` with
   `store: "postgres (unreachable)"` and refuses writes — no silent fall back to disk.
 
-**D3 — Redis (1–1.5 d).** `AEROSCRIBE_REDIS_URL` selects `RedisRateLimiter` (`INCR` + `EXPIRE`,
-same `check()` shape) and `RedisRunLock` (`SET NX PX` + heartbeat + Lua compare-and-delete) for
-the in-flight guard. Unset ⇒ current in-process behaviour, reported as such by `/health`
-(`rateLimit: "in-process" | "redis"`). This also fixes the documented caveat that two instances
-would run one stage twice.
+**D3 — Redis (1–1.5 d).** `AEROSCRIBE_COORDINATION=redis` + `AEROSCRIBE_REDIS_URL` select a
+coordinator that keeps the rate-limit counter (`INCR` + `PEXPIRE` in one Lua script) and the
+stage lock (`SET NX PX`, a heartbeat that extends only for the owner, and a Lua
+compare-and-delete release) in Redis. `process` — the default, and the only correct choice for a
+single instance — keeps them in memory and says so. Two half-configurations stop the process at
+boot, exactly as `AEROSCRIBE_STORE`/`AEROSCRIBE_DATABASE_URL` do: the URL without the backend
+would be a knob that does nothing, and the backend without the URL cannot work.
+
+Explicit selection rather than "a URL means Redis": an operator who copies a `REDIS_URL` from a
+compose file into a single-instance deployment should not silently acquire a network dependency
+on the request path. `/health` reports `coordination: { backend, ok, detail }`, so the difference
+is visible from outside.
 
 **D4 — S3 (2 d).** `AEROSCRIBE_S3_BUCKET`, `AEROSCRIBE_S3_ENDPOINT` (MinIO), `AEROSCRIBE_S3_REGION`;
 credentials from the standard `AWS_*` chain. Keys are content-addressed (`sha256/<hex>`), so a
@@ -604,7 +611,7 @@ copy is deleted after upload.
 
 - [x] D1 ports + adapter names (`FilesystemRunStore`, …) and a `store` factory.
 - [x] D2 schema, migrations, three stores, `db:migrate`, `db:verify`, `db:import`, trigger.
-- [ ] D3 Redis limiter and run lock; `/health` reports both.
+- [x] D3 Redis limiter and run lock; `/health` reports both.
 - [ ] D4 blob store, artefact endpoint, artefact `uri` in records.
 - [x] **Contract suite**: `services/api/test/store-contract.test.ts` runs the same scenarios
       against every configured backend (create/get/list, append/verify, tamper detection,
@@ -614,8 +621,12 @@ copy is deleted after upload.
       directory — and `AEROSCRIBE_TEST_DATABASE_URL` points the same harness at an external
       server, so a compose stack and CI run identical tests. A mock was not an option: the
       advisory lock, the trigger and `jsonb` round-trips are the behaviour under test.
-- [ ] `.github/workflows/ci.yml`: `services: redis:7, minio` in the API job, once D3/D4
-      exist. Postgres already runs there through the embedded server.
+- [x] CI: `services: redis:7` in both jobs that run the suite, with
+      `AEROSCRIBE_TEST_REDIS_URL` and an explicit reachability check — the coordination tests
+      are only meaningful against a real server, so a silent skip would hide a failure. Locally
+      the harness starts a `redis-server` from `PATH` (or `AEROSCRIBE_REDIS_SERVER`) and skips
+      with a named reason when neither exists.
+- [ ] `.github/workflows/ci.yml`: `services: minio` once D4 exists.
 - [ ] `compose.yaml` (shared with E) so the same stack runs on a laptop.
 - [x] Docs: `docs/BACKEND.md` § 9 rewritten (store matrix, `/health`, Postgres, migration),
       new `docs/OPERATIONS.md` (run, migrate, verify, import, restore, rotate keys, recheck
@@ -624,7 +635,7 @@ copy is deleted after upload.
 
 ### Status of D
 
-**D1 and D2 are done. D3 (Redis) and D4 (object storage) are not started.**
+**D1, D2 and D3 are done. D4 (object storage) is not started.**
 
 **D1 — ports.** `services/api/src/store/ports.ts` defines `RunStore`, `EvidenceStore` and
 `AuditStore`; `createStores()` is the only place an adapter is chosen, and the orchestrator,
@@ -650,15 +661,27 @@ true:
   database makes `/health` answer `503` and every write return `503 store_unavailable` with
   **no file created on disk**. The database password is redacted from every report.
 
-**Why D3 and D4 are not here.** Redis and MinIO have no bundled-binary package this
-environment can install: their installers fetch from `download.redis.io` and `dl.min.io`,
-which are unreachable, and there is no Docker daemon for a service container. Both are still
-the right design — `INCR`/`EXPIRE` for the rate limit, `SET NX PX` for stage execution — but
-writing adapters whose locking behaviour could not be exercised (the entire point of a
-distributed lock) would be a claim, not a fix. They land when an endpoint is reachable; the
-contract suite already has the harness pattern to take them.
+**D3 — Redis.** `services/api/src/coord/` holds the port (`Coordinator`), the in-process
+implementation and the Redis one. What it guarantees, each with a test in
+`services/api/test/redis.test.ts` that fails if it stops being true:
 
-**Acceptance (D2 met; the D3/D4 items remain).**
+- **One budget between instances.** The 61st request across two apps sharing one Redis is the
+  one that gets `429` with `x-ratelimit-remaining: 0`. The count is `INCR` + `PEXPIRE` in a
+  single script, so two instances cannot both spend the last request in a window.
+- **One stage per run.** `SET NX PX` claims the run; a second instance's `advance` gets `409`
+  before anything runs — no evidence appended, no stage marked started. A heartbeat extends the
+  lease only for its owner and release is a compare-and-delete, so an instance that overruns
+  its lease cannot delete the winner's lock when it finally returns.
+- **An outage is reported, not papered over.** A Redis that cannot be reached makes the limiter
+  answer `503 coordination_unavailable` and `/health` answer `503`; it never falls back to a
+  local counter that would make the limit look enforced.
+
+**Why D4 is not here.** MinIO's installer fetches from `dl.min.io`, which this environment
+cannot reach, and there is no Docker daemon for a service container. The artefact endpoint's
+guarantee — re-hash on the way out and `409` on a mismatch — is not something a double can
+prove.
+
+**Acceptance (D2 and D3 met; the D4 item remains).**
 
 1. **Met.** The contract suite is green on both backends, and `postgres.test.ts` runs two
    connections appending 50 records each into one chain that a second reader verifies.
@@ -667,17 +690,19 @@ append-only: UPDATE on evidence is not permitted`; so do `DELETE` and `TRUNCATE`
 3. **Met.** With the database stopped, `/health` answers `503` naming the unreachable
    database, `/api/v1/runs` answers `503 store_unavailable`, and the data directory is
    still empty.
-4. Two API instances behind one Redis enforce a combined 60 req/min, and a second `advance` on
-   the same run from the _other_ instance is rejected.
+4. **Met.** `redis.test.ts` runs two apps over one Redis: requests 1–60 alternate between
+   them and all return `200`, the 61st returns `429`. A lease taken by one instance makes the
+   other's `advance` answer `409` with nothing written; after release the same call proceeds.
 5. An artefact uploaded to MinIO round-trips through the new endpoint with a matching digest; a
    byte flipped in MinIO yields `409`.
 
 **Risks.** Dual-store support doubles the surface for a while (mitigated by the contract suite,
 which is written first, D1); Postgres advisory locks are a bottleneck under very high write rates
-— irrelevant at this scale, stated in the docs; `pg`/`ioredis`/`@aws-sdk/client-s3` are three new
-runtime dependencies (see §12).
+— irrelevant at this scale, stated in the docs; `pg` and `ioredis` are two new runtime
+dependencies (`@aws-sdk/client-s3` would be the third; see §12 and §14).
 
-**Rollback.** `AEROSCRIBE_STORE=filesystem` and empty Redis/S3 settings restore today's behaviour;
+**Rollback.** `AEROSCRIBE_STORE=filesystem` and `AEROSCRIBE_COORDINATION=process` restore
+single-instance behaviour, and empty S3 settings keep artefacts local;
 `db:import` is one-way, so the rollback procedure is “keep writing files until the import is
 verified”, documented in `OPERATIONS.md`.
 
@@ -966,7 +991,7 @@ needs exactly six:
 | -------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------ |
 | `pg` (added)                                             | D2      | protocol + pooling + types; not a thing to hand-roll                                 |
 | `embedded-postgres` (dev only, added)                    | D2      | real Postgres binaries for the tests; CI runs the same suite without a Docker daemon |
-| `ioredis`                                                | D3      | cluster/retry semantics, `SET NX PX`, Lua                                            |
+| `ioredis` (added)                                        | D3      | reconnect/backoff semantics and Lua evaluation; hand-rolling RESP is not worth it    |
 | `@aws-sdk/client-s3`                                     | D4      | SigV4 signing and multipart are error-prone                                          |
 | `jose`                                                   | F       | JWT/JWKS verification is security-critical                                           |
 | `docker/build-push-action`, `docker/setup-buildx-action` | E       | CI only                                                                              |
@@ -1013,7 +1038,7 @@ Only after the acceptance criteria hold.
 | -------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `IMPLEMENTATION_STATUS.md` → dashboard | Implemented, fixture data                                | Implemented; **live against the API** when `VITE_API_URL` is set, fixtures otherwise, labelled either way                                                                       |
 | → LaTeX compilation                    | Implemented (B, § 6)                                     | `.tex` + inline bibliography + pgfplots figures always; PDF and a toolchain version when `LATEX_BINARY` answers, otherwise `typeset: "source-only"` and a named stage-8 blocker |
-| → Persistence                          | Implemented: filesystem **or** Postgres (D1–D2)          | Implemented: filesystem **or** Postgres; Redis for shared limits/locks; S3 for artefacts                                                                                        |
+| → Persistence                          | Implemented: filesystem **or** Postgres (D1–D2)          | Implemented: filesystem **or** Postgres, shared Redis for limits/locks (D1–D3); S3 artefacts                                                                                    |
 | → Authentication                       | Partial: one bearer token                                | OIDC accounts + roles; token mode for scripts; audit actor from the verified subject                                                                                            |
 | → CI / deployment                      | Typecheck, lint, coverage, builds, image build           | … plus image publish (GHCR, multi-arch, SBOM) and a staging deploy gated by a post-deploy smoke                                                                                 |
 | → CFD solver adapter                   | Real SU2 + synthetic                                     | unchanged — this plan does not touch the solver                                                                                                                                 |

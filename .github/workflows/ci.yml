@@ -16,10 +16,24 @@ jobs:
   verify:
     name: Typecheck, lint, test and build
     runs-on: ubuntu-latest
-    # Covers the service's Postgres tests too, so it starts the same embedded
-    # server the `api` job does. Twenty minutes is generous against the ~8
-    # minutes this took before D2.
+    # Covers the service's store and coordination tests too: Postgres starts from
+    # the embedded binaries, and Redis comes from the service below. Twenty
+    # minutes is generous against the ~8 minutes this took before D2.
     timeout-minutes: 20
+    services:
+      # The Redis coordinator is only exercised against a real server: a shared
+      # budget and a cross-instance lock are the behaviours under test, and a
+      # double would prove only that the double works.
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      AEROSCRIBE_TEST_REDIS_URL: redis://127.0.0.1:6379/0
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -59,6 +73,17 @@ jobs:
     name: API (typecheck, tests, synthetic CFD smoke)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      AEROSCRIBE_TEST_REDIS_URL: redis://127.0.0.1:6379/0
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -85,6 +110,13 @@ jobs:
         run: |
           ls node_modules/@embedded-postgres/
           test -x "$(find node_modules/@embedded-postgres -name postgres -type f | head -1)"
+
+      # Redis has no such package, so the coordination tests take the service
+      # container above. A silent skip here would hide a real failure, so the
+      # job asserts the variable arrived and the suite did not skip.
+      - name: Check the Redis fixture is reachable
+        run: |
+          node -e "const net=require('node:net');const s=net.connect(6379,'127.0.0.1',()=>{s.end();console.log('redis reachable')});s.on('error',e=>{console.error(e.message);process.exit(1)})"
 
       # Hermetic otherwise: no network, no solver binary, temporary data directories.
       - name: Test the service

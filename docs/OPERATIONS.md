@@ -1,34 +1,40 @@
 # Operations
 
-How to run AeroScribe's API, where its state lives, and what to do when something is wrong.
-This document describes what the code does today. Anything not built is in the last section
-rather than implied by silence.
+How to run Aeroscribe, and what to do when it stops being healthy. Written for whoever is on
+call, not for whoever wrote the code.
 
-Companion documents: [`BACKEND.md`](./BACKEND.md) for the request path and the integrity
-rules, [`IMPLEMENTATION_STATUS.md`](./IMPLEMENTATION_STATUS.md) for what is and is not
-implemented.
+Everything here was run before it was written down. Where something is not built, section 10
+says so instead of describing how it would work.
 
 ---
 
 ## 1. The shape of a deployment
 
-One API process and one place its state lives. The state is either a directory
-(`AEROSCRIBE_STORE=filesystem`) or a Postgres database (`AEROSCRIBE_STORE=postgres`).
+| Component            | What it is                                      | Where its state lives                                               |
+| -------------------- | ----------------------------------------------- | ------------------------------------------------------------------- |
+| `@aeroscribe/api`    | the HTTP API and the pipeline                   | `AEROSCRIBE_DATA_DIR`, or Postgres, or both                         |
+| `apps/dashboard`     | static assets; **not wired to the API yet**     | nothing                                                             |
+| Evidence chain       | append-only, hash-chained records               | `registry.ndjson` or the `evidence` table                           |
+| Runs and audit trail | one document per run; one line per state change | `runs/` + `audit.ndjson`, or two tables                             |
+| Artefacts            | CFD working directories, rendered manuscripts   | under `AEROSCRIBE_DATA_DIR` (D4 would move these to object storage) |
 
-| What                | Filesystem                  | Postgres                       |
-| ------------------- | --------------------------- | ------------------------------ |
-| Runs                | `runs/<runId>.json`         | `runs.doc`                     |
-| Run options         | `runs/<runId>.options.json` | `run_options.doc`              |
-| Evidence chain      | `registry.ndjson`           | `evidence`                     |
-| Audit trail         | `audit.ndjson`              | `audit`                        |
-| CFD working dirs    | `cfd/`                      | `cfd/` (still local)           |
-| Rendered manuscript | `manuscripts/<runId>/`      | `manuscripts/<runId>/` (local) |
-| Writers             | **one process**             | many                           |
+Three settings decide almost everything:
 
-`/health` reports which one is in use, and whether it answered. CFD studies and rendered
-manuscripts stay on local disk in both modes: they are working files, and the durable record
-of what they produced is the SHA-256 in the evidence chain. Object storage for them is
-ROADMAP § 8 D4 and is not built.
+```sh
+AEROSCRIBE_STORE=filesystem|postgres      # where runs, evidence and audit are kept
+AEROSCRIBE_DATABASE_URL=postgres://…      # required by postgres
+AEROSCRIBE_COORDINATION=process|redis     # where the rate limit and stage lock live
+AEROSCRIBE_REDIS_URL=redis://…            # required by redis
+```
+
+Each pair is all-or-nothing: the backend without its URL, or the URL without the backend, stops
+the process at boot with one sentence. That is deliberate — a process that quietly ignores a
+configured database, or quietly counts its own requests while a shared limiter was expected, is
+worse than one that refuses to start.
+
+**What stays local in every mode:** CFD working directories and rendered manuscripts keep
+changing while a run is in flight, so they are files. Their durable record is the SHA-256 in the
+evidence chain. Object storage is section 10.
 
 ---
 
@@ -36,88 +42,69 @@ ROADMAP § 8 D4 and is not built.
 
 ```sh
 npm ci
-npm run start:api            # http://127.0.0.1:8787, data in ./data
-curl -s localhost:8787/health | jq .store
+cp services/api/.env.example services/api/.env   # then edit it
+npm run start:api                               # binds 127.0.0.1:8787
+curl -s localhost:8787/health | jq .
 ```
 
-You will see `{"backend":"filesystem","ok":true,"detail":"the data directory … is writable"}`.
-The probe writes and removes a marker file: `ok:true` means a write actually landed.
+A first `200` means the process can write: the store probe really wrote and removed a file, or
+really opened a database connection. `503` names what failed. There is no "healthy but
+degraded" state that still accepts writes.
 
-Set `AEROSCRIBE_API_KEY` before exposing the port to anything. With it unset the API is open
-and `/health` says `authRequired:false`.
+The dashboard is a separate build (`npm run build -w @aeroscribe/dashboard`) and is **not wired
+to the API** in this version; it renders recorded fixtures. Do not treat it as a monitoring
+surface.
 
 ---
 
 ## 3. Postgres
 
-### Provision
-
 ```sh
 export AEROSCRIBE_STORE=postgres
-export AEROSCRIBE_DATABASE_URL='postgres://aeroscribe:…@db.internal:5432/aeroscribe'
-npm run db:migrate
+export AEROSCRIBE_DATABASE_URL='postgres://aeroscribe:…@db:5432/aeroscribe'
+
+npm run db:migrate                          # idempotent: re-running applies nothing
+npm run db:migrate                          # → "nothing to do"
+npm run db:verify                           # recomputes the whole chain, exits 1 on a break
+npm run db:import -- ./data                 # copy a filesystem deployment in, verbatim
 ```
 
-`db:migrate` applies `services/api/src/store/postgres/migrations/*.sql` in file-name order,
-one transaction each, recording each version in `schema_migrations`. It is safe to re-run and
-safe to run from a deploy hook; a second run prints `nothing to do`.
-
-Give the application role `INSERT`/`SELECT` on `evidence`. It does not need `UPDATE` or
-`DELETE`: a trigger raises on both, and on `TRUNCATE`. The trigger exists so that a bug — or
-a `psql` session — cannot rewrite history.
-
-### Verify
-
-```sh
-npm run db:verify
-```
-
-Reads every record over a fresh connection and recomputes the chain, independent of the API
-process. Exit `0` prints the record count and head hash; exit `1` names the first broken
-sequence number. Run it after a restore, after an import, and whenever the API has been
-restarted by hand.
-
-### Import an existing filesystem deployment
-
-```sh
-npm run db:import -- /var/lib/aeroscribe
-```
-
-Refuses a database that already has evidence — two chains have no defined merge — and inserts
-every record with its original `seq`, `id`, `prevHash`, `hash` and `createdAt`. It then
-verifies the result and exits non-zero if the imported chain does not verify. The import is
-one-way, so the rollback procedure is the honest one: **keep the files where they are and do
-not cut over** until `db:import` prints `verified`. Cutting over is setting
-`AEROSCRIBE_STORE=postgres` and restarting; there is no automatic dual-write and no
-synchronisation in either direction.
-
-### Roll back
-
-Point `AEROSCRIBE_STORE` back to `filesystem` with the data directory still populated. Any
-run created while Postgres was live exists only there — copy it out with `psql` before
-switching back if it matters.
+- Migrations are applied in file-name order, one transaction each, recorded in
+  `schema_migrations`. There are no down-migrations; a rollback is a restore (section 5).
+- `db:import` copies records with their original `seq`, `id`, `prevHash`, `hash` and
+  `createdAt`, then re-verifies the result. It refuses a non-empty target: two chains have no
+  defined merge. It is one-way — the rollback is "keep writing files until the import verifies".
+- The `evidence` table is append-only **in the database**: `UPDATE`, `DELETE` and `TRUNCATE`
+  raise `the evidence registry is append-only: …`. The hash chain is the independent check for
+  anyone who drops the trigger.
 
 ---
 
 ## 4. Health and what it means
 
-| `GET /health`                          | Meaning                                                                                                                              |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `200`, `store.ok:true`                 | The process can write. Everything reported is current.                                                                               |
-| `503`, `store.ok:false`                | The configured store did not answer, or the data directory is not writable. **Writes will fail**; the message names what was probed. |
-| `authRequired:false`                   | `AEROSCRIBE_API_KEY` is unset. Anyone who can reach the port can drive the pipeline.                                                 |
-| `capabilities.cfd.su2.available:false` | Stage 4 will run the synthetic benchmark and label it.                                                                               |
-| `capabilities.latex.available:false`   | Stage 8 will write the `.tex` and block on the missing PDF.                                                                          |
+| `GET /health`                          | Meaning                                                                                                                        |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `200`, `store.ok:true`                 | The process can write. Everything reported is current.                                                                         |
+| `503`, `store.ok:false`                | The configured store did not answer, or the data directory is not writable. **Writes will fail**; the message names the probe. |
+| `503`, `coordination.ok:false`         | Redis was configured and did not answer. Requests are refused (`503 coordination_unavailable`) rather than let through.        |
+| `coordination.backend:"process"`       | Rate limits and the stage lock are per instance: two replicas each get 60 req/min and may run the same stage.                  |
+| `authRequired:false`                   | `AEROSCRIBE_API_KEY` is unset. Anyone who can reach the port can drive the pipeline.                                           |
+| `capabilities.cfd.su2.available:false` | Stage 4 runs the synthetic benchmark and labels the output as such.                                                            |
+| `capabilities.latex.available:false`   | Stage 8 writes the `.tex` and blocks on the missing PDF.                                                                       |
 
 Writes against an unreachable database return `503 store_unavailable`. Nothing is written to
 disk as a fallback and no partial record is left behind.
+
+A Redis outage is a refusal, not a retry: the rate limiter answers `503` rather than counting
+locally, because a limit nobody enforces is worse than a clear failure. When Redis returns the
+client reconnects with backoff and `/health` flips back to `200` without a restart.
 
 ---
 
 ## 5. Backup and restore
 
-The evidence chain is the thing that cannot be reconstructed. Everything else can be
-regenerated by re-running the pipeline.
+The evidence chain is the thing that cannot be reconstructed; everything else is regenerated by
+re-running the pipeline.
 
 **Postgres**
 
@@ -132,27 +119,51 @@ npm run db:verify
 ```sh
 tar -czf aeroscribe-$(date +%F).tar.gz -C /var/lib aeroscribe
 # restore into an empty directory, then:
-curl -s localhost:8787/api/v1/evidence/verify   # or the API's own check
+curl -s localhost:8787/api/v1/evidence/verify
 ```
 
-A restore is not finished until verification passes. A backup that will not verify is a
-backup of a broken chain, and restoring it silently would spread the damage to the next
-deployment.
+A restore is not finished until verification passes. A backup that will not verify is a backup
+of a broken chain, and restoring it silently would spread the damage to the next deployment.
 
 ---
 
-## 6. Keys
+## 6. Redis (rate limit and stage lock)
 
-- `AEROSCRIBE_API_KEY` — one bearer token, checked in constant time. Rotate by setting the new
-  value and restarting; there is no overlap window, so brief both-values-accepted rotation is
-  not available (single token, see `IMPLEMENTATION_STATUS.md` → Authentication).
-- `SEMANTIC_SCHOLAR_API_KEY` — server-side only, never sent to a browser and masked in logs.
-- The database password lives in `AEROSCRIBE_DATABASE_URL`. It is redacted before appearing
-  in `/health`, capabilities, logs or errors.
+Set both variables when more than one API instance runs behind a load balancer:
+
+```sh
+export AEROSCRIBE_COORDINATION=redis
+export AEROSCRIBE_REDIS_URL='redis://:password@redis:6379/0'
+curl -s localhost:8787/health | jq .coordination
+```
+
+| Key pattern                     | Contents                     | Lifetime                                               |
+| ------------------------------- | ---------------------------- | ------------------------------------------------------ |
+| `aeroscribe:ratelimit:<client>` | one counter per client       | the rate window (`PEXPIRE` on first hit, 60 s)         |
+| `aeroscribe:runlock:<runId>`    | the owner of the run’s stage | 30 s, extended by a heartbeat every 10 s while it runs |
+
+Nothing durable lives there. Flushing the database loses at most one rate window and one
+in-flight lease; the next `advance` for that run succeeds once the lease expires, which is why
+the TTL matters.
+
+Use a Redis that will not evict these keys — `noeviction` or a dedicated database. A lock
+evicted early means two instances can run the same stage; that is a correctness failure, not a
+capacity trade-off.
 
 ---
 
-## 7. DOI re-checks
+## 7. Keys
+
+- `AEROSCRIBE_API_KEY` — one bearer token, compared in constant time. Rotate by setting the new
+  value and restarting; there is no overlap window (single token).
+- `SEMANTIC_SCHOLAR_API_KEY` — server-side only, never sent to a browser, masked in logs.
+- The database password lives in `AEROSCRIBE_DATABASE_URL`, the Redis password in
+  `AEROSCRIBE_REDIS_URL`. Both are redacted (`redactDatabaseUrl`, `redactRedisUrl`) before
+  appearing in `/health`, capabilities, logs or error messages.
+
+---
+
+## 8. DOI re-checks
 
 Verification is never automatic. Schedule it from cron:
 
@@ -160,42 +171,42 @@ Verification is never automatic. Schedule it from cron:
 0 3 * * *  cd /srv/aeroscribe && AEROSCRIBE_CONTACT_EMAIL=ops@example.org npm run recheck -- --all >/var/log/aeroscribe-recheck.log 2>&1
 ```
 
-Exit code `1` means at least one DOI is `broken` or `mismatch`. Stage 8 refuses to submit a
-run whose references are in that state, so a red exit here is an incident, not a warning.
+Exit code `1` means at least one DOI is `broken` or `mismatch`. Stage 8 refuses to submit a run
+whose references are in that state, so a red exit here is an incident, not a warning.
 
 ---
 
-## 8. When verification fails
+## 9. When verification fails
 
 1. `npm run db:verify` (or `GET /api/v1/evidence/verify` on a filesystem deployment) names the
    first broken sequence number and the reason.
 2. Preserve the database or file **as it is** before investigating. Do not "repair" the chain:
    the records are immutable by design, and an edit that makes the check pass destroys the
    evidence of whatever happened.
-3. Every artefact produced at or after that sequence is unverified. Stage 8 will block anyway;
-   the point of step 2 is that a human, not the software, decides what to do about it.
+3. Every artefact produced at or after that sequence is unverified. Stage 8 blocks anyway; the
+   point of step 2 is that a human, not the software, decides what to do.
 4. Record the incident in the audit trail once the cause is known, so the next reader sees a
    timestamped explanation next to the break.
 
-`db:verify` reports an unreachable database as an error, never as "valid": a chain nobody
-could read is not a chain that passed.
+`db:verify` reports an unreachable database as an error, never as "valid": a chain nobody could
+read is not a chain that passed.
 
 ---
 
-## 9. Not built
+## 10. Not built
 
 Stated here so nobody assumes it exists:
 
 - **No horizontal scale for the filesystem adapter.** Two processes against one directory
-  interleave writes. `postgres` supports multiple writers; `filesystem` does not, and
-  `/health` names the backend so this is visible.
-- **No shared rate limiter.** 60 req/min per process. Redis is ROADMAP § 8 D3 and is not
-  built; there is no `AEROSCRIBE_REDIS_URL`.
-- **No in-flight run lock across instances.** The orchestrator's guard is per process, so two
-  API instances can both advance the same run. Postgres serialises _evidence appends_, not
-  stage execution; a shared lock is D3.
+  interleave writes. `postgres` supports multiple writers; `filesystem` does not, and `/health`
+  names the backend so this is visible.
+- **No shared rate limiter or run lock unless `AEROSCRIBE_COORDINATION=redis`.** With the
+  default `process`, two replicas each get 60 req/min and can both advance the same run; the
+  `/health` body names the backend. With `redis`, both are shared — and a Redis outage makes the
+  API answer `503` rather than silently falling back to per-process counting.
 - **No object storage.** CFD artefacts and rendered manuscripts are local files; the durable
   record is their SHA-256 in the chain. D4 is not built.
-- **No migrations backwards.** Each migration is forward-only. Rolling back a release means
-  restoring a dump taken before it.
-- **No scheduler.** Re-checks run from cron (§ 7); the API has no timers.
+- **No migrations backwards.** Forward-only. Rolling back a release means restoring a dump
+  taken before it.
+- **No scheduler.** Nothing advances a run or re-checks a DOI on its own; both are cron or
+  operator actions.

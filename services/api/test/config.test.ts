@@ -64,6 +64,33 @@ describe('loadConfig', () => {
     expect(config.databaseUrl).toBe('postgres://user:pw@localhost:5432/aeroscribe');
   });
 
+  it('refuses redis coordination without a URL, and process with one', async () => {
+    // The same contract as the store, for the same reason: a process told to
+    // share its counters that quietly counts locally enforces 60 requests per
+    // instance and looks healthy doing it.
+    expect(() => loadConfig({ AEROSCRIBE_COORDINATION: 'redis' })).toThrow(/AEROSCRIBE_REDIS_URL/);
+    expect(() => loadConfig({ AEROSCRIBE_REDIS_URL: 'redis://cache.internal:6379/0' })).toThrow(
+      /AEROSCRIBE_COORDINATION=redis/,
+    );
+    expect(() => loadConfig({ AEROSCRIBE_COORDINATION: 'zookeeper' })).toThrow(
+      /AEROSCRIBE_COORDINATION/,
+    );
+
+    expect(loadConfig({}).coordination).toBe('process');
+    const config = loadConfig({
+      AEROSCRIBE_COORDINATION: ' Redis ',
+      AEROSCRIBE_REDIS_URL: 'redis://user:pw@cache.internal:6379/0',
+    });
+    expect(config.coordination).toBe('redis');
+    // The password never reaches a response: capabilities carry the redaction.
+    const caps = await describeCapabilities(config);
+    expect(caps.coordination).toEqual({
+      backend: 'redis',
+      redis: 'redis://cache.internal:6379/0',
+    });
+    expect(JSON.stringify(caps)).not.toContain('pw');
+  });
+
   it('reads LOG_LEVEL leniently and ignores an unknown one', () => {
     expect(loadConfig({ LOG_LEVEL: ' warn ' }).logLevel).toBe('warn');
     expect(loadConfig({ LOG_LEVEL: 'chatty' }).logLevel).toBe('info');

@@ -55,6 +55,20 @@ export class StoreUnavailableError extends ApiError {
   }
 }
 
+/**
+ * The shared coordinator (Redis) cannot be reached.
+ *
+ * A `503`, not a `500`, and deliberately *not* a silent fallback to per-process
+ * counting: a request the API cannot count is a request it cannot limit, and
+ * answering `200` would tell the client a limit was enforced that was not.
+ */
+export class CoordinationUnavailableError extends ApiError {
+  constructor(backend: string, message: string) {
+    super(503, 'coordination_unavailable', `${backend} coordination is unavailable: ${message}`);
+    this.name = 'CoordinationUnavailableError';
+  }
+}
+
 /** External service failed after the retry budget was exhausted (RULE-042). */
 export class UpstreamError extends ApiError {
   constructor(service: string, message: string, details?: unknown) {

@@ -1,5 +1,5 @@
-export interface RateLimitOptions {
-  /** Requests allowed per window. */
+export interface FixedWindowOptions {
+  /** Requests allowed per window. RULE-013 asks for 60 a minute by default. */
   limit?: number;
   windowMs?: number;
   now?: () => number;
@@ -11,19 +11,22 @@ interface Bucket {
 }
 
 /**
- * Fixed-window rate limiter (RULE-013 asks for a default of 60 requests/minute).
+ * Fixed-window counter.
  *
- * In-process only: with several API instances each gets its own budget, which
- * is acceptable for a prototype and called out in `docs/BACKEND.md`. Buckets are
- * keyed by API key when present, otherwise by client address.
+ * Kept separate from the coordinator that uses it so the arithmetic can be
+ * tested without a clock, a socket or a Redis. A fixed window lets a caller
+ * spend two windows' worth of budget around a boundary (60 at 59.9s and 60 at
+ * 60.1s); that is a deliberate trade — a sliding log would need one stored
+ * timestamp per request, and for a prototype API the point of the limit is to
+ * stop a runaway client, not to bill precisely.
  */
-export class RateLimiter {
+export class FixedWindowCounter {
   private readonly limit: number;
   private readonly windowMs: number;
   private readonly now: () => number;
   private readonly buckets = new Map<string, Bucket>();
 
-  constructor(options: RateLimitOptions = {}) {
+  constructor(options: FixedWindowOptions = {}) {
     this.limit = options.limit ?? 60;
     this.windowMs = options.windowMs ?? 60_000;
     this.now = options.now ?? Date.now;

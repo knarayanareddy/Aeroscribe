@@ -8,7 +8,7 @@ import { bindRunId, runIdFromPath, runWithRequestScope, scopeFields } from '../l
 import type { Orchestrator } from '../orchestrator';
 import { EVIDENCE_KINDS, type EvidenceKind, type Stores } from '../store';
 import { buildPolicy, verifyClaims } from '../claims/verify';
-import { RateLimiter } from './rateLimit';
+import { createProcessCoordinator, type Coordinator } from '../coord';
 
 export interface AppDependencies {
   orchestrator: Orchestrator;
@@ -21,8 +21,12 @@ export interface AppDependencies {
    * than inventing one.
    */
   stores?: Stores;
-  /** Exposed so tests can drive the limiter's clock. */
-  rateLimiter?: RateLimiter;
+  /**
+   * Where the rate limit and the stage lock live. Defaults to the in-process
+   * coordinator, which is right for one instance and says so in `/health`.
+   * Injected so a test can shorten the window or point at a Redis.
+   */
+  coordinator?: Coordinator;
   /**
    * Structured logger. `buildServer` always supplies one; the silent default
    * exists so a test can build the app without describing how it logs.
@@ -61,7 +65,7 @@ export function createApp({
   config,
   capabilities,
   stores,
-  rateLimiter = new RateLimiter({ limit: 60, windowMs: 60_000 }),
+  coordinator = createProcessCoordinator(),
   logger = silentLogger(),
 }: AppDependencies): Hono {
   const app = new Hono();
@@ -145,7 +149,7 @@ export function createApp({
       context.req.header('authorization'),
       context.req.header('x-forwarded-for'),
     );
-    const result = rateLimiter.check(key);
+    const result = await coordinator.limit(key);
     context.header('x-ratelimit-remaining', String(result.remaining));
     if (!result.allowed) {
       logger.warn('http.rate_limited', {
@@ -181,8 +185,14 @@ export function createApp({
    */
   app.get('/health', async (context) => {
     const caps = await capabilities();
-    const store = stores ? await stores.probe() : null;
-    const healthy = store === null || store.ok;
+    const [store, coordination] = await Promise.all([
+      stores ? stores.probe() : Promise.resolve(null),
+      coordinator.probe(),
+    ]);
+    // Two independent ways to be unhealthy: state that cannot be written, and
+    // shared state that cannot be reached (so a limit two instances were
+    // supposed to share is not being enforced).
+    const healthy = (store === null || store.ok) && coordination.ok;
     return context.json(
       {
         status: healthy ? 'ok' : 'degraded',
@@ -193,6 +203,7 @@ export function createApp({
         capabilities: caps,
         authRequired: caps.auth.required,
         ...(store ? { store } : {}),
+        coordination,
       },
       healthy ? 200 : 503,
     );

@@ -2,6 +2,7 @@ import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseLogLevel, type LogLevel } from './lib/logger';
 import { redactDatabaseUrl, type StoreBackend } from './store';
+import { redactRedisUrl, type CoordinationBackend } from './coord';
 
 export interface Config {
   host: string;
@@ -41,6 +42,17 @@ export interface Config {
    * returned to a client: capabilities expose `redactDatabaseUrl()` instead.
    */
   databaseUrl: string | null;
+  /**
+   * Where the rate limit and the stage lock live (`AEROSCRIBE_COORDINATION`).
+   * `process` is a correct answer for one instance and a lie for two; it is
+   * reported by `/health` so a reader can tell which they have.
+   */
+  coordination: CoordinationBackend;
+  /**
+   * `AEROSCRIBE_REDIS_URL`, required by `coordination: redis`. Never returned
+   * to a client: capabilities expose `redactRedisUrl()` instead.
+   */
+  redisUrl: string | null;
   /** Verbosity of the JSON log stream (RULE-053). */
   logLevel: LogLevel;
   /** Release identifier reported by `/health`; the build sets it. */
@@ -84,6 +96,22 @@ function parseStore(env: NodeJS.ProcessEnv): StoreBackend {
 }
 
 /**
+ * Where shared coordination state lives.
+ *
+ * Unknown values are a configuration error, for the same reason an unknown
+ * store is: a process that was told to share its counters and quietly kept
+ * them local would enforce 60 requests per instance and look healthy doing it.
+ */
+function parseCoordination(env: NodeJS.ProcessEnv): CoordinationBackend {
+  const raw = envString(env, 'AEROSCRIBE_COORDINATION').toLowerCase();
+  if (raw === '' || raw === 'process') return 'process';
+  if (raw === 'redis') return 'redis';
+  throw new Error(
+    `AEROSCRIBE_COORDINATION="${raw}" is not a supported coordinator. Supported: process, redis.`,
+  );
+}
+
+/**
  * Read configuration from the environment.
  *
  * Nothing here invents a default secret: if `AEROSCRIBE_API_KEY` is unset the
@@ -110,6 +138,26 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     );
   }
 
+  const coordination = parseCoordination(env);
+  const redisUrl = envString(env, 'AEROSCRIBE_REDIS_URL') || null;
+
+  // The same contract, for the same reason. A half-configured coordinator is
+  // worse than no coordinator: two instances would enforce their own limits
+  // and each would report a healthy `/health`.
+  if (coordination === 'redis' && redisUrl === null) {
+    throw new Error(
+      'AEROSCRIBE_COORDINATION=redis requires AEROSCRIBE_REDIS_URL (redis://host:6379/0).',
+    );
+  }
+  if (coordination === 'process' && redisUrl !== null) {
+    throw new Error(
+      'AEROSCRIBE_REDIS_URL is set but AEROSCRIBE_COORDINATION is process. ' +
+        'Set AEROSCRIBE_COORDINATION=redis to share rate limits and the stage lock, ' +
+        'or unset the URL — counting locally while a Redis is configured is how two ' +
+        'instances each get their own 60 requests a minute.',
+    );
+  }
+
   return {
     host: envString(env, 'HOST', '127.0.0.1'),
     port: envInt(env, 'PORT', 8787),
@@ -133,6 +181,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     doiMaxAgeDays: envInt(env, 'AEROSCRIBE_DOI_MAX_AGE_DAYS', 30),
     store,
     databaseUrl,
+    coordination,
+    redisUrl,
     logLevel: parseLogLevel(env.LOG_LEVEL),
     version: envString(env, 'AEROSCRIBE_VERSION', 'dev'),
     commit: envString(env, 'GIT_SHA', 'unknown'),
@@ -201,6 +251,10 @@ export async function describeCapabilities(config: Config): Promise<Capabilities
       runsDir: config.store === 'filesystem' ? `${config.dataDir}/runs` : '',
       auditPath: config.store === 'filesystem' ? `${config.dataDir}/audit.ndjson` : '',
       database: config.databaseUrl === null ? null : redactDatabaseUrl(config.databaseUrl),
+    },
+    coordination: {
+      backend: config.coordination,
+      redis: config.redisUrl === null ? null : redactRedisUrl(config.redisUrl),
     },
   };
 }

@@ -11,6 +11,10 @@
       },
       "synthetic": "boolean"
     },
+    "coordination": {
+      "backend": "string",
+      "redis": "null"
+    },
     "latex": {
       "available": "boolean",
       "binary": "null",

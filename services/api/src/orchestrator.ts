@@ -26,6 +26,7 @@ import { paperSynthesis } from './agents/writing';
 import { complianceCheck, peerReview } from './agents/review';
 import { knowledgeAndSubmission } from './agents/knowledge';
 import type { ManuscriptRenderPayload } from '@aeroscribe/contract';
+import type { Coordinator, RunLease } from './coord';
 import { LatexService, NO_LATEX, type ArtefactKind } from './latex';
 import { recheckRun, referenceStatus } from './references/recheck';
 
@@ -62,6 +63,11 @@ export interface OrchestratorOptions {
    * (`AEROSCRIBE_DOI_MAX_AGE_DAYS`). Reported by re-checks and stage 8.
    */
   doiMaxAgeDays?: number;
+  /**
+   * Shared coordination (rate limit lives in the HTTP layer; the stage lock
+   * lives here). Absent means one process, guarded by the in-flight set only.
+   */
+  coordination?: Coordinator;
   clock?: () => Date;
   newRunId?: () => string;
   defaultOptions?: Partial<RunOptions>;
@@ -212,9 +218,26 @@ export class Orchestrator {
       );
     }
     this.inFlight.add(run.id);
+    let lease: RunLease | null = null;
     try {
+      // The set above only knows this process. A second instance behind the
+      // same load balancer would run the same stage — two solver runs, two
+      // evidence records for one stage — so the lease is taken before any work
+      // starts and released when it ends.
+      if (this.options.coordination) {
+        lease = await this.options.coordination.acquireRun(run.id);
+        if (lease === null) {
+          throw conflict(
+            `A stage is already running for this run (stage ${run.currentStage}) on another API instance. ` +
+              'Wait for it to finish before advancing again.',
+          );
+        }
+      }
       return await this.runStage({ run, stage, handler, actor });
     } finally {
+      // A lease that will not release expires on its own; it must not turn a
+      // finished stage into a failure for the caller.
+      await lease?.release();
       this.inFlight.delete(run.id);
     }
   }
