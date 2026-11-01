@@ -1,6 +1,7 @@
 // @vitest-environment node
 import type { Pool as PgPool } from 'pg';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -403,9 +404,13 @@ describe('shutdown', () => {
 
     try {
       startServer(built, {
-        serve: ((options: { fetch: unknown }, listener: () => void) => {
+        // Bun hands the listener the address it bound; the stub does the same,
+        // because `startServer` logs from it and a bare `listener()` throws
+        // inside the microtask — a failure that shows up as an unhandled error
+        // rather than a failed assertion.
+        serve: ((options: { fetch: unknown }, listener: (info: AddressInfo) => void) => {
           expect(typeof options.fetch).toBe('function');
-          queueMicrotask(() => listener());
+          queueMicrotask(() => listener({ address: '127.0.0.1', port: 0 }));
           return { close: (cb?: () => void) => cb?.() };
         }) as unknown as typeof serve,
         log: () => undefined,
