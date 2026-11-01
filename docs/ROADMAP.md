@@ -51,7 +51,7 @@ Every row names the code that would have to change. Nothing here is inferred fro
 | DOI re-verification   | `services/api/src/literature/index.ts:150` verifies at retrieval; `ManuscriptPayload.references` (`agents/writing.ts:26`) keeps only `{ index, citation, doi }` — no timestamp, no provider                                                                  | A DOI that resolves in March and 404s in June is still presented as verified by the stored manuscript. |
 | Postgres / Redis / S3 | `store/evidence.ts` states “single writer”; `store/runs.ts` writes one JSON file per run; `http/rateLimit.ts:16` and `orchestrator.ts` in-flight set are per-process; CFD artefacts stay on local disk (`cfd/su2.ts:184`)                                    | One API instance, one disk. No horizontal scale, no shared rate limit, no durable artefact store.      |
 | Staging / publishing  | `.github/workflows/deploy.yml` publishes static apps to Pages only; `Dockerfile` is built by CI but pushed nowhere                                                                                                                                           | There is no environment where the API runs, so “deploy” means “static site”.                           |
-| Accounts              | `http/app.ts:104` compares one bearer token; `actor` in the audit trail is **whatever the client sends** (`app.ts:160`)                                                                                                                                      | The audit trail can attribute an approval to any name. Multi-user use is impossible.                   |
+| Accounts              | `AEROSCRIBE_AUTH=none                                                                                                                                                                                                                                        | token                                                                                                  | oidc`; `oidc` verifies a bearer token against the issuer's JWKS and derives roles, ownership and the audit actor (`user:<sub>`) from its subject. `token` mode keeps the shared key for scripts. | The audit trail records the verified subject, not the caller's claim. Multi-user use with roles is possible. |
 | RULE-030              | `agents/writing.ts:134` assembles sections in one pass; no plan artefact                                                                                                                                                                                     | “Hierarchical generation” is unimplemented; the rule is prose.                                         |
 | RULE-032              | `agents/writing.ts:166` `formatCitation` emits `[n] authors (year). title. doi:…`                                                                                                                                                                            | Not AIAA format; compliance only checks the `[n]` prefix (`agents/review.ts:213`).                     |
 | RULE-033              | No figure code anywhere in `services/api`                                                                                                                                                                                                                    | Figures are absent, not wrong; pgfplots is unimplemented.                                              |
@@ -861,24 +861,106 @@ defect hiding behind the first.
 
 **Tasks.**
 
-- [ ] `services/api/src/auth/{oidc,token,principal}.ts`, middleware replacing the single-key
-      check, `GET /api/v1/me`.
-- [ ] Users table + migration; `runs.owner_sub`; authorization checks in the orchestrator with a
-      test matrix (owner / other / reviewer / admin × read / advance / approve).
-- [ ] Audit actor derived from the principal; test for spoof rejection.
+- [x] `services/api/src/auth/{oidc,token,principal}.ts`, middleware replacing the single-key
+      check, `GET /api/v1/me`. (`index.ts` holds the token mode and the factory; `policy.ts` holds
+      the table.)
+- [x] Users table + migration; ownership on the run document; authorization checks in the HTTP
+      layer with a test matrix (owner / other / reviewer / admin × read / advance / approve).
+- [x] Audit actor derived from the principal; test for spoof rejection.
 - [ ] `/auth/refresh` route + cookie handling; CORS `credentials: true` only in that mode.
-- [ ] Dashboard auth module, login/logout, role-aware UI, token never in `localStorage`.
-- [ ] Tests: local JWKS fixture (generated keypair, no network), expired token, wrong audience,
-      wrong issuer, unknown `sub` ⇒ `403`.
-- [ ] Docs: `docs/BACKEND.md` § 8/§ 9, `SECURITY.md` threat model, `IMPLEMENTATION_STATUS`
+      **Not built — see the deviation below.**
+- [x] Dashboard auth module, login, role-aware UI, token never in `localStorage` (it is in
+      `sessionStorage`, which dies with the tab).
+- [x] Tests: local JWKS fixture (generated keypair, real HTTP, no network), expired token, wrong
+      audience, wrong issuer, forged signature, `HS256` confusion, unreachable issuer ⇒ `503`. An
+      unknown `sub` is not a `403`: it creates a `researcher` account on first login.
+- [x] Docs: `docs/BACKEND.md` § 8/§ 9, `SECURITY.md` threat model, `IMPLEMENTATION_STATUS`
       Authentication row → **Implemented (OIDC)** with the token mode noted as a script fallback.
-- [ ] Integrity table RULE-004/040 rows mention the principal-derived actor.
+- [x] Integrity table RULE-004/040 rows mention the principal-derived actor.
 
 **Acceptance.** Two accounts: A creates a run and approves GATE-0; B gets `403` on approve and
 `200` on read only if reviewer. The audit entry for A's approval says `user:<A-sub>`, and a request
 that claims `actor: "B"` still records A. Expired token ⇒ `401`, dashboard redirects to login.
 
 **Size.** 5–7 days (after D2 and A).
+
+### Status of F
+
+**The server half is implemented and executed end to end against a real issuer over real HTTP. The
+browser half is implemented and unit-tested; no real identity provider and no browser have been
+involved.**
+
+**Executed.** `services/api/test/support/idp.ts` is a real issuer: a real RSA keypair, a real
+discovery document and a real JWKS served over loopback HTTP, and tokens signed by the same library
+the API verifies with. Against it, 19 tests pin the verdicts that matter — valid, expired, no `exp`,
+wrong `aud`, wrong `iss`, a signature from a key the issuer never published, an unknown `kid`, the
+`HS256`-with-the-public-key confusion attack, a non-token, an unreachable discovery document
+(`503 auth_unavailable`, not `401`), a JWKS endpoint answering `500` (also `503`), and a discovery
+document that names another issuer (also `503`). A further 17 tests drive `createApp` with a real
+`FilesystemUserStore` and real signed tokens: A creates a run and approves GATE-0 while the request
+body claims `actor: "somebody-else"`; the audit entry says `user:user-ana` and no entry says
+`somebody-else`; B — a researcher — is refused `403` on read and approve while the gate is still
+pending; promoted to `reviewer`, the same B approves A's gate and is still refused `run:advance`;
+`/users` is `403` for a researcher and a list for an admin; demoting yourself is `409
+self_demotion`; the rate limit is spent per subject; `token` mode behaves exactly as before.
+
+Fifteen further tests in `config-auth.test.ts` pin every boot decision — a mode it cannot
+implement, a key no mode would check, an issuer without an audience, a plain-HTTP issuer (refused
+unless loopback), a shared key beside an issuer, and the `/health` answer each mode produces.
+
+The same was then run as **a process**, not a test: `AEROSCRIBE_AUTH=oidc` against the loopback
+issuer, a minted access token, and `scripts/smoke-deploy.sh --expect-auth-mode oidc`, which created
+a run, advanced it through all nine stages, approved every gate as `user:user-smoke`, and finished
+with `stage 8 blocked and names the synthetic solver`. `/api/v1/me` reported `role: admin` from
+`AEROSCRIBE_ADMIN_SUBS`, `/api/v1/audit` recorded `user:user-smoke`, and an anonymous `/api/v1/runs`
+answered `401`. Without a token the smoke exits **4 — PARTIAL** and says which checks did not run;
+with `--expect-auth-mode token` against an `oidc` deployment it fails with both modes named.
+
+Storage: the `users` port is exercised against both adapters by the shared contract suite —
+first-login creation, a display-name change that leaves the role alone, promotion from the
+deployment's admin list, no demotion at login, demotion only through `setRole`, and the same order
+from both backends.
+
+Dashboard: `apps/dashboard/src/auth/` implements Authorization Code + PKCE (S256 challenge from the
+verifier, `state` checked on the callback, verifier consumed and never in the URL, no client
+secret), a session in `sessionStorage` with a 30-second expiry margin, an `AuthGate` that redirects
+to the issuer and handles the callback, and role-aware pipeline buttons. 25 unit tests pin the
+challenge against RFC 7636's worked example, the authorize URL, the token request's form body, a
+state mismatch, a replayed callback, the expiry margin and the role matrix. A `401` from any request
+clears the session and starts a new login — the acceptance sentence, as code.
+
+**Deviations from the plan above, stated rather than quietly taken.**
+
+1. **No `/auth/refresh`, no `HttpOnly` cookie, no refresh token.** The access token is held in
+   `sessionStorage` and expiry re-runs the login. A refresh endpoint needs a server-side session or
+   consent record, and a cookie-authenticated endpoint is a CSRF surface with its own test burden;
+   the acceptance case only requires the redirect, which is what is built. Recorded as unbuilt, not
+   as done.
+2. **No `runs.owner_sub` column.** Ownership is `PipelineRun.ownerSub` inside `runs.doc`, which has
+   one write path. The rationale is in the header of `002_users.sql`; a column becomes worthwhile
+   when "list my runs" is a query rather than a filter.
+3. **`oidc` does not require Postgres.** The `users` port has a filesystem adapter (an append-only
+   `users.ndjson`, folded on read) as well as the Postgres table, so a laptop can run accounts
+   without a database.
+4. **The default mode is derived, not `none`.** `AEROSCRIBE_AUTH` unset still means "`token` when
+   `AEROSCRIBE_API_KEY` is set, else `none`", so every existing deployment keeps working and every
+   existing test config needed no edit.
+
+**Not executed.** No real identity provider (Keycloak, Entra, Auth0, GitHub) has been contacted, and
+no browser has performed a PKCE round trip — the sandbox has neither. The dashboard's flow is tested
+against an injected `fetch` that asserts the request it would send; that proves the wire format, not
+that a particular vendor accepts it. There is still no browser-driven end-to-end test in this
+repository.
+
+**Acceptance, item by item.**
+
+1. _A creates a run and approves GATE-0._ **Proven**, in tests and in a running process.
+2. _B gets `403` on approve, and `200` on read only if reviewer._ **Proven**, for both roles.
+3. _The audit entry says `user:<A-sub>`, and a body claiming `actor: "B"` still records A._
+   **Proven** — in the test and in the process (`user:user-smoke`).
+4. _Expired token ⇒ `401`, dashboard redirects to login._ **The `401` is proven; the redirect is
+   unit-tested and never ran in a browser.** `AuthGate` clears the session and navigates to the
+   issuer's authorize endpoint on the first `401`; no IdP exists here to complete that journey.
 
 ---
 
@@ -1053,15 +1135,15 @@ Every workstream above adds tests in the first three rows; only D adds the fourt
 Adding a dependency needs a sentence in the PR saying why 50 lines of our own are worse. The plan
 needs exactly six:
 
-| Package                                                  | Used by | Why not our own                                                                      |
-| -------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------ |
-| `pg` (added)                                             | D2      | protocol + pooling + types; not a thing to hand-roll                                 |
-| `embedded-postgres` (dev only, added)                    | D2      | real Postgres binaries for the tests; CI runs the same suite without a Docker daemon |
-| `ioredis` (added)                                        | D3      | reconnect/backoff semantics and Lua evaluation; hand-rolling RESP is not worth it    |
-| `@aws-sdk/client-s3`                                     | D4      | SigV4 signing and multipart are error-prone                                          |
-| `jose`                                                   | F       | JWT/JWKS verification is security-critical                                           |
-| `docker/build-push-action`, `docker/setup-buildx-action` | E       | CI only                                                                              |
-| `actions/*` already in use                               | E       | CI only                                                                              |
+| Package                                                  | Used by | Why not our own                                                                                                                                                                             |
+| -------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pg` (added)                                             | D2      | protocol + pooling + types; not a thing to hand-roll                                                                                                                                        |
+| `embedded-postgres` (dev only, added)                    | D2      | real Postgres binaries for the tests; CI runs the same suite without a Docker daemon                                                                                                        |
+| `ioredis` (added)                                        | D3      | reconnect/backoff semantics and Lua evaluation; hand-rolling RESP is not worth it                                                                                                           |
+| `@aws-sdk/client-s3`                                     | D4      | SigV4 signing and multipart are error-prone                                                                                                                                                 |
+| `jose` (added)                                           | F       | JWT/JWKS verification is security-critical: signature checking, `kid` rotation, JWKS caching and the claim checks are exactly the code nobody should hand-roll. 1 dependency, 0 transitive. |
+| `docker/build-push-action`, `docker/setup-buildx-action` | E       | CI only                                                                                                                                                                                     |
+| `actions/*` already in use                               | E       | CI only                                                                                                                                                                                     |
 
 Explicitly rejected: an ORM (SQL is ~200 lines here and the schema is three tables), a state
 library (the source interface is smaller than the config), React Query (one `useResource` hook,
@@ -1105,7 +1187,7 @@ Only after the acceptance criteria hold.
 | `IMPLEMENTATION_STATUS.md` → dashboard | Implemented, fixture data                                | Implemented; **live against the API** when `VITE_API_URL` is set, fixtures otherwise, labelled either way                                                                       |
 | → LaTeX compilation                    | Implemented (B, § 6)                                     | `.tex` + inline bibliography + pgfplots figures always; PDF and a toolchain version when `LATEX_BINARY` answers, otherwise `typeset: "source-only"` and a named stage-8 blocker |
 | → Persistence                          | Implemented: filesystem **or** Postgres (D1–D2)          | Implemented: filesystem **or** Postgres, shared Redis for limits/locks, content-addressed artefact bytes (D1–D4a); S3 is D4b                                                    |
-| → Authentication                       | Partial: one bearer token                                | OIDC accounts + roles; token mode for scripts; audit actor from the verified subject                                                                                            |
+| → Authentication                       | OIDC accounts + roles, token mode retained for scripts   | done in F, except the refresh endpoint (§10 "Status of F")                                                                                                                      |
 | → CI / deployment                      | Typecheck, lint, coverage, builds, image build           | … plus image publish (GHCR, multi-arch, SBOM) and a staging deploy gated by a post-deploy smoke                                                                                 |
 | → CFD solver adapter                   | Real SU2 + synthetic                                     | unchanged — this plan does not touch the solver                                                                                                                                 |
 | `specs/integrity-rules.md`             | RULE-002/030/032/033/043/053/063 partial, not met or N/A | Each moves to **API** or **Process** with the file that enforces it; RULE-022 stays N/A with an ADR link                                                                        |

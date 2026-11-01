@@ -89,8 +89,10 @@ curl -s localhost:8787/api/v1/evidence/verify                      # {"valid":tr
 synthetic solver"]`. Set `SU2_CFD_BINARY` to a real `SU2_CFD` and ask for `"solver": "su2"` to put
 three meshes through it instead.
 
-No API key is required until you set `AEROSCRIBE_API_KEY` — and `/health` reports which mode you
-are in. Offline mode (`AEROSCRIBE_OFFLINE=1`) keeps every test and demo away from the network;
+No credential is required until you ask for one: set `AEROSCRIBE_API_KEY` for a shared key
+(`AEROSCRIBE_AUTH=token`), or point `AEROSCRIBE_AUTH=oidc` at an identity provider for real accounts
+with roles and an audit trail that names the person rather than whatever `actor` the caller typed.
+`/health` reports which mode you are in. Offline mode (`AEROSCRIBE_OFFLINE=1`) keeps every test and demo away from the network;
 its fixture papers carry no DOIs, so an offline run can never cite anything.
 
 ## Scripts

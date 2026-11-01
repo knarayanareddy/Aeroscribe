@@ -2,6 +2,8 @@ import { STAGE_COUNT, formatRelativeTime, runProgress, type StageInfo } from '@a
 import { useId, useState } from 'react';
 import { journalProfiles, mockAgentLogs } from '../data/mockData';
 import { usePipeline } from '../state/pipelineContext';
+import { usePrincipal } from '../auth/context';
+import { canAdvance, canDecideGate, whyNot } from '../auth/permissions';
 import type { View } from './Sidebar';
 
 interface PipelineViewProps {
@@ -93,6 +95,13 @@ export default function PipelineView({ onNavigate }: PipelineViewProps) {
     status,
   } = usePipeline();
 
+  // `null` in fixture and shared-key deployments, where the app has no roles and
+  // every control stays available. The server is the authority either way: this
+  // decides what is offered, not what is allowed.
+  const principal = usePrincipal();
+  const advanceAllowed = activeRun ? canAdvance(principal, activeRun.ownerSub) : true;
+  const gateAllowed = activeRun ? canDecideGate(principal, activeRun.ownerSub) : true;
+
   const [showNewRun, setShowNewRun] = useState(false);
   const [newTopic, setNewTopic] = useState('');
   const [newJournal, setNewJournal] = useState(journalProfiles[0]?.name ?? 'AIAA Journal');
@@ -142,7 +151,8 @@ export default function PipelineView({ onNavigate }: PipelineViewProps) {
             <button
               type="button"
               onClick={() => void advance(activeRun.id)}
-              disabled={busy || activeRun.status === 'completed'}
+              disabled={busy || activeRun.status === 'completed' || !advanceAllowed}
+              title={advanceAllowed ? undefined : whyNot(principal, 'advance')}
               className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
             >
               {busy ? 'Running stage…' : 'Run next stage'}
@@ -443,7 +453,9 @@ export default function PipelineView({ onNavigate }: PipelineViewProps) {
                                         setExpandedStage(stage.id + 1),
                                       );
                                     }}
-                                    className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-700"
+                                    disabled={!gateAllowed}
+                                    title={gateAllowed ? undefined : whyNot(principal, 'gate')}
+                                    className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
                                   >
                                     ✓ Approve &amp; continue
                                   </button>
@@ -452,8 +464,9 @@ export default function PipelineView({ onNavigate }: PipelineViewProps) {
                                     onClick={() =>
                                       void requestRevision(activeRun.id, stage.gateId ?? '')
                                     }
-                                    disabled={busy}
-                                    className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50"
+                                    disabled={busy || !gateAllowed}
+                                    title={gateAllowed ? undefined : whyNot(principal, 'gate')}
+                                    className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
                                   >
                                     ✕ Send back for revision
                                   </button>

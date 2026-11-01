@@ -1,8 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import type { Capabilities, Config } from '../config';
-import { ApiError, badRequest, payloadTooLarge, unauthorized } from '../errors';
+import { authSettings, type Capabilities, type Config } from '../config';
+import { auditActor, type Principal } from '../auth/principal';
+import { authorize, seesEveryRun, type Action } from '../auth/policy';
+import { createAuthenticator, type Authenticator } from '../auth';
+import type { UserStore } from '../store';
+import { ApiError, badRequest, notFound, payloadTooLarge, unauthorized } from '../errors';
 import { silentLogger, type Logger } from '../lib/logger';
 import { bindRunId, runIdFromPath, runWithRequestScope, scopeFields } from '../lib/requestContext';
 import type { Orchestrator } from '../orchestrator';
@@ -33,6 +37,14 @@ export interface AppDependencies {
    * as well as whether records can be written.
    */
   blobs?: BlobStore;
+  /**
+   * Who is calling. Built from `config.auth` when a test does not inject one, so
+   * the app always enforces what the configuration says rather than what a
+   * caller remembered to wire.
+   */
+  authenticator?: Authenticator;
+  /** Accounts. Required by `oidc` mode; `stores.users` supplies it in production. */
+  users?: UserStore;
   /**
    * Structured logger. `buildServer` always supplies one; the silent default
    * exists so a test can build the app without describing how it logs.
@@ -73,9 +85,39 @@ export function createApp({
   stores,
   coordinator = createProcessCoordinator(),
   blobs,
+  authenticator,
+  users,
   logger = silentLogger(),
-}: AppDependencies): Hono {
-  const app = new Hono();
+}: AppDependencies): Hono<{ Variables: { principal: Principal | null } }> {
+  const app = new Hono<{ Variables: { principal: Principal | null } }>();
+  const settings = authSettings(config);
+
+  // Accounts need somewhere to live. `buildServer` passes `stores.users`; a
+  // test that never authenticates a person can leave it out, and `oidc` mode
+  // then fails at the first verification with a message instead of a crash.
+  const userStore: UserStore | null = users ?? stores?.users ?? null;
+  const auth: Authenticator =
+    authenticator ??
+    createAuthenticator({
+      settings,
+      users:
+        userStore ??
+        ({
+          get: async () => null,
+          list: async () => [],
+          upsertOnLogin: async () => {
+            throw new ApiError(
+              503,
+              'auth_unavailable',
+              'AEROSCRIBE_AUTH=oidc needs a user store; this process was built without one.',
+            );
+          },
+          setRole: async () => {
+            throw new ApiError(503, 'auth_unavailable', 'No user store is configured.');
+          },
+        } satisfies UserStore),
+      logger,
+    });
 
   /**
    * Every request gets an id, echoed as `x-request-id` and bound to the async
@@ -145,17 +187,50 @@ export function createApp({
     '/api/*',
     cors({
       origin: (origin) => (origin && config.corsOrigins.includes(origin) ? origin : null),
-      allowMethods: ['GET', 'POST', 'OPTIONS'],
+      // `PATCH` is only for `/api/v1/users/:sub`, but a role change is a PATCH and
+      // a preflight that omits it is a browser-only failure the tests would not
+      // otherwise see.
+      allowMethods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
       allowHeaders: ['Content-Type', 'Authorization'],
       maxAge: 600,
     }),
   );
 
+  /**
+   * Authentication, then the rate limit.
+   *
+   * The order is the reverse of what it was, and the reason is the identity the
+   * limiter needs: a budget keyed by subject can only be spent after the subject
+   * is known. Signature verification is cheap next to a database write, the
+   * shared key is compared in constant time, and an unauthenticated flood still
+   * fails here before any handler or stage runs.
+   *
+   * `/api/v1/auth/config` is exempt: it is how a client discovers *how* to log
+   * in, so it cannot itself require a login. Everything in it is public.
+   */
   app.use('/api/*', async (context, next) => {
-    const key = clientKey(
-      context.req.header('authorization'),
-      context.req.header('x-forwarded-for'),
-    );
+    if (context.req.path === '/api/v1/auth/config') return next();
+
+    let principal: Principal | null = null;
+    try {
+      principal = await auth.authenticate(context.req.raw);
+    } catch (error) {
+      if (error instanceof ApiError) {
+        logger.warn('http.unauthorised', {
+          ...scopeFields(),
+          path: context.req.path,
+          code: error.code,
+        });
+      }
+      throw error;
+    }
+    context.set('principal', principal);
+
+    // A subject has a budget of their own; a shared key or an anonymous caller
+    // keeps the key it always had, so `token` mode behaves exactly as before.
+    const key = principal
+      ? `user:${principal.sub}`
+      : clientKey(context.req.header('authorization'), context.req.header('x-forwarded-for'));
     const result = await coordinator.limit(key);
     context.header('x-ratelimit-remaining', String(result.remaining));
     if (!result.allowed) {
@@ -172,14 +247,38 @@ export function createApp({
     return next();
   });
 
-  app.use('/api/*', async (context, next) => {
-    if (config.apiKey === '') return next();
-    if (bearerToken(context.req.header('authorization')) !== config.apiKey) {
-      logger.warn('http.unauthorised', { ...scopeFields(), path: context.req.path });
-      throw unauthorized();
-    }
-    return next();
-  });
+  /** The principal, when this deployment has one. */
+  const principalOf = (context: {
+    get: (key: 'principal') => Principal | null | undefined;
+  }): Principal | null => context.get('principal') ?? null;
+
+  /**
+   * Who the audit trail records.
+   *
+   * In `oidc` mode this is the verified subject and nothing else — the body's
+   * `actor` is ignored, which is the whole fix: before accounts, any caller
+   * could approve a gate as "someone-else" and the trail would believe it.
+   */
+  const actorFor = (principal: Principal | null, claim: unknown): string => {
+    if (principal !== null) return auditActor(principal);
+    return typeof claim === 'string' && claim.trim() !== '' ? claim : 'anonymous';
+  };
+
+  /**
+   * Refuse unless the caller may do this to this run.
+   *
+   * In `none` and `token` mode there is no principal, so there is nothing to
+   * check — that is the documented behaviour of a deployment with one shared
+   * credential, not an oversight. In `oidc` mode the middleware has already
+   * refused a request without one, so this is always a real decision.
+   */
+  const requireRun = async (
+    principal: Principal | null,
+    action: Action,
+    run: { ownerSub?: string | null },
+  ): Promise<void> => {
+    if (principal !== null) authorize(principal, action, run);
+  };
 
   /**
    * Liveness, plus what the process is actually backed by.
@@ -210,7 +309,10 @@ export function createApp({
         commit: config.commit,
         logLevel: config.logLevel,
         capabilities: caps,
+        // Kept for every existing client and smoke test; `auth.mode` says which
+        // kind of credential this is, which a boolean cannot.
         authRequired: caps.auth.required,
+        authMode: caps.auth.mode,
         ...(store ? { store } : {}),
         coordination,
         ...(blobProbe ? { blobs: blobProbe } : {}),
@@ -221,9 +323,82 @@ export function createApp({
 
   app.get('/api/v1/capabilities', async (context) => context.json(await capabilities()));
 
+  // How to authenticate, for a client that has not authenticated yet.
+  app.get('/api/v1/auth/config', async (context) => context.json(auth.describe()));
+
+  // Who the server thinks the caller is. In `none`/`token` mode there is no
+  // answer, and `principal: null` is that answer.
+  app.get('/api/v1/me', async (context) => {
+    const principal = principalOf(context);
+    return context.json({ authMode: settings.mode, principal });
+  });
+
+  // ── Accounts ──────────────────────────────────────────────────────────────
+  // Admin-only, and only meaningful in `oidc` mode: a deployment that
+  // authenticates a shared key has no people to administer, and saying so is
+  // better than answering an empty list that looks like "no accounts yet".
+
+  const requireAdmin = (
+    context: { get: (key: 'principal') => Principal | null | undefined },
+    action: 'users:read' | 'users:write',
+  ): Principal => {
+    if (settings.mode !== 'oidc' || userStore === null) {
+      throw new ApiError(
+        403,
+        'auth_mode_unsupported',
+        `Accounts require AEROSCRIBE_AUTH=oidc; this deployment authenticates with "${settings.mode}", which has no users.`,
+      );
+    }
+    const principal = principalOf(context);
+    if (principal === null) throw unauthorized();
+    authorize(principal, action);
+    return principal;
+  };
+
+  app.get('/api/v1/users', async (context) => {
+    requireAdmin(context, 'users:read');
+    const users = await userStore!.list();
+    return context.json({ users });
+  });
+
+  app.patch('/api/v1/users/:sub', async (context) => {
+    const admin = requireAdmin(context, 'users:write');
+    const body = await readJson<{ role?: unknown }>(context.req.raw);
+    if (body.role !== 'researcher' && body.role !== 'reviewer' && body.role !== 'admin') {
+      throw badRequest('"role" must be one of researcher, reviewer, admin.');
+    }
+
+    const sub = context.req.param('sub');
+    // An admin demoting themselves can lock the deployment out of its own
+    // account list. Refuse, and name why.
+    if (sub === admin.sub && body.role !== 'admin') {
+      throw new ApiError(
+        409,
+        'self_demotion',
+        'An admin cannot remove their own admin role; ask another admin.',
+      );
+    }
+
+    // `setRole` refuses an unknown subject, and a `404` says what a thrown
+    // `Error` inside the store would hide behind a `500`.
+    if ((await userStore!.get(sub)) === null) throw notFound(`No account with subject "${sub}".`);
+    const user = await userStore!.setRole(sub, body.role);
+    await orchestrator.recordAudit({
+      action: 'user.role_changed',
+      runId: null,
+      actor: auditActor(admin),
+      detail: { sub, role: body.role },
+    });
+    return context.json({ user });
+  });
+
   app.get('/api/v1/runs', async (context) => {
+    const principal = principalOf(context);
     const runs = await orchestrator.listRuns();
-    return context.json({ runs });
+    // A researcher sees their own runs. A reviewer or an admin sees every run,
+    // because judging one you cannot read is not a thing.
+    if (principal === null || seesEveryRun(principal)) return context.json({ runs });
+    return context.json({ runs: runs.filter((run) => run.ownerSub === principal.sub) });
   });
 
   app.post('/api/v1/runs', async (context) => {
@@ -239,10 +414,16 @@ export function createApp({
       throw badRequest('"journal" must be a string when provided.');
     }
 
+    const principal = principalOf(context);
+    if (principal !== null) authorize(principal, 'run:create');
+
     const run = await orchestrator.createRun({
       topic: body.topic,
       journal: body.journal,
+      // The display name. In `oidc` mode the audit trail uses the subject
+      // instead, so a caller cannot choose how the record names them.
       researcher: typeof body.researcher === 'string' ? body.researcher : undefined,
+      ownerSub: principal?.sub,
       options: sanitiseOptions(body.options),
     });
 
@@ -251,14 +432,18 @@ export function createApp({
 
   app.get('/api/v1/runs/:id', async (context) => {
     const run = await orchestrator.getRun(context.req.param('id'));
+    await requireRun(principalOf(context), 'run:read', run);
     return context.json({ run });
   });
 
   app.post('/api/v1/runs/:id/advance', async (context) => {
     const body = await readJson<{ actor?: unknown }>(context.req.raw, { optional: true });
+    const principal = principalOf(context);
+    const run = await orchestrator.getRun(context.req.param('id'));
+    await requireRun(principal, 'run:advance', run);
     const result = await orchestrator.advance(
       context.req.param('id'),
-      typeof body.actor === 'string' ? body.actor : 'anonymous',
+      actorFor(principal, body.actor),
     );
     return context.json({
       run: result.run,
@@ -270,25 +455,31 @@ export function createApp({
 
   app.post('/api/v1/runs/:id/gates/:gateId/approve', async (context) => {
     const body = await readJson<{ actor?: unknown }>(context.req.raw, { optional: true });
-    const run = await orchestrator.approveGate(
+    const principal = principalOf(context);
+    const run = await orchestrator.getRun(context.req.param('id'));
+    await requireRun(principal, 'gate:approve', run);
+    const next = await orchestrator.approveGate(
       context.req.param('id'),
       context.req.param('gateId'),
-      typeof body.actor === 'string' ? body.actor : 'anonymous',
+      actorFor(principal, body.actor),
     );
-    return context.json({ run });
+    return context.json({ run: next });
   });
 
   app.post('/api/v1/runs/:id/gates/:gateId/reject', async (context) => {
     const body = await readJson<{ actor?: unknown; note?: unknown }>(context.req.raw, {
       optional: true,
     });
-    const run = await orchestrator.requestRevision(
+    const principal = principalOf(context);
+    const run = await orchestrator.getRun(context.req.param('id'));
+    await requireRun(principal, 'gate:reject', run);
+    const next = await orchestrator.requestRevision(
       context.req.param('id'),
       context.req.param('gateId'),
-      typeof body.actor === 'string' ? body.actor : 'anonymous',
+      actorFor(principal, body.actor),
       typeof body.note === 'string' ? body.note : undefined,
     );
-    return context.json({ run });
+    return context.json({ run: next });
   });
 
   app.get('/api/v1/runs/:id/evidence', async (context) => {
@@ -296,6 +487,11 @@ export function createApp({
     if (kindParam && !EVIDENCE_KINDS.includes(kindParam as EvidenceKind)) {
       throw badRequest(`Unknown evidence kind "${kindParam}".`, { allowed: EVIDENCE_KINDS });
     }
+    await requireRun(
+      principalOf(context),
+      'run:read',
+      await orchestrator.getRun(context.req.param('id')),
+    );
     const records = await orchestrator.evidence(
       context.req.param('id'),
       kindParam as EvidenceKind | undefined,
@@ -310,6 +506,12 @@ export function createApp({
   // there has never been one rather than implying the citations are current.
 
   app.post('/api/v1/runs/:id/references/recheck', async (context) => {
+    // A re-check writes evidence, so it is the owner's or an admin's action.
+    await requireRun(
+      principalOf(context),
+      'run:advance',
+      await orchestrator.getRun(context.req.param('id')),
+    );
     const outcome = await orchestrator.recheckReferences(context.req.param('id'));
     return context.json(
       {
@@ -322,9 +524,14 @@ export function createApp({
     );
   });
 
-  app.get('/api/v1/runs/:id/references', async (context) =>
-    context.json(await orchestrator.referenceStatus(context.req.param('id'))),
-  );
+  app.get('/api/v1/runs/:id/references', async (context) => {
+    await requireRun(
+      principalOf(context),
+      'run:read',
+      await orchestrator.getRun(context.req.param('id')),
+    );
+    return context.json(await orchestrator.referenceStatus(context.req.param('id')));
+  });
 
   // ── Manuscript artefacts ──────────────────────────────────────────────────
   //
@@ -333,6 +540,11 @@ export function createApp({
   // missing capability, not a 404: the run exists, the artefact does not.
 
   app.get('/api/v1/runs/:id/manuscript.tex', async (context) => {
+    await requireRun(
+      principalOf(context),
+      'run:read',
+      await orchestrator.getRun(context.req.param('id')),
+    );
     const artefact = await orchestrator.manuscriptArtefact(context.req.param('id'), 'tex');
     context.header('content-type', 'text/x-tex; charset=utf-8');
     context.header('x-content-sha256', artefact.sha256);
@@ -341,6 +553,11 @@ export function createApp({
   });
 
   app.get('/api/v1/runs/:id/manuscript.pdf', async (context) => {
+    await requireRun(
+      principalOf(context),
+      'run:read',
+      await orchestrator.getRun(context.req.param('id')),
+    );
     const artefact = await orchestrator.manuscriptArtefact(context.req.param('id'), 'pdf');
     context.header('content-type', 'application/pdf');
     context.header('x-content-sha256', artefact.sha256);
@@ -361,6 +578,13 @@ export function createApp({
     if (!Number.isInteger(seq) || seq < 0)
       throw badRequest('"seq" must be a non-negative integer.');
 
+    // The record names its run, so an artefact is exactly as readable as the
+    // evidence that references it — no more.
+    const owner = await orchestrator.record(seq);
+    // A record can outlive its run. A missing run has no owner, which is the
+    // same answer a run created before accounts has: reviewer or admin only.
+    const run = await orchestrator.findRun(owner.runId);
+    await requireRun(principalOf(context), 'run:read', run ?? { ownerSub: null });
     const artefact = await orchestrator.artefact(seq, context.req.param('name'));
     context.header('content-type', artefact.mediaType);
     context.header('x-content-sha256', artefact.sha256);
@@ -377,10 +601,33 @@ export function createApp({
   app.get('/api/v1/audit', async (context) => {
     const runId = context.req.query('runId');
     const limit = Number(context.req.query('limit') ?? '200');
+    const principal = principalOf(context);
+
+    // Asking about a run you cannot read is a `403`, not an empty list: an empty
+    // list is indistinguishable from "nothing happened".
+    if (runId && principal !== null) {
+      await requireRun(principal, 'audit:read', await orchestrator.getRun(runId));
+    }
+
     const { entries, malformed } = await orchestrator.auditTrail({
       ...(runId ? { runId } : {}),
       limit: Number.isFinite(limit) ? Math.min(Math.max(Math.trunc(limit), 1), 2000) : 200,
     });
+
+    // A researcher sees the trail of their own runs — and no entries that belong
+    // to nobody, because those are not theirs to read.
+    if (principal !== null && !seesEveryRun(principal)) {
+      const owned = new Set(
+        (await orchestrator.listRuns())
+          .filter((run) => run.ownerSub === principal.sub)
+          .map((run) => run.id),
+      );
+      return context.json({
+        entries: entries.filter((entry) => entry.runId !== null && owned.has(entry.runId)),
+        malformed,
+      });
+    }
+
     return context.json({ entries, malformed });
   });
 
@@ -412,6 +659,7 @@ export function createApp({
       );
     }
 
+    await requireRun(principalOf(context), 'run:read', await orchestrator.getRun(body.runId));
     const records = await orchestrator.evidence(body.runId);
     const report = verifyClaims(body.text, buildPolicy(records));
     return context.json(report);

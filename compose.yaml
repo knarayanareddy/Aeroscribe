@@ -1,6 +1,6 @@
 # The whole stack, for a laptop and for a host.
 #
-#   cp .env.example .env        # then edit: at minimum AEROSCRIBE_API_KEY
+#   cp .env.example .env        # then edit: AEROSCRIBE_AUTH, and the credential it needs
 #   docker compose up -d --build
 #   open https://localhost      # Caddy issues itself a certificate
 #
@@ -78,7 +78,25 @@ services:
       AEROSCRIBE_DATABASE_URL: postgres://aeroscribe:${AEROSCRIBE_DB_PASSWORD}@postgres:5432/aeroscribe
       AEROSCRIBE_COORDINATION: redis
       AEROSCRIBE_REDIS_URL: redis://redis:6379/0
-      AEROSCRIBE_API_KEY: ${AEROSCRIBE_API_KEY:?set AEROSCRIBE_API_KEY in .env}
+      # ── Identity ─────────────────────────────────────────────────────────
+      # Which kind of credential this stack accepts. Required, because the two
+      # safe answers (a shared key, or an OIDC issuer) look nothing alike and a
+      # default would pick one for you. `token` with no key, and `oidc` with no
+      # issuer, are both refused at boot by `loadConfig` — the failure is loud
+      # and names the variable, so the key can be optional here without the
+      # stack ever coming up open by accident.
+      AEROSCRIBE_AUTH: ${AEROSCRIBE_AUTH:?set AEROSCRIBE_AUTH to token or oidc in .env}
+      AEROSCRIBE_API_KEY: ${AEROSCRIBE_API_KEY:-}
+      # Read only when AEROSCRIBE_AUTH=oidc. The issuer must be https and must
+      # match its discovery document or the API answers 503 auth_unavailable.
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_SCOPES: '${OIDC_SCOPES:-openid profile email}'
+      OIDC_CLOCK_SKEW_SECONDS: ${OIDC_CLOCK_SKEW_SECONDS:-60}
+      # The deployment's admin list. With `oidc` this is how the stack gets its
+      # first admin: there is no bootstrap account and no password to set.
+      AEROSCRIBE_ADMIN_SUBS: ${AEROSCRIBE_ADMIN_SUBS:-}
       AEROSCRIBE_CONTACT_EMAIL: ${AEROSCRIBE_CONTACT_EMAIL:-}
       # Offline by default: a stack that reaches the internet the first time it
       # is started is a stack that fails behind a firewall. Set it to false to
@@ -154,8 +172,11 @@ services:
         condition: service_completed_successfully
     environment:
       AEROSCRIBE_DOMAIN: ${AEROSCRIBE_DOMAIN:-localhost}
-      # Injected into the upstream request, never sent to the browser.
-      AEROSCRIBE_API_KEY: ${AEROSCRIBE_API_KEY:?set AEROSCRIBE_API_KEY in .env}
+      # Injected into an upstream request that arrives without an
+      # `Authorization` header, never sent to the browser. Empty in `oidc` mode,
+      # which is correct: the edge has no credential of its own to lend, and an
+      # anonymous call must reach the API unauthenticated so it is answered 401.
+      AEROSCRIBE_API_KEY: ${AEROSCRIBE_API_KEY:-}
     ports:
       - '${AEROSCRIBE_HTTP_PORT:-80}:80'
       - '${AEROSCRIBE_HTTPS_PORT:-443}:443'

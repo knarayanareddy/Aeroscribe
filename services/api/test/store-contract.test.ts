@@ -191,6 +191,29 @@ describe.each(HARNESSES)('store contract: $name', (harness) => {
     await harness.dispose(stores);
   });
 
+  it('round-trips a run’s owner, and leaves the key out when there is none', async () => {
+    const stores = await harness.open();
+    const owned = createRun({
+      id: 'run-owned',
+      topic: 'transonic wing',
+      journal: 'AIAA Journal',
+      ownerSub: 'user-a',
+    });
+    await stores.runs.save(owned);
+
+    // The owner lives inside the run document, so both adapters must hand it
+    // back unchanged — including an adapter that validates what it reads.
+    expect((await stores.runs.get('run-owned'))!.ownerSub).toBe('user-a');
+
+    const anonymous = createRun({ id: 'run-anon', topic: 'transonic wing' });
+    await stores.runs.save(anonymous);
+    // Absent, not `null`: a run from before accounts has no owner at all, and
+    // the difference matters to `authorize`.
+    expect('ownerSub' in (await stores.runs.get('run-anon'))!).toBe(false);
+
+    await harness.dispose(stores);
+  });
+
   it('lists runs newest first, with the id breaking a timestamp tie', async () => {
     const stores = await harness.open();
     const now = new Date('2026-01-01T00:00:00.000Z');
@@ -418,6 +441,94 @@ describe('the filesystem probe', () => {
     expect(probe.backend).toBe('filesystem');
     expect(probe.ok).toBe(false);
     expect(probe.detail).toMatch(/not writable/);
+  });
+});
+
+describe.each(HARNESSES)('accounts contract: $name', (harness) => {
+  it('creates an account on first login, and keeps the role on the next one', async () => {
+    const stores = await harness.open();
+
+    expect(await stores.users.get('user-a')).toBeNull();
+    const first = await stores.users.upsertOnLogin({
+      sub: 'user-a',
+      email: 'ana@example.org',
+      name: 'Ana',
+      role: 'researcher',
+      now: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    expect(first).toMatchObject({
+      sub: 'user-a',
+      email: 'ana@example.org',
+      name: 'Ana',
+      role: 'researcher',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    // A display name changes at the IdP; a role does not change at a login.
+    const second = await stores.users.upsertOnLogin({
+      sub: 'user-a',
+      email: 'ana@example.org',
+      name: 'Ana Silva',
+      role: 'researcher',
+      now: new Date('2026-02-01T00:00:00.000Z'),
+    });
+    expect(second).toMatchObject({
+      name: 'Ana Silva',
+      role: 'researcher',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-02-01T00:00:00.000Z',
+    });
+
+    await harness.dispose(stores);
+  });
+
+  it('promotes from the deployment list but never demotes on login', async () => {
+    const stores = await harness.open();
+    await stores.users.upsertOnLogin({ sub: 'user-a', role: 'researcher' });
+
+    const promoted = await stores.users.upsertOnLogin({ sub: 'user-a', role: 'admin' });
+    expect(promoted.role).toBe('admin');
+
+    // The next login says `researcher`. A login must not be a way to change
+    // what somebody may do, in either direction.
+    const afterLogin = await stores.users.upsertOnLogin({ sub: 'user-a', role: 'researcher' });
+    expect(afterLogin.role).toBe('admin');
+
+    // Demotion is an explicit admin action and it is the only way down.
+    const demoted = await stores.users.setRole('user-a', 'reviewer');
+    expect(demoted.role).toBe('reviewer');
+    expect((await stores.users.get('user-a'))!.role).toBe('reviewer');
+
+    await harness.dispose(stores);
+  });
+
+  it('refuses to change the role of an account that does not exist', async () => {
+    const stores = await harness.open();
+    await expect(stores.users.setRole('user-nobody', 'admin')).rejects.toThrow(/user-nobody/);
+    await harness.dispose(stores);
+  });
+
+  it('lists accounts oldest first, with the subject breaking a tie', async () => {
+    const stores = await harness.open();
+    const now = new Date('2026-01-01T00:00:00.000Z');
+    for (const [sub, offset] of [
+      ['user-b', 0],
+      ['user-a', 0],
+      ['user-c', 60_000],
+    ] as const) {
+      await stores.users.upsertOnLogin({
+        sub,
+        role: 'researcher',
+        now: new Date(now.getTime() + offset),
+      });
+    }
+
+    expect((await stores.users.list()).map((user) => user.sub)).toEqual([
+      'user-a',
+      'user-b',
+      'user-c',
+    ]);
+    await harness.dispose(stores);
   });
 });
 

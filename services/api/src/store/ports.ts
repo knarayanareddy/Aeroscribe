@@ -96,12 +96,62 @@ export interface AuditStore {
   read(query?: AuditQuery): Promise<{ entries: AuditEntry[]; malformed: number }>;
 }
 
-/** The three stores plus the facts `/health` needs about them. */
+/**
+ * A person, as the API knows them.
+ *
+ * `sub` is the OIDC subject: the issuer's immutable identifier for an account,
+ * and the only thing authorization keys on. An email address can be reassigned;
+ * a subject cannot.
+ */
+export type Role = 'researcher' | 'reviewer' | 'admin';
+
+export const ROLES: readonly Role[] = ['researcher', 'reviewer', 'admin'];
+
+export interface UserRecord {
+  sub: string;
+  email: string | null;
+  name: string | null;
+  role: Role;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpsertUserInput {
+  sub: string;
+  email?: string | null;
+  name?: string | null;
+  /**
+   * The role to grant a subject seen for the first time — and the only way this
+   * method can raise an existing role, which it does only to `admin` and only
+   * because a deployment listed the subject in `AEROSCRIBE_ADMIN_SUBS`.
+   */
+  role: Role;
+  now?: Date;
+}
+
+/**
+ * Accounts. Keyed by OIDC subject, never by email.
+ *
+ * `upsertOnLogin` is deliberately not called `create`: a person appears the
+ * first time their token verifies, with the least role that can do anything
+ * useful (`researcher`), and an admin promotes them from there.
+ */
+export interface UserStore {
+  get(sub: string): Promise<UserRecord | null>;
+  list(): Promise<UserRecord[]>;
+  upsertOnLogin(input: UpsertUserInput): Promise<UserRecord>;
+  /** Throws when the subject is unknown: an empty role would be a default. */
+  setRole(sub: string, role: Role, now?: Date): Promise<UserRecord>;
+}
+
+/** The stores plus the facts `/health` needs about them. */
 export interface Stores {
   backend: StoreBackend;
   runs: RunStore;
   evidence: EvidenceStore;
   audit: AuditStore;
+  /** Accounts. Empty in `none`/`token` mode, which have no principals. */
+  users: UserStore;
   /** Cheap liveness check; a database adapter pings the database here. */
   probe(): Promise<StoreProbe>;
   /**

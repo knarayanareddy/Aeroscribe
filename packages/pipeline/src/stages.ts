@@ -152,15 +152,26 @@ export interface CreateRunInput {
   topic: string;
   journal: string;
   now?: Date;
+  /** The OIDC subject that owns the run; omitted when there are no accounts. */
+  ownerSub?: string;
 }
 
 /** Create a fully-formed pipeline run in its initial state. */
-export function createRun({ id, topic, journal, now = new Date() }: CreateRunInput): PipelineRun {
+export function createRun({
+  id,
+  topic,
+  journal,
+  now = new Date(),
+  ownerSub,
+}: CreateRunInput): PipelineRun {
   const timestamp = now.toISOString();
   return {
     id,
     topic: topic.trim(),
     journal,
+    // Spread rather than `ownerSub: undefined`: the stored document should not
+    // carry a key that says nothing.
+    ...(ownerSub ? { ownerSub } : {}),
     status: 'running',
     createdAt: timestamp,
     updatedAt: timestamp,

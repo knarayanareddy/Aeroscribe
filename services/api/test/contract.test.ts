@@ -226,6 +226,9 @@ beforeAll(async () => {
     });
 
   captures.push({ name: 'capabilities', body: await json('/api/v1/capabilities') });
+  // The dashboard asks these two before it can render anything in `oidc` mode.
+  captures.push({ name: 'auth-config', body: await json('/api/v1/auth/config') });
+  captures.push({ name: 'me', body: await json('/api/v1/me') });
 
   const created = (await postJson('/api/v1/runs', {
     topic: 'transonic wing drag prediction at Mach 0.85',

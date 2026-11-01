@@ -548,6 +548,9 @@ export type AuditAction =
   | 'doi.verified'
   | 'doi.rechecked'
   | 'cfd.executed'
+  // Accounts. `user.role_changed` is the one audit action that is not about a
+  // run: it records an admin changing what somebody may do.
+  | 'user.role_changed'
   | 'unauthorised';
 
 export interface AuditEntry {
@@ -603,7 +606,17 @@ export interface Capabilities {
   };
   latex: LatexCapability;
   registry: { algorithm: 'sha256'; path: string };
-  auth: { required: boolean };
+  auth: {
+    required: boolean;
+    /**
+     * How this deployment authenticates: `none` (no credential), `token` (one
+     * shared key — what scripts and the deploy smoke test use) or `oidc` (a
+     * verified identity per request, with roles).
+     */
+    mode: 'none' | 'token' | 'oidc';
+    /** The issuer the dashboard must send the browser to, in `oidc` mode. */
+    issuer: string | null;
+  };
   storage: {
     /**
      * Which store adapter the server is using (`AEROSCRIBE_STORE`).
@@ -646,6 +659,51 @@ export interface ApiErrorBody {
   };
 }
 
+/**
+ * `GET /api/v1/me` — who the server thinks the caller is.
+ *
+ * `principal: null` is the honest answer in `none` and `token` mode: the
+ * deployment authenticates a credential, not a person, so there is no subject,
+ * no email and no role to report.
+ */
+export interface MeResponse {
+  authMode: 'none' | 'token' | 'oidc';
+  principal: {
+    sub: string;
+    email: string | null;
+    name: string | null;
+    role: 'researcher' | 'reviewer' | 'admin';
+  } | null;
+}
+
+export interface UserSummary {
+  sub: string;
+  email: string | null;
+  name: string | null;
+  role: 'researcher' | 'reviewer' | 'admin';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UsersResponse {
+  users: UserSummary[];
+}
+
+/**
+ * `GET /api/v1/auth/config` — how a client should authenticate.
+ *
+ * Unauthenticated on purpose: the dashboard needs it before anyone has logged
+ * in. Everything in it is public by nature (an issuer, a public client id, the
+ * scopes to ask for).
+ */
+export interface AuthConfigResponse {
+  mode: 'none' | 'token' | 'oidc';
+  required: boolean;
+  issuer: string | null;
+  clientId: string | null;
+  scopes: string[];
+}
+
 export interface HealthResponse {
   status: 'ok';
   service: string;
@@ -654,6 +712,8 @@ export interface HealthResponse {
   logLevel: string;
   capabilities: Capabilities;
   authRequired: boolean;
+  /** `none` | `token` | `oidc` — a boolean cannot say which credential it wants. */
+  authMode: 'none' | 'token' | 'oidc';
 }
 
 export interface RunsResponse {

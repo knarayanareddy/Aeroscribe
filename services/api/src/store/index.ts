@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { FilesystemAuditStore } from './audit';
 import { FilesystemEvidenceStore } from './evidence';
 import { FilesystemRunStore } from './runs';
+import { FilesystemUserStore } from './users';
 import { createPostgresStores } from './postgres';
 import type { StoreBackend, StoreProbe, Stores } from './ports';
 
@@ -11,6 +12,7 @@ export * from './audit';
 export * from './chain';
 export * from './evidence';
 export * from './runs';
+export * from './users';
 export * from './postgres';
 
 /**
@@ -74,6 +76,9 @@ export function createStores(settings: StoreSettings): Stores {
         runs: new FilesystemRunStore(join(dataDir, 'runs')),
         evidence: new FilesystemEvidenceStore(join(dataDir, 'registry.ndjson')),
         audit: new FilesystemAuditStore(join(dataDir, 'audit.ndjson')),
+        // One line per role change, folded on read: a role is a fact with a
+        // history, not a field somebody edits.
+        users: new FilesystemUserStore(join(dataDir, 'users.ndjson')),
         probe: () => probeFilesystem(dataDir),
       };
     }

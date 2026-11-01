@@ -2,13 +2,13 @@
   "records": [
     {
       "seq": 0,
-      "id": "2bba3e12-3e85-4a9d-b700-fd41b1671b9d",
+      "id": "6348258e-9c56-4870-b1cf-d3c252731190",
       "kind": "stage-output",
       "runId": "run-contract",
       "stageId": 0,
       "label": "Topic intelligence for \"transonic wing drag prediction at Mach 0.85\"",
-      "createdAt": "2026-11-01T18:42:51.173Z",
-      "payloadHash": "2665f1202c061375622e5b166d06eeafb3ead5d524bbce51bd7f7634f36537b7",
+      "createdAt": "2026-11-01T19:54:47.414Z",
+      "payloadHash": "fdafe59323dab9ce52b9359083b6a9b4c61384da80c28b3b99a6549a61ad9812",
       "prevHash": "0000000000000000000000000000000000000000000000000000000000000000",
       "payload": {
         "stage": "topic-intelligence",
@@ -29,25 +29,25 @@
           "hypersonics"
         ],
         "topicNumbers": [0.85],
-        "generatedAt": "2026-11-01T18:42:51.172Z"
+        "generatedAt": "2026-11-01T19:54:47.412Z"
       },
-      "hash": "3d04e13089f1afee456e10ff47701fb210b8a2e3cfe90c3e5a95fa5327620d26"
+      "hash": "279d6c9efe093664427bdf0111b503fdc81d4b7c1a8205dd943e1d6f579956f8"
     },
     {
       "seq": 1,
-      "id": "2a3411d7-46c4-41c9-8439-7687c369fa87",
+      "id": "c98eae43-0518-433b-99ff-225673d61e74",
       "kind": "literature-search",
       "runId": "run-contract",
       "stageId": 1,
       "label": "Literature search: transonic wing drag prediction at Mach 0.85 AIAA Journal",
-      "createdAt": "2026-11-01T18:42:51.181Z",
-      "payloadHash": "024323d8e668b089b791a82f01bcd2b6f3d581187aec2ff637f83ecf3f08b4ce",
-      "prevHash": "3d04e13089f1afee456e10ff47701fb210b8a2e3cfe90c3e5a95fa5327620d26",
+      "createdAt": "2026-11-01T19:54:47.432Z",
+      "payloadHash": "9d3a2241d45cce5f068956d714f3557e52d225b4cd13ee06d58bca4c2bff23ec",
+      "prevHash": "279d6c9efe093664427bdf0111b503fdc81d4b7c1a8205dd943e1d6f579956f8",
       "payload": {
         "stage": "literature-archaeology",
         "schemaVersion": 2,
         "query": "transonic wing drag prediction at Mach 0.85 AIAA Journal",
-        "searchedAt": "2026-11-01T18:42:51.181Z",
+        "searchedAt": "2026-11-01T19:54:47.432Z",
         "offline": false,
         "papersFound": 2,
         "papersVerified": 2,
@@ -65,7 +65,7 @@
             "publisher": "Elsevier",
             "url": "https://doi.org/10.1016/j.jcp.2023.112001",
             "verified": {
-              "verifiedAt": "2026-11-01T18:42:51.180Z",
+              "verifiedAt": "2026-11-01T19:54:47.430Z",
               "provider": "crossref",
               "titleSimilarity": 1
             }
@@ -83,7 +83,7 @@
             "publisher": "AIAA",
             "url": "https://doi.org/10.2514/1.j060001",
             "verified": {
-              "verifiedAt": "2026-11-01T18:42:51.181Z",
+              "verifiedAt": "2026-11-01T19:54:47.432Z",
               "provider": "crossref",
               "titleSimilarity": 1
             }
@@ -130,18 +130,18 @@
         "rejected": [],
         "providerErrors": []
       },
-      "hash": "46ed48eabcf4e11401f39b498312a2e72d73e16ddaa5de4831ab30f353f6df09"
+      "hash": "00b439ef5d1c9198d36c7bcbf4996d286e3a5255f66b060285599c27fef6aed2"
     },
     {
       "seq": 2,
-      "id": "f363fc21-0172-4cb0-aa11-4b8f3d9d202a",
+      "id": "0480e931-53f7-4ac3-83d9-68e114585377",
       "kind": "novelty-report",
       "runId": "run-contract",
       "stageId": 2,
       "label": "Novelty assessment for \"transonic wing drag prediction at Mach 0.85\"",
-      "createdAt": "2026-11-01T18:42:51.187Z",
+      "createdAt": "2026-11-01T19:54:47.445Z",
       "payloadHash": "64fde38fc5c5dbb9d4c6882fd600d4785a2971042b5404eab3e205b1d63331cf",
-      "prevHash": "46ed48eabcf4e11401f39b498312a2e72d73e16ddaa5de4831ab30f353f6df09",
+      "prevHash": "00b439ef5d1c9198d36c7bcbf4996d286e3a5255f66b060285599c27fef6aed2",
       "payload": {
         "stage": "novelty-detection",
         "schemaVersion": 1,
@@ -154,18 +154,18 @@
           "Only 2 DOI-verified references were available; a novelty claim needs at least 3."
         ]
       },
-      "hash": "f54f5d3202af8baf33ba7a076dbbf629ee3ab7bf42c7760ccbc52f225c7f2c3c"
+      "hash": "591b8f29dcc23b111239ec180f417e6a1ea6d6c847693b7bdff2671f4ae4a656"
     },
     {
       "seq": 3,
-      "id": "117199e8-bf3f-4c51-a643-cb5c7dbc0cfb",
+      "id": "fedb57be-a098-427f-a582-26e3f8a9a1cb",
       "kind": "stage-output",
       "runId": "run-contract",
       "stageId": 3,
       "label": "Contribution statement for \"transonic wing drag prediction at Mach 0.85\"",
-      "createdAt": "2026-11-01T18:42:51.193Z",
+      "createdAt": "2026-11-01T19:54:47.452Z",
       "payloadHash": "e44eef42a7bdefe91058c5fde59774c6870c8efc2052bf08dd1a06bf6e4a41eb",
-      "prevHash": "f54f5d3202af8baf33ba7a076dbbf629ee3ab7bf42c7760ccbc52f225c7f2c3c",
+      "prevHash": "591b8f29dcc23b111239ec180f417e6a1ea6d6c847693b7bdff2671f4ae4a656",
       "payload": {
         "stage": "contribution-framing",
         "schemaVersion": 1,
@@ -178,18 +178,18 @@
           "gaps": 1
         }
       },
-      "hash": "a2b73e99e7fa68bc40372415852ab1e4525a7f870383d92ec2959c55323a9dc6"
+      "hash": "93b77e92067029b9fd58a03a50e034cc300ea11b02486ea6860b556328f70bcc"
     },
     {
       "seq": 4,
-      "id": "6ce12b37-317e-4529-bc53-ce4075e21823",
+      "id": "399d62b8-0e55-4bf5-90aa-bc50701b3b16",
       "kind": "cfd-run",
       "runId": "run-contract",
       "stageId": 4,
       "label": "drag coefficient — synthetic run",
-      "createdAt": "2026-11-01T18:42:51.200Z",
-      "payloadHash": "d23e792b9c49e289309f05831c44aebe57939f5f836df0b4f520f6a64b7d72e2",
-      "prevHash": "a2b73e99e7fa68bc40372415852ab1e4525a7f870383d92ec2959c55323a9dc6",
+      "createdAt": "2026-11-01T19:54:47.467Z",
+      "payloadHash": "c7330da2f96b110475f4cdd45a9de8e2147e18c6cecedc818b3068021f2e6cec",
+      "prevHash": "93b77e92067029b9fd58a03a50e034cc300ea11b02486ea6860b556328f70bcc",
       "payload": {
         "stage": "evidence-generation",
         "schemaVersion": 1,
@@ -242,20 +242,20 @@
             "mediaType": "application/json"
           }
         ],
-        "computedAt": "2026-11-01T18:42:51.199Z"
+        "computedAt": "2026-11-01T19:54:47.467Z"
       },
-      "hash": "c579e9b81ba43cb54be069b70fc5071970d5cfe90294a3cc2fecc073498e8b3a"
+      "hash": "0d44b83c0ea78c3e71cc364e130bca67d5ab2e1fdda7cec224bb75b0453e5262"
     },
     {
       "seq": 5,
-      "id": "bdf53acf-916d-44c8-bd36-78c5c73290af",
+      "id": "39da6c0e-72b5-40ed-bd85-f5ff289e5bd0",
       "kind": "manuscript",
       "runId": "run-contract",
       "stageId": 5,
       "label": "Manuscript draft: transonic wing drag prediction at Mach 0.85: a verification-first computational study",
-      "createdAt": "2026-11-01T18:42:51.211Z",
-      "payloadHash": "3069b723265050e32907c30ab6a29c8ebf8c678992c5c6bb59781d6facbf1b99",
-      "prevHash": "c579e9b81ba43cb54be069b70fc5071970d5cfe90294a3cc2fecc073498e8b3a",
+      "createdAt": "2026-11-01T19:54:47.479Z",
+      "payloadHash": "fdcd6d2c47d086561abeae1d9874480de2cf6e391ebf41a39cff337a2e28d8f4",
+      "prevHash": "0d44b83c0ea78c3e71cc364e130bca67d5ab2e1fdda7cec224bb75b0453e5262",
       "payload": {
         "stage": "paper-synthesis",
         "schemaVersion": 2,
@@ -309,7 +309,7 @@
               "publisher": "Elsevier",
               "url": "https://doi.org/10.1016/j.jcp.2023.112001",
               "verified": {
-                "verifiedAt": "2026-11-01T18:42:51.180Z",
+                "verifiedAt": "2026-11-01T19:54:47.430Z",
                 "provider": "crossref",
                 "titleSimilarity": 1
               }
@@ -332,7 +332,7 @@
               "publisher": "AIAA",
               "url": "https://doi.org/10.2514/1.j060001",
               "verified": {
-                "verifiedAt": "2026-11-01T18:42:51.181Z",
+                "verifiedAt": "2026-11-01T19:54:47.432Z",
                 "provider": "crossref",
                 "titleSimilarity": 1
               }
@@ -348,21 +348,21 @@
           "gaps": 1,
           "meshCount": 3
         },
-        "generatedAt": "2026-11-01T18:42:51.211Z",
+        "generatedAt": "2026-11-01T19:54:47.479Z",
         "synthetic": true
       },
-      "hash": "261acb20049f79e7f1f220353d1dde2368eb7386e3a838d76e8d02204594e3c1"
+      "hash": "f75ce4959eb6e40474550ce3ad449683cf2eaf56f3ec223aa1ed5a41b7a60dd0"
     },
     {
       "seq": 6,
-      "id": "3ccfc3d5-19b9-4a6c-84fa-6501cda24fba",
+      "id": "dda19866-f66c-4859-8c6b-8a3c8d014739",
       "kind": "review-report",
       "runId": "run-contract",
       "stageId": 6,
       "label": "Review council report: transonic wing drag prediction at Mach 0.85: a verification-first computational study",
-      "createdAt": "2026-11-01T18:42:51.216Z",
-      "payloadHash": "76d07bdf61565639d191c84eb46d2f3709f628ff119ce528221c4775dc67971a",
-      "prevHash": "261acb20049f79e7f1f220353d1dde2368eb7386e3a838d76e8d02204594e3c1",
+      "createdAt": "2026-11-01T19:54:47.493Z",
+      "payloadHash": "9fc078c515d149275e02b850d233aa7bc2e4107ade420de47c6cbacff47f1f18",
+      "prevHash": "f75ce4959eb6e40474550ce3ad449683cf2eaf56f3ec223aa1ed5a41b7a60dd0",
       "payload": {
         "stage": "peer-review-council",
         "schemaVersion": 1,
@@ -414,20 +414,20 @@
             "passed": true
           }
         ],
-        "reviewedAt": "2026-11-01T18:42:51.216Z"
+        "reviewedAt": "2026-11-01T19:54:47.493Z"
       },
-      "hash": "4c0458b2e983cfc03d51a8f89f5e9bc031d4c20fc83be1f69139f21e2a6534a3"
+      "hash": "f0185f61e7f617a08478dd4d182c0044bcbf3fb456e188ed4a123fa730276f45"
     },
     {
       "seq": 7,
-      "id": "c5e589b5-25ca-4f53-bb73-90775a547020",
+      "id": "38546ab8-c72c-4712-8fa0-a606f056230f",
       "kind": "compliance-report",
       "runId": "run-contract",
       "stageId": 7,
       "label": "Compliance check against AIAA Journal",
-      "createdAt": "2026-11-01T18:42:51.221Z",
-      "payloadHash": "94c6d71dba34ad8eb90a4c8658a6d29bcce3e617eb9712aab3aecc2f72d538f8",
-      "prevHash": "4c0458b2e983cfc03d51a8f89f5e9bc031d4c20fc83be1f69139f21e2a6534a3",
+      "createdAt": "2026-11-01T19:54:47.507Z",
+      "payloadHash": "9775c2d5e16b3ad8fce48ac492f3052394bad1452642da78d11634515fb66e00",
+      "prevHash": "f0185f61e7f617a08478dd4d182c0044bcbf3fb456e188ed4a123fa730276f45",
       "payload": {
         "stage": "revision-compliance",
         "schemaVersion": 1,
@@ -445,20 +445,20 @@
             "detail": "The review council asked for revisions before submission."
           }
         ],
-        "checkedAt": "2026-11-01T18:42:51.221Z"
+        "checkedAt": "2026-11-01T19:54:47.507Z"
       },
-      "hash": "ab83e8966fb27940b103b96cba4fec99e66085aee8bb3a46532236f45ad948e3"
+      "hash": "f573c801149b4d574f937556446c94300f80424c7c1056f9b6e90f22ae7efda8"
     },
     {
       "seq": 8,
-      "id": "b1e62e35-4886-4f23-acc5-bb26fbc6e386",
+      "id": "01c11cdd-e5ce-46e4-ada8-e1c6e2bea448",
       "kind": "submission-package",
       "runId": "run-contract",
       "stageId": 8,
       "label": "AeroWiki article and submission manifest for \"transonic wing drag prediction at Mach 0.85: a verification-first computational study\"",
-      "createdAt": "2026-11-01T18:42:51.234Z",
-      "payloadHash": "029514b7d57504b0d86b5fbc7398e85c5cd70a3d744997410dac01606807184a",
-      "prevHash": "ab83e8966fb27940b103b96cba4fec99e66085aee8bb3a46532236f45ad948e3",
+      "createdAt": "2026-11-01T19:54:47.521Z",
+      "payloadHash": "93365efe521bb3c47ee44053970ffa47829b3c67a615421455fe11b4787b3e4c",
+      "prevHash": "f573c801149b4d574f937556446c94300f80424c7c1056f9b6e90f22ae7efda8",
       "payload": {
         "schemaVersion": 1,
         "wiki": {
@@ -468,7 +468,7 @@
           "slug": "transonic-wing-drag-prediction-at-mach-0-85-a-verification-first-computational-s",
           "markdown": "## transonic wing drag prediction at Mach 0.85: a verification-first computational study\n\nThis study reports a drag coefficient of 0.4264 ± 0.00000336 for transonic wing drag prediction at mach 0.85. The value was obtained on 3 systematically refined meshes; the observed order of accuracy is 2 and the fine-grid Grid Convergence Index is 0.000787 percent. 2 DOI-verified references were retrieved and 1 candidate gaps were identified.\n\n### Findings\nThe extrapolated drag coefficient is 0.4264 ± 0.00000336. The observed order of accuracy is 2 and the fine-grid Grid Convergence Index is 0.000787 percent.\n\n### Candidate gaps\n- mach\n\n### Review status\nrevise — 2 comment(s).\n\n### References\n- [1] C. Author (2023). Adjoint-based mesh adaptation for transonic flows. Journal of Computational Physics. doi:10.1016/j.jcp.2023.112001\n- [2] A. Author, B. Author (2024). Transonic drag prediction on unstructured meshes. AIAA Journal. doi:10.2514/1.j060001",
           "relatedRunIds": ["run-contract"],
-          "generatedAt": "2026-11-01T18:42:51.229Z"
+          "generatedAt": "2026-11-01T19:54:47.515Z"
         },
         "submission": {
           "stage": "aerowiki-submission",
@@ -484,12 +484,12 @@
           "files": [
             {
               "name": "stage-output-0.json",
-              "sha256": "2665f1202c061375622e5b166d06eeafb3ead5d524bbce51bd7f7634f36537b7",
+              "sha256": "fdafe59323dab9ce52b9359083b6a9b4c61384da80c28b3b99a6549a61ad9812",
               "bytes": 417
             },
             {
               "name": "literature-search-1.json",
-              "sha256": "024323d8e668b089b791a82f01bcd2b6f3d581187aec2ff637f83ecf3f08b4ce",
+              "sha256": "9d3a2241d45cce5f068956d714f3557e52d225b4cd13ee06d58bca4c2bff23ec",
               "bytes": 1993
             },
             {
@@ -504,52 +504,52 @@
             },
             {
               "name": "cfd-run-4.json",
-              "sha256": "d23e792b9c49e289309f05831c44aebe57939f5f836df0b4f520f6a64b7d72e2",
+              "sha256": "c7330da2f96b110475f4cdd45a9de8e2147e18c6cecedc818b3068021f2e6cec",
               "bytes": 1324
             },
             {
               "name": "manuscript-5.json",
-              "sha256": "3069b723265050e32907c30ab6a29c8ebf8c678992c5c6bb59781d6facbf1b99",
+              "sha256": "fdcd6d2c47d086561abeae1d9874480de2cf6e391ebf41a39cff337a2e28d8f4",
               "bytes": 3702
             },
             {
               "name": "review-report-6.json",
-              "sha256": "76d07bdf61565639d191c84eb46d2f3709f628ff119ce528221c4775dc67971a",
+              "sha256": "9fc078c515d149275e02b850d233aa7bc2e4107ade420de47c6cbacff47f1f18",
               "bytes": 1111
             },
             {
               "name": "compliance-report-7.json",
-              "sha256": "94c6d71dba34ad8eb90a4c8658a6d29bcce3e617eb9712aab3aecc2f72d538f8",
+              "sha256": "9775c2d5e16b3ad8fce48ac492f3052394bad1452642da78d11634515fb66e00",
               "bytes": 363
             }
           ],
           "note": "Manifest of evidence hashes. The LaTeX source is recorded in this run's manuscript-render record, but no PDF was typeset; nothing is uploaded to a journal.",
-          "packagedAt": "2026-11-01T18:42:51.234Z"
+          "packagedAt": "2026-11-01T19:54:47.521Z"
         }
       },
-      "hash": "08cb4ab9289057954452fba360cf1d034b69459128e4860e53e5821bc1d3b160"
+      "hash": "bbe3c2ad4fdb81036e369e0d0ef7e030dd2c9c54664d77c812e4fa488167b7e2"
     },
     {
       "seq": 9,
-      "id": "fa2dffcc-23d3-44aa-919b-118daaf919d6",
+      "id": "424b313f-d3de-4627-bf59-a7e8a35d85bd",
       "kind": "manuscript-render",
       "runId": "run-contract",
       "stageId": 8,
       "label": "LaTeX source for \"transonic wing drag prediction at Mach 0.85: a verification-first computational study\" (aiaa-style); no PDF typeset",
-      "createdAt": "2026-11-01T18:42:51.234Z",
-      "payloadHash": "6f0eb4a665d0877b25ac23870ffb06e780da66c59b4d62827c8eb2b1f0c6da3a",
-      "prevHash": "08cb4ab9289057954452fba360cf1d034b69459128e4860e53e5821bc1d3b160",
+      "createdAt": "2026-11-01T19:54:47.522Z",
+      "payloadHash": "c5a08b69c410cc40f19a576e9c355e6aa1615a989cafef30127ace261e4bb60d",
+      "prevHash": "bbe3c2ad4fdb81036e369e0d0ef7e030dd2c9c54664d77c812e4fa488167b7e2",
       "payload": {
         "stage": "manuscript-render",
         "schemaVersion": 1,
         "runId": "run-contract",
         "journal": "AIAA Journal",
         "template": "aiaa-style",
-        "generatedAt": "2026-11-01T18:42:51.211Z",
+        "generatedAt": "2026-11-01T19:54:47.479Z",
         "files": [
           {
             "name": "manuscript.tex",
-            "sha256": "b50159b900fd08672b537fb232490bee7ede1107dbdb32ed6a7551e0fda47930",
+            "sha256": "cf0a232a45d3548204878081144fe5b142b3461af78993a74525ca13067c311b",
             "bytes": 4170
           },
           {
@@ -568,13 +568,13 @@
             "bytes": 157
           }
         ],
-        "texSha256": "b50159b900fd08672b537fb232490bee7ede1107dbdb32ed6a7551e0fda47930",
+        "texSha256": "cf0a232a45d3548204878081144fe5b142b3461af78993a74525ca13067c311b",
         "pdf": null,
         "typeset": "source-only",
         "toolchain": null,
         "missingBibliographyFields": []
       },
-      "hash": "866d142651899b622f5761e8586c6f0ad5c04b7dbba0930b0c07e10cd716bc2b"
+      "hash": "3f76e8c33e5917fbfe1fabaaa951832a381c1d8bdb9313f17f670d1f4bfbcf51"
     }
   ]
 }

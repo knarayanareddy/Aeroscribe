@@ -30,18 +30,35 @@
 
 	# Everything the API owns. `handle` keeps the matcher exclusive, so a future
 	# `/api/…` file on disk can never shadow a route.
+	#
+	# The edge lends a credential only to a request that brings none. With
+	# `AEROSCRIBE_AUTH=token` that is every request: the browser never holds the
+	# key, and the proxy is the client. With `AEROSCRIBE_AUTH=oidc` the key is
+	# empty, the browser's own `Authorization: Bearer <token>` passes through
+	# untouched, and an anonymous request arrives without one and is answered 401
+	# — which is the whole difference between the two modes. Overwriting an
+	# `Authorization` header the client sent would silently replace a person's
+	# identity with a shared key.
 	handle /api/* {
-		reverse_proxy api:8787 {
-			header_up Authorization "Bearer {$AEROSCRIBE_API_KEY}"
-			# The rate limiter keys on the client, not on this proxy.
-			header_up X-Forwarded-For {remote_host}
+		@anonymous not header Authorization *
+		handle @anonymous {
+			reverse_proxy api:8787 {
+				header_up Authorization "Bearer {$AEROSCRIBE_API_KEY}"
+				# The rate limiter keys on the client, not on this proxy.
+				header_up X-Forwarded-For {remote_host}
+			}
+		}
+		handle {
+			reverse_proxy api:8787 {
+				header_up X-Forwarded-For {remote_host}
+			}
 		}
 	}
 
+	# Liveness stays anonymous in both modes: it is what a load balancer and
+	# `smoke-deploy.sh` read, and it reports the mode rather than hiding it.
 	handle /health {
-		reverse_proxy api:8787 {
-			header_up Authorization "Bearer {$AEROSCRIBE_API_KEY}"
-		}
+		reverse_proxy api:8787
 	}
 
 	# The dashboard: a single-page app, so unknown paths get index.html rather

@@ -86,6 +86,8 @@ export interface CreateRunRequest {
   topic: string;
   journal?: string;
   researcher?: string;
+  /** OIDC subject of the creator; set by the HTTP layer in `oidc` mode only. */
+  ownerSub?: string;
   options?: Partial<RunOptions>;
 }
 
@@ -183,7 +185,13 @@ export class Orchestrator {
     }
 
     const journal = request.journal?.trim() || 'AIAA Journal';
-    const run = createRun({ id: this.newRunId(), topic, journal, now: this.clock() });
+    const run = createRun({
+      id: this.newRunId(),
+      topic,
+      journal,
+      now: this.clock(),
+      ...(request.ownerSub ? { ownerSub: request.ownerSub } : {}),
+    });
     const researcher = request.researcher?.trim() || 'anonymous';
 
     const runOptions: RunOptions = {
@@ -459,6 +467,41 @@ export class Orchestrator {
     });
 
     return nextRun;
+  }
+
+  /**
+   * Append an audit entry the HTTP layer owns.
+   *
+   * Roles change about a *person*, not a run, so they do not belong to any
+   * orchestrator method — but the audit trail must stay the only writer, and
+   * this keeps that true while letting the admin route record its action.
+   */
+  async recordAudit(entry: {
+    action: AuditAction;
+    runId: string | null;
+    actor: string;
+    detail?: Record<string, unknown>;
+  }): Promise<void> {
+    await this.options.audit.record(entry);
+  }
+
+  /**
+   * The run, or `null` — for a caller that must answer even when the run is gone.
+   *
+   * A record can outlive the run it names (the chain is append-only; a run can be
+   * removed), and refusing to say who owned a deleted run is a different answer
+   * from refusing to serve its evidence. `getRun` still throws for the routes
+   * that are *about* a run.
+   */
+  async findRun(runId: string): Promise<PipelineRun | null> {
+    return this.options.runs.get(runId);
+  }
+
+  /** One evidence record by sequence number, for authorization by run. */
+  async record(seq: number) {
+    const record = await this.options.registry.get(seq);
+    if (record === null) throw notFound(`No evidence record with seq ${seq}.`);
+    return record;
   }
 
   async evidence(runId: string, kind?: EvidenceKind) {

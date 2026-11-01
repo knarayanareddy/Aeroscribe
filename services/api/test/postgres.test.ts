@@ -169,7 +169,7 @@ describe('migrations', () => {
     const { rows } = await pool.query<{ version: string }>(
       'SELECT version FROM schema_migrations ORDER BY version',
     );
-    expect(rows.map((row) => row.version)).toEqual(['001_initial.sql']);
+    expect(rows.map((row) => row.version)).toEqual(['001_initial.sql', '002_users.sql']);
     await stores.close?.();
   });
 });

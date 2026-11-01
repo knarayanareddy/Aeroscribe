@@ -81,21 +81,29 @@ Manuscript, Review, Wiki and Settings — and each one reads a record the server
 API shows `API unreachable · <reason>` and an empty table; it never falls back to fixtures under a
 live badge.
 
-**The key never reaches the browser.** A token in a bundle is a leaked token
-(RULE-040), so the client sends no `Authorization` header in the same-origin build and
-`docker/Caddyfile` adds one:
+**A key never reaches the browser.** In `token` mode a token in a bundle would be a leaked token
+(RULE-040), so the client sends no `Authorization` header and `docker/Caddyfile` adds one — but only
+for a request that brought none:
 
 ```caddyfile
 handle /api/* {
-    reverse_proxy api:8787 {
-        header_up Authorization "Bearer {$AEROSCRIBE_API_KEY}"
-        header_up X-Forwarded-For {remote_host}
+    @anonymous not header Authorization *
+    handle @anonymous {
+        reverse_proxy api:8787 {
+            header_up Authorization "Bearer {$AEROSCRIBE_API_KEY}"
+            header_up X-Forwarded-For {remote_host}
+        }
+    }
+    handle {
+        reverse_proxy api:8787 { header_up X-Forwarded-For {remote_host} }
     }
 }
 ```
 
 That is the same arrangement the Vite dev proxy uses, and it means the API key in this topology is a
-_server-side_ credential: the edge is the only client that holds it.
+_server-side_ credential: the edge is the only holder. In `oidc` mode the key is empty, the browser's
+own `Authorization: Bearer <access token>` passes through untouched, and an anonymous call reaches
+the API without one and is answered `401` — the difference between the two modes in one matcher.
 
 What is **not** proven: there is no browser-driven end-to-end test in this repository. The live views
 are covered by component tests against a stub source (`apps/dashboard/src/components/LiveViews.test.tsx`,
@@ -153,31 +161,50 @@ secrets and stop at the "required configuration is present" step.
 
 **Secrets** (per environment, both need the same names):
 
-| Secret                       | What it is                                                    |
-| ---------------------------- | ------------------------------------------------------------- |
-| `AEROSCRIBE_SSH_HOST`        | the host to deploy to                                         |
-| `AEROSCRIBE_SSH_USER`        | a user that can run `docker` (in the `docker` group, or root) |
-| `AEROSCRIBE_SSH_KEY`         | its private key, no passphrase                                |
-| `AEROSCRIBE_SSH_KNOWN_HOSTS` | the host's public key line, pinned by hand                    |
-| `AEROSCRIBE_API_KEY`         | the bearer token the API requires                             |
-| `AEROSCRIBE_DB_PASSWORD`     | the Postgres password                                         |
-| `SEMANTIC_SCHOLAR_API_KEY`   | optional; raises the Semantic Scholar rate allowance          |
+| Secret                       | What it is                                                         |
+| ---------------------------- | ------------------------------------------------------------------ |
+| `AEROSCRIBE_SSH_HOST`        | the host to deploy to                                              |
+| `AEROSCRIBE_SSH_USER`        | a user that can run `docker` (in the `docker` group, or root)      |
+| `AEROSCRIBE_SSH_KEY`         | its private key, no passphrase                                     |
+| `AEROSCRIBE_SSH_KNOWN_HOSTS` | the host's public key line, pinned by hand                         |
+| `AEROSCRIBE_API_KEY`         | the shared key, for `AEROSCRIBE_AUTH=token`; leave empty in `oidc` |
+| `AEROSCRIBE_DB_PASSWORD`     | the Postgres password                                              |
+| `SEMANTIC_SCHOLAR_API_KEY`   | optional; raises the Semantic Scholar rate allowance               |
 
 `AEROSCRIBE_SSH_KNOWN_HOSTS` is a secret rather than a `ssh-keyscan`: scanning the host during a
 deploy trusts whoever answers first, which is the attack host-key checking exists to prevent.
 
 **Variables** (per environment):
 
-| Variable                       | Default                            | Used by                                          |
-| ------------------------------ | ---------------------------------- | ------------------------------------------------ |
-| `AEROSCRIBE_STAGING_URL`       | —                                  | staging smoke test and deploy URL                |
-| `AEROSCRIBE_STAGING_DOMAIN`    | `localhost`                        | the certificate Caddy obtains                    |
-| `AEROSCRIBE_STAGING_INSECURE`  | `false`                            | staging only: accept a self-signed certificate   |
-| `AEROSCRIBE_PRODUCTION_URL`    | —                                  | production smoke test and deploy URL             |
-| `AEROSCRIBE_PRODUCTION_DOMAIN` | — (required)                       | the certificate Caddy obtains                    |
-| `AEROSCRIBE_DEPLOY_PATH`       | `/opt/aeroscribe`                  | where `compose.yaml` and `.env` live on the host |
-| `AEROSCRIBE_CONTACT_EMAIL`     | —                                  | Crossref polite pool                             |
-| `AEROSCRIBE_OFFLINE`           | `true` staging, `false` production | literature mode                                  |
+| Variable                       | Default                            | Used by                                                           |
+| ------------------------------ | ---------------------------------- | ----------------------------------------------------------------- |
+| `AEROSCRIBE_STAGING_URL`       | —                                  | staging smoke test and deploy URL                                 |
+| `AEROSCRIBE_STAGING_DOMAIN`    | `localhost`                        | the certificate Caddy obtains                                     |
+| `AEROSCRIBE_STAGING_INSECURE`  | `false`                            | staging only: accept a self-signed certificate                    |
+| `AEROSCRIBE_PRODUCTION_URL`    | —                                  | production smoke test and deploy URL                              |
+| `AEROSCRIBE_PRODUCTION_DOMAIN` | — (required)                       | the certificate Caddy obtains                                     |
+| `AEROSCRIBE_DEPLOY_PATH`       | `/opt/aeroscribe`                  | where `compose.yaml` and `.env` live on the host                  |
+| `AEROSCRIBE_CONTACT_EMAIL`     | —                                  | Crossref polite pool                                              |
+| `AEROSCRIBE_OFFLINE`           | `true` staging, `false` production | literature mode                                                   |
+| `AEROSCRIBE_AUTH`              | `token`                            | `token` or `oidc`; which credential the stack accepts             |
+| `OIDC_ISSUER`                  | —                                  | `oidc` only: the issuer, `https`, matching its discovery document |
+| `OIDC_AUDIENCE`                | —                                  | `oidc` only: the `aud` every token must carry                     |
+| `OIDC_CLIENT_ID`               | the audience                       | `oidc` only: the public client id the dashboard uses              |
+| `AEROSCRIBE_ADMIN_SUBS`        | —                                  | `oidc` only: comma-separated subjects that arrive as `admin`      |
+
+**Choosing the auth mode.** `token` is one shared key: the edge holds it, the browser never does, and
+the audit trail records the `actor` a caller types. `oidc` is a verified identity per request, with
+roles (`researcher`, `reviewer`, `admin`), run ownership and an audit actor of `user:<sub>`; the
+browser holds a short-lived access token obtained through Authorization Code + PKCE and the edge
+injects no key at all. `oidc` refuses to start without `OIDC_ISSUER` and `OIDC_AUDIENCE`, and refuses
+to start _with_ `AEROSCRIBE_API_KEY` — a shared key that bypasses roles would make the roles
+decorative. The first admin comes from `AEROSCRIBE_ADMIN_SUBS`; there is no bootstrap account and no
+password to set.
+
+`scripts/smoke-deploy.sh` follows the mode: with `--expect-auth-mode token` it drives the full run
+using `AEROSCRIBE_API_KEY`; with `--expect-auth-mode oidc` it needs `AEROSCRIBE_ACCESS_TOKEN`, and
+without one it exits **4 (partial)** and prints which checks did not run rather than reporting a pass
+it did not earn.
 
 Rotation is a redeploy: change the secret or variable, re-run the workflow. The `.env` on the host is
 rewritten from the environment every time, so there is no second copy to forget. Updating
@@ -335,6 +362,8 @@ Stated here because a deployment is where these limits get forgotten.
 | **Single host**                          | artefact bytes are local files; two API replicas do not share them. Postgres shares runs and evidence only if `AEROSCRIBE_STORE=postgres`, and Redis shares the rate limit and stage lock only if `AEROSCRIBE_COORDINATION=redis` — `/health` names both. |
 | **Redis is not durable**                 | `--save ''` on purpose: it holds a rate window and a stage lease, nothing worth restoring.                                                                                                                                                                |
 | **Wiki edits are session-local**         | the generated article is an evidence record and read-only; editing it is not implemented.                                                                                                                                                                 |
+| **No refresh token**                     | `oidc` deployments hold an access token with no refresh endpoint: when it expires the dashboard sends you back to the issuer. Avoid a one-minute token lifetime.                                                                                          |
+| **No identity provider**                 | the stack does not ship one. `oidc` needs an external issuer whose discovery document and JWKS the API can reach; `token` needs nothing but a key.                                                                                                        |
 
 A stack in this state is genuinely useful — it collects evidence, enforces gates, and refuses to
 submit what it cannot prove — and it is not a way to produce a journal PDF. `docs/IMPLEMENTATION_STATUS.md`

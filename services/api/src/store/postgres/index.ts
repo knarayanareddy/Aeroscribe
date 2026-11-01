@@ -4,6 +4,7 @@ import { PostgresAuditStore } from './audit';
 import { createPool, redactDatabaseUrl, storeError } from './client';
 import { PostgresEvidenceStore } from './evidence';
 import { PostgresRunStore } from './runs';
+import { PostgresUserStore } from './users';
 
 export * from './client';
 export * from './import';
@@ -41,6 +42,7 @@ export function createPostgresStores(options: PostgresStoresOptions): Stores {
       ...(options.newId ? { newId: options.newId } : {}),
     }),
     audit: new PostgresAuditStore(pool, options.databaseUrl),
+    users: new PostgresUserStore(pool, options.databaseUrl),
     async probe(): Promise<StoreProbe> {
       try {
         await pool.query('SELECT 1');

@@ -2,6 +2,8 @@ import type {
   AdvanceResponse,
   ApiErrorBody,
   AuditResponse,
+  AuthConfigResponse,
+  MeResponse,
   Capabilities,
   ClaimReport,
   CreateRunRequest,
@@ -51,8 +53,18 @@ export class ApiClientError extends Error {
 export interface ApiClientOptions {
   /** Base URL, e.g. `''` (same origin) or `http://localhost:8787`. */
   baseUrl?: string;
-  /** Bearer token. Only ever set in development, from the dev-server proxy. */
-  token?: string;
+  /**
+   * The bearer token, or a function returning it.
+   *
+   * A function, not a string, because an OIDC access token expires: the client
+   * is built once and every request must ask for the token that is good *now*.
+   * In development it is also how the dev-server proxy's key is supplied, and
+   * in a bundled build it is always empty — a token in the bundle is a leaked
+   * token.
+   */
+  token?: string | (() => string | null);
+  /** Called on a `401`, once, so the app can send the browser to the IdP. */
+  onUnauthorized?: (error: ApiClientError) => void;
   fetch?: typeof fetch;
 }
 
@@ -60,6 +72,10 @@ export interface ApiClient {
   readonly baseUrl: string;
   health(): Promise<HealthResponse>;
   capabilities(): Promise<Capabilities>;
+  /** How to log in, or that this deployment needs no login. Never authenticated. */
+  authConfig(): Promise<AuthConfigResponse>;
+  /** Who the server thinks the caller is; `principal: null` without accounts. */
+  me(): Promise<MeResponse>;
   listRuns(): Promise<RunsResponse>;
   getRun(id: string): Promise<RunResponse>;
   createRun(input: CreateRunRequest): Promise<RunResponse>;
@@ -91,9 +107,11 @@ function errorFrom(status: number, body: unknown): ApiClientError {
 export function createApiClient({
   baseUrl = '',
   token,
+  onUnauthorized,
   fetch: fetchImpl = globalThis.fetch,
 }: ApiClientOptions = {}): ApiClient {
   const root = trimTrailingSlash(baseUrl);
+  const tokenOf = typeof token === 'function' ? token : () => token ?? null;
 
   async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const headers = new Headers(init.headers);
@@ -101,7 +119,8 @@ export function createApiClient({
     if (init.body !== undefined) headers.set('content-type', 'application/json');
     // A token in the bundle is a leaked token; this is only ever set by the
     // Vite dev proxy, never by a production build.
-    if (token) headers.set('authorization', `Bearer ${token}`);
+    const bearer = tokenOf();
+    if (bearer) headers.set('authorization', `Bearer ${bearer}`);
 
     let response: Response;
     try {
@@ -131,7 +150,14 @@ export function createApiClient({
       }
     }
 
-    if (!response.ok) throw errorFrom(response.status, body);
+    if (!response.ok) {
+      const failure = errorFrom(response.status, body);
+      // `403` is an answer about who you are, and the screen should keep it.
+      // `401` is "we do not know who you are" — the login is over, and letting
+      // every view fail one by one is a worse experience than one redirect.
+      if (response.status === 401) onUnauthorized?.(failure);
+      throw failure;
+    }
 
     // `verify-doi` answers 422 *with* a body that is a legitimate result
     // ("this DOI did not resolve"), which is handled above as an error.
@@ -150,6 +176,8 @@ export function createApiClient({
 
     health: () => get<HealthResponse>('/health'),
     capabilities: () => get<Capabilities>('/api/v1/capabilities'),
+    authConfig: () => get<AuthConfigResponse>('/api/v1/auth/config'),
+    me: () => get<MeResponse>('/api/v1/me'),
 
     listRuns: () => get<RunsResponse>('/api/v1/runs'),
     getRun: (id) => get<RunResponse>(`/api/v1/runs/${encodeURIComponent(id)}`),
