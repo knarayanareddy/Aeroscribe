@@ -35,7 +35,10 @@
     "smoke:literature": "npm run smoke:literature -w @aeroscribe/api --",
     "smoke:cfd": "npm run smoke:cfd -w @aeroscribe/api --",
     "smoke:latex": "npm run smoke:latex -w @aeroscribe/api --",
-    "recheck": "npm run recheck -w @aeroscribe/api --"
+    "recheck": "npm run recheck -w @aeroscribe/api --",
+    "db:migrate": "npm run db:migrate -w @aeroscribe/api --",
+    "db:verify": "npm run db:verify -w @aeroscribe/api --",
+    "db:import": "npm run db:import -w @aeroscribe/api --"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

@@ -39,9 +39,29 @@ describe('loadConfig', () => {
 
   it('refuses a store backend it cannot implement', () => {
     // A typo must stop the process, not quietly leave it on the filesystem.
-    expect(() => loadConfig({ AEROSCRIBE_STORE: 'postgres' })).toThrow(/AEROSCRIBE_STORE/);
-    expect(() => loadConfig({ AEROSCRIBE_STORE: 'postgres' })).toThrow(/filesystem/);
+    expect(() => loadConfig({ AEROSCRIBE_STORE: 'mysql' })).toThrow(/AEROSCRIBE_STORE/);
+    expect(() => loadConfig({ AEROSCRIBE_STORE: 'mysql' })).toThrow(/filesystem, postgres/);
     expect(loadConfig({ AEROSCRIBE_STORE: ' Filesystem ' }).store).toBe('filesystem');
+  });
+
+  it('refuses postgres without a database URL, and filesystem with one', () => {
+    // The two failure modes this guards are both silent-wrong-source-of-truth:
+    // a Postgres process writing files because no URL arrived, and a filesystem
+    // process ignoring a database somebody believed was authoritative.
+    expect(() => loadConfig({ AEROSCRIBE_STORE: 'postgres' })).toThrow(/AEROSCRIBE_DATABASE_URL/);
+    expect(() =>
+      loadConfig({
+        AEROSCRIBE_STORE: 'filesystem',
+        AEROSCRIBE_DATABASE_URL: 'postgres://user:pw@localhost:5432/aeroscribe',
+      }),
+    ).toThrow(/AEROSCRIBE_STORE=postgres/);
+
+    const config = loadConfig({
+      AEROSCRIBE_STORE: 'postgres',
+      AEROSCRIBE_DATABASE_URL: 'postgres://user:pw@localhost:5432/aeroscribe',
+    });
+    expect(config.store).toBe('postgres');
+    expect(config.databaseUrl).toBe('postgres://user:pw@localhost:5432/aeroscribe');
   });
 
   it('reads LOG_LEVEL leniently and ignores an unknown one', () => {

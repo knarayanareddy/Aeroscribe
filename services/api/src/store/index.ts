@@ -3,12 +3,15 @@ import { join } from 'node:path';
 import { FilesystemAuditStore } from './audit';
 import { FilesystemEvidenceStore } from './evidence';
 import { FilesystemRunStore } from './runs';
+import { createPostgresStores } from './postgres';
 import type { StoreBackend, StoreProbe, Stores } from './ports';
 
 export * from './ports';
 export * from './audit';
+export * from './chain';
 export * from './evidence';
 export * from './runs';
+export * from './postgres';
 
 /**
  * The store factory.
@@ -23,6 +26,15 @@ export interface StoreSettings {
   dataDir: string;
   /** `AEROSCRIBE_STORE`; validated by `loadConfig`. */
   store: StoreBackend;
+  /**
+   * `AEROSCRIBE_DATABASE_URL`. Required by `postgres` and rejected by
+   * `filesystem` in `loadConfig`, so by the time a factory runs it is either
+   * present or irrelevant.
+   */
+  databaseUrl?: string | null;
+  /** Injected by tests so chains are reproducible. */
+  clock?: () => Date;
+  newId?: () => string;
 }
 
 /**
@@ -64,6 +76,18 @@ export function createStores(settings: StoreSettings): Stores {
         audit: new FilesystemAuditStore(join(dataDir, 'audit.ndjson')),
         probe: () => probeFilesystem(dataDir),
       };
+    }
+    case 'postgres': {
+      if (!settings.databaseUrl) {
+        // `loadConfig` refuses this combination at boot; the factory checks
+        // again because a test or a script can call it directly.
+        throw new Error('AEROSCRIBE_STORE=postgres needs AEROSCRIBE_DATABASE_URL.');
+      }
+      return createPostgresStores({
+        databaseUrl: settings.databaseUrl,
+        ...(settings.clock ? { clock: settings.clock } : {}),
+        ...(settings.newId ? { newId: settings.newId } : {}),
+      });
     }
     default: {
       // Exhaustive: adding a member to StoreBackend without a case is a compile

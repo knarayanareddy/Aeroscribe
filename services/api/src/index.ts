@@ -28,7 +28,11 @@ export async function buildServer(env: NodeJS.ProcessEnv = process.env) {
 
   // One factory decides which adapter the process uses; every caller below sees
   // the ports, never a concrete class (ROADMAP § 8, D1).
-  const stores = createStores({ dataDir: config.dataDir, store: config.store });
+  const stores = createStores({
+    dataDir: config.dataDir,
+    store: config.store,
+    databaseUrl: config.databaseUrl,
+  });
 
   const literature = new LiteratureService({
     offline: config.offline,
@@ -90,7 +94,7 @@ export async function buildServer(env: NodeJS.ProcessEnv = process.env) {
     logger,
   });
 
-  return { app, config, orchestrator, logger };
+  return { app, config, orchestrator, logger, stores };
 }
 
 const isMain = process.argv[1]?.endsWith('index.ts') ?? false;
@@ -111,7 +115,7 @@ export interface StartServerOptions {
  * without opening a socket or signalling the test runner.
  */
 export function startServer(
-  { app, config, logger }: Awaited<ReturnType<typeof buildServer>>,
+  { app, config, logger, stores }: Awaited<ReturnType<typeof buildServer>>,
   {
     serve: serveFn = serve,
     // RULE-053 bans `console.log` in production code: the lifecycle lines go
@@ -127,7 +131,8 @@ export function startServer(
       `auth: ${config.apiKey ? 'API key required' : 'disabled (set AEROSCRIBE_API_KEY before exposing this)'}`,
     );
     log(
-      `literature: ${config.offline ? 'offline corpus' : 'live providers'} · data: ${config.dataDir}`,
+      `literature: ${config.offline ? 'offline corpus' : 'live providers'} · ` +
+        `store: ${config.store}${config.store === 'filesystem' ? ` (${config.dataDir})` : ''}`,
     );
   });
 
@@ -135,7 +140,22 @@ export function startServer(
   // flight finish their writes: a killed stage leaves a run that still says
   // "running" and no evidence record for the work it had already done.
   const shutdown = createShutdown({
-    close: (onClosed) => server.close(onClosed),
+    // Drain the pool after the listener closes: a `pg` client released mid-query
+    // would leave a transaction to be rolled back by the server's own timeout
+    // instead of by us.
+    close: (onClosed) =>
+      server.close(() => {
+        const draining = stores.close?.();
+        // The filesystem adapter holds nothing, so its shutdown stays
+        // synchronous; a pool is drained before the process is allowed to go.
+        if (draining === undefined) {
+          onClosed();
+          return;
+        }
+        void Promise.resolve(draining)
+          .catch(() => undefined)
+          .finally(onClosed);
+      }),
     exit,
     log: (message) => log(`[api] ${message}`),
   });

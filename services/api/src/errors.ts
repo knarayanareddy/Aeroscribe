@@ -41,6 +41,20 @@ export class CapabilityUnavailableError extends ApiError {
   }
 }
 
+/**
+ * The configured store cannot be reached.
+ *
+ * A `503`, not a `500`: nothing the client sent is wrong, and retrying later is
+ * the correct response. The message names the backend, never the connection
+ * string — a password in an error body is a secret leak with extra steps.
+ */
+export class StoreUnavailableError extends ApiError {
+  constructor(backend: string, message: string) {
+    super(503, 'store_unavailable', `${backend} store is unavailable: ${message}`);
+    this.name = 'StoreUnavailableError';
+  }
+}
+
 /** External service failed after the retry budget was exhausted (RULE-042). */
 export class UpstreamError extends ApiError {
   constructor(service: string, message: string, details?: unknown) {

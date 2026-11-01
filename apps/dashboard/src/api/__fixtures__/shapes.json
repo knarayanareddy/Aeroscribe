@@ -30,6 +30,7 @@
     "storage": {
       "auditPath": "string",
       "backend": "string",
+      "database": "null",
       "runsDir": "string"
     }
   },

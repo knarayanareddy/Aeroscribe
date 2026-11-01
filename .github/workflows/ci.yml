@@ -16,6 +16,10 @@ jobs:
   verify:
     name: Typecheck, lint, test and build
     runs-on: ubuntu-latest
+    # Covers the service's Postgres tests too, so it starts the same embedded
+    # server the `api` job does. Twenty minutes is generous against the ~8
+    # minutes this took before D2.
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -54,6 +58,7 @@ jobs:
   api:
     name: API (typecheck, tests, synthetic CFD smoke)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -70,7 +75,18 @@ jobs:
       - name: Typecheck the service
         run: npx tsc --noEmit -p services/api/tsconfig.json
 
-      # Hermetic: no network, no solver binary, temporary data directories.
+      # The store tests need a real Postgres: advisory locks, triggers and
+      # `jsonb` round-trips are the behaviour under test, so a double would
+      # prove only that the double works. `embedded-postgres` ships genuine
+      # server binaries as optional dependencies, which `npm ci` has already
+      # installed — no service container, no daemon. `AEROSCRIBE_TEST_DATABASE_URL`
+      # points the same harness at a managed server when one is available.
+      - name: Check the bundled Postgres binaries
+        run: |
+          ls node_modules/@embedded-postgres/
+          test -x "$(find node_modules/@embedded-postgres -name postgres -type f | head -1)"
+
+      # Hermetic otherwise: no network, no solver binary, temporary data directories.
       - name: Test the service
         run: npx vitest run services/api
 

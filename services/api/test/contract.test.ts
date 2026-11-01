@@ -172,6 +172,7 @@ beforeAll(async () => {
     latexBinary: null,
     latexTimeoutMs: 5_000,
     store: 'filesystem',
+    databaseUrl: null,
     logLevel: 'silent',
     version: '0.2.0',
     commit: 'contract',
