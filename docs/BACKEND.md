@@ -935,6 +935,8 @@ than reviewed configuration. Two further CI jobs cover both outcomes: `latex` in
 TeX Live and runs `npm run smoke:latex -- --require-pdf`, so the PDF path is exercised on every
 push instead of only where a developer happens to have TeX; `latex-without-engine` asserts the
 opposite outcome — the `.tex` is written, `typeset` is `"source-only"` and the blocker is named.
+The engine job also prints the failing engine's log tail as a check annotation: a LaTeX error is
+only actionable when it is quoted, and the job log is not always reachable from a script.
 
 ### Storage adapters
 
