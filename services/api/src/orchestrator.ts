@@ -11,7 +11,8 @@ import {
 import type { AuditAction, AuditStore, EvidenceKind, EvidenceStore, RunStore } from './store';
 import type { CfdService } from './cfd';
 import type { LiteratureService } from './literature';
-import { ApiError, conflict, notFound } from './errors';
+import { ApiError, ArtefactIntegrityError, conflict, notFound } from './errors';
+import { hashBytes } from './store/evidence';
 import { silentLogger, type Logger } from './lib/logger';
 import { scopeFields } from './lib/requestContext';
 import { DEFAULT_RUN_OPTIONS, type RunOptions, type StageHandler } from './agents/types';
@@ -27,6 +28,7 @@ import { complianceCheck, peerReview } from './agents/review';
 import { knowledgeAndSubmission } from './agents/knowledge';
 import type { ManuscriptRenderPayload } from '@aeroscribe/contract';
 import type { Coordinator, RunLease } from './coord';
+import type { BlobStore } from './blob';
 import { LatexService, NO_LATEX, type ArtefactKind } from './latex';
 import { recheckRun, referenceStatus } from './references/recheck';
 
@@ -68,6 +70,12 @@ export interface OrchestratorOptions {
    * lives here). Absent means one process, guarded by the in-flight set only.
    */
   coordination?: Coordinator;
+  /**
+   * Where stage artefacts are stored. Optional so a test that never produces
+   * one need not describe a blob store; a stage that does produce artefacts
+   * requires it, and says so rather than dropping the bytes.
+   */
+  blobs?: BlobStore;
   clock?: () => Date;
   newRunId?: () => string;
   defaultOptions?: Partial<RunOptions>;
@@ -142,6 +150,21 @@ export class Orchestrator {
     this.clock = options.clock ?? (() => new Date());
     this.newRunId = options.newRunId ?? (() => `run-${randomUUID()}`);
     this.logger = options.logger ?? silentLogger();
+  }
+
+  /** The configured blob store, or a refusal that names the wiring mistake. */
+  private blobStore(): BlobStore {
+    if (!this.options.blobs) {
+      throw new Error(
+        'The orchestrator was built without a blob store; artefacts cannot be stored.',
+      );
+    }
+    return this.options.blobs;
+  }
+
+  /** Where artefact bytes are kept, for the HTTP layer's artefact route. */
+  get blobs(): BlobStore {
+    return this.blobStore();
   }
 
   async createRun(request: CreateRunRequest): Promise<PipelineRun> {
@@ -282,6 +305,9 @@ export class Orchestrator {
         latex: this.latex,
         doiMaxAgeDays: this.options.doiMaxAgeDays ?? DEFAULT_DOI_MAX_AGE_DAYS,
         registry: this.options.registry,
+        // A stage that records artefact checksums needs somewhere to put the
+        // bytes; a missing store is a wiring bug, not a reason to drop them.
+        blobs: this.blobStore(),
         now: this.clock,
         options: stageOptions,
       });
@@ -589,6 +615,60 @@ export class Orchestrator {
   /** Read the audit trail for a run (or the whole log) without writing to it. */
   async auditTrail(filter: { runId?: string; action?: AuditAction; limit?: number } = {}) {
     return this.options.audit.read(filter);
+  }
+
+  /**
+   * The bytes an evidence record says it hashed, re-checked on the way out.
+   *
+   * Three distinct outcomes, and the difference matters to whoever is holding
+   * the incident: no such record (`404`), a record that names an artefact whose
+   * bytes were never stored — every record written before this endpoint existed,
+   * and a real gap rather than a lie (`404`, with the reason), and bytes that no
+   * longer hash to the recorded digest (`409`, naming both digests).
+   */
+  async artefact(seq: number, name: string) {
+    const record = await this.options.registry.get(seq);
+    if (!record) throw notFound(`No evidence record at sequence ${seq}.`);
+
+    const payload = record.payload as { artefacts?: unknown } | null;
+    const entries = Array.isArray(payload?.artefacts) ? payload.artefacts : [];
+    const entry = entries.find(
+      (candidate): candidate is { name: string; sha256: string; mediaType?: string } =>
+        typeof candidate === 'object' &&
+        candidate !== null &&
+        (candidate as { name?: unknown }).name === name &&
+        typeof (candidate as { sha256?: unknown }).sha256 === 'string',
+    );
+    if (!entry) {
+      const names = entries
+        .map((candidate) => (candidate as { name?: unknown }).name)
+        .filter((candidate): candidate is string => typeof candidate === 'string');
+      throw notFound(
+        `Evidence record ${seq} has no artefact "${name}".` +
+          (names.length > 0 ? ` It records: ${names.join(', ')}.` : ' It records none.'),
+      );
+    }
+
+    const bytes = await this.blobs.get(entry.sha256);
+    if (bytes === null) {
+      throw notFound(
+        `Evidence record ${seq} names "${name}" (sha256 ${entry.sha256}) but its bytes are not stored. ` +
+          'Older records carry digests only; nothing in this deployment can produce the file.',
+      );
+    }
+
+    const actual = hashBytes(bytes);
+    if (actual !== entry.sha256) {
+      throw new ArtefactIntegrityError(name, entry.sha256, actual);
+    }
+
+    return {
+      seq,
+      name,
+      sha256: entry.sha256,
+      mediaType: entry.mediaType ?? 'application/octet-stream',
+      bytes,
+    };
   }
 
   async verifyRegistry() {

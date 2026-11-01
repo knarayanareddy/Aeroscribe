@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PIPELINE_STAGES, STAGE_COUNT } from '@aeroscribe/pipeline';
+import { createFilesystemBlobStore } from '../src/blob';
 import { CfdService } from '../src/cfd';
 import { ApiError } from '../src/errors';
 import { LiteratureService } from '../src/literature';
@@ -29,6 +30,7 @@ function build(dataDir = directory): Orchestrator {
     audit = new FilesystemAuditStore(join(dataDir, 'audit.ndjson'));
   }
   return new Orchestrator({
+    blobs: createFilesystemBlobStore({ dataDir: dataDir }),
     runs,
     registry,
     audit,
@@ -247,6 +249,7 @@ describe('a full nine-stage run', () => {
     // weeks later, against the same data, with no re-check on record: the
     // generation-time verification is now older than the 30-day limit.
     const later = new Orchestrator({
+      blobs: createFilesystemBlobStore({ dataDir: directory }),
       runs,
       registry,
       audit,
@@ -437,6 +440,7 @@ describe('restart durability', () => {
 describe('failure handling', () => {
   it('marks the stage failed and rethrows when a handler throws', async () => {
     const broken = new Orchestrator({
+      blobs: createFilesystemBlobStore({ dataDir: directory }),
       runs,
       registry,
       audit,
@@ -476,6 +480,7 @@ describe('stage logging', () => {
   it('pairs every stage start with an end that names the evidence it wrote', async () => {
     const lines: Array<Record<string, unknown>> = [];
     const logged = new Orchestrator({
+      blobs: createFilesystemBlobStore({ dataDir: directory }),
       runs,
       registry,
       audit,
@@ -513,6 +518,7 @@ describe('stage logging', () => {
   it('logs a failed stage with its error and still marks the run failed', async () => {
     const lines: Array<Record<string, unknown>> = [];
     const broken = new Orchestrator({
+      blobs: createFilesystemBlobStore({ dataDir: directory }),
       runs,
       registry,
       audit,
@@ -593,6 +599,7 @@ describe('concurrent advances', () => {
     };
 
     const slow = new Orchestrator({
+      blobs: createFilesystemBlobStore({ dataDir: directory }),
       runs,
       registry,
       audit,

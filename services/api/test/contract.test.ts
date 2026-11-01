@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createFilesystemBlobStore } from '../src/blob';
 import { CfdService } from '../src/cfd';
 import type { Config } from '../src/config';
 import { describeCapabilities } from '../src/config';
@@ -185,6 +186,7 @@ beforeAll(async () => {
   const stores = createStores({ dataDir: directory, store: 'filesystem' });
 
   const orchestrator = new Orchestrator({
+    blobs: createFilesystemBlobStore({ dataDir: directory }),
     runs: stores.runs,
     registry: stores.evidence,
     audit: stores.audit,

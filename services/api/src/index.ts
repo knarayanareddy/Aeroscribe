@@ -12,6 +12,7 @@ import {
 import { CfdService } from './cfd';
 import { createStores } from './store';
 import { createCoordinator } from './coord';
+import { createBlobStore } from './blob';
 import { detectSu2, detectLatex } from './config';
 import { LatexService } from './latex';
 import { createLogger } from './lib/logger';
@@ -84,6 +85,10 @@ export async function buildServer(env: NodeJS.ProcessEnv = process.env) {
     logger,
   });
 
+  // Artefact bytes: content-addressed under the data directory today, so the
+  // digest a record carries can be checked against a file a reader can fetch.
+  const blobs = createBlobStore({ dataDir: config.dataDir });
+
   const orchestrator = new Orchestrator({
     runs: stores.runs,
     registry: stores.evidence,
@@ -92,6 +97,7 @@ export async function buildServer(env: NodeJS.ProcessEnv = process.env) {
     cfd,
     latex,
     coordination,
+    blobs,
     logger,
     doiMaxAgeDays: config.doiMaxAgeDays,
   });
@@ -102,10 +108,11 @@ export async function buildServer(env: NodeJS.ProcessEnv = process.env) {
     capabilities: () => describeCapabilities(config),
     stores,
     coordinator: coordination,
+    blobs,
     logger,
   });
 
-  return { app, config, orchestrator, logger, stores, coordination };
+  return { app, config, orchestrator, logger, stores, coordination, blobs };
 }
 
 const isMain = process.argv[1]?.endsWith('index.ts') ?? false;
@@ -189,6 +196,7 @@ export * from './orchestrator';
 export * from './config';
 export * from './store';
 export * from './coord';
+export * from './blob';
 export * from './literature';
 export * from './cfd';
 export * from './claims/verify';

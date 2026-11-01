@@ -284,7 +284,12 @@ export interface CfdEvidencePayload {
     valid: boolean;
     reason?: string;
   } | null;
-  artefacts: Array<{ name: string; sha256: string }>;
+  /**
+   * Files the study produced. `bytes` and `mediaType` let a client know what it
+   * is about to download; the bytes themselves are served (and re-hashed) by
+   * `GET /api/v1/evidence/:seq/artefacts/:name`.
+   */
+  artefacts: Array<{ name: string; sha256: string; bytes: number; mediaType: string }>;
   computedAt: string;
 }
 
@@ -613,6 +618,8 @@ export interface Capabilities {
     auditPath: string;
     /** The database, with any password removed; `null` for `filesystem`. */
     database: string | null;
+    /** Where artefact bytes are stored, content-addressed by SHA-256. */
+    blobsDir: string;
   };
   /**
    * Where the rate limit and the stage lock are enforced.

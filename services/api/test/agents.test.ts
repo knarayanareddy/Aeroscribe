@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PIPELINE_STAGES, createRun, type PipelineRun } from '@aeroscribe/pipeline';
+import { createFilesystemBlobStore } from '../src/blob';
 import { CfdService } from '../src/cfd';
 import { UnverifiableClaimError } from '../src/errors';
 import { LiteratureService, type ReferenceRecord } from '../src/literature';
@@ -54,6 +55,7 @@ function context(stageId = 0, options: Partial<typeof DEFAULT_RUN_OPTIONS> = {})
     literature,
     cfd,
     registry,
+    blobs: createFilesystemBlobStore({ dataDir: directory }),
     now: () => new Date('2026-10-30T10:00:00.000Z'),
     options: { ...DEFAULT_RUN_OPTIONS, paperLimit: 3, verifyTop: 0, ...options },
   };

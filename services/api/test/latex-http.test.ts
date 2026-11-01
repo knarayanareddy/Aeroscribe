@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Capabilities, LatexCapability } from '@aeroscribe/contract';
 import { STAGE_COUNT } from '@aeroscribe/pipeline';
+import { createFilesystemBlobStore } from '../src/blob';
 import { CfdService } from '../src/cfd';
 import type { Config } from '../src/config';
 import { describeCapabilities } from '../src/config';
@@ -65,6 +66,7 @@ function build(engine: LatexCapability): ReturnType<typeof createApp> {
     timeoutMs: 5_000,
   });
   orchestrator = new Orchestrator({
+    blobs: createFilesystemBlobStore({ dataDir: directory }),
     runs: new FilesystemRunStore(join(directory, 'runs')),
     registry: new FilesystemEvidenceStore(join(directory, 'registry.ndjson')),
     audit: new FilesystemAuditStore(join(directory, 'audit.ndjson')),
@@ -200,6 +202,7 @@ describe('without a TeX engine', () => {
   it('409s for a run that has not reached stage 8, and 404s for an unknown run', async () => {
     // `beforeEach` already advanced this run; a second run has no render yet.
     orchestrator = new Orchestrator({
+      blobs: createFilesystemBlobStore({ dataDir: directory }),
       runs: new FilesystemRunStore(join(directory, 'runs')),
       registry: new FilesystemEvidenceStore(join(directory, 'registry.ndjson')),
       audit: new FilesystemAuditStore(join(directory, 'audit.ndjson')),

@@ -2,6 +2,7 @@ import type { PipelineRun, StageInfo } from '@aeroscribe/pipeline';
 import type { CfdService } from '../cfd';
 import type { LatexService } from '../latex';
 import type { LiteratureService } from '../literature';
+import type { BlobStore } from '../blob';
 import type { EvidenceKind, EvidenceStore } from '../store';
 
 export interface StageContext {
@@ -12,6 +13,11 @@ export interface StageContext {
   /** Renders the manuscript; typesets only when a TeX engine answered the probe. */
   latex: LatexService;
   registry: EvidenceStore;
+  /**
+   * Where artefact bytes are stored, so the digest in a record can be checked
+   * against something a reader can fetch.
+   */
+  blobs: BlobStore;
   now: () => Date;
   /** How old a generation-time DOI verification may be before it counts as stale. */
   doiMaxAgeDays: number;

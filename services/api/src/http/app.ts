@@ -9,6 +9,7 @@ import type { Orchestrator } from '../orchestrator';
 import { EVIDENCE_KINDS, type EvidenceKind, type Stores } from '../store';
 import { buildPolicy, verifyClaims } from '../claims/verify';
 import { createProcessCoordinator, type Coordinator } from '../coord';
+import type { BlobStore } from '../blob';
 
 export interface AppDependencies {
   orchestrator: Orchestrator;
@@ -27,6 +28,11 @@ export interface AppDependencies {
    * Injected so a test can shorten the window or point at a Redis.
    */
   coordinator?: Coordinator;
+  /**
+   * Where artefact bytes live, so `/health` can say whether they are readable
+   * as well as whether records can be written.
+   */
+  blobs?: BlobStore;
   /**
    * Structured logger. `buildServer` always supplies one; the silent default
    * exists so a test can build the app without describing how it logs.
@@ -66,6 +72,7 @@ export function createApp({
   capabilities,
   stores,
   coordinator = createProcessCoordinator(),
+  blobs,
   logger = silentLogger(),
 }: AppDependencies): Hono {
   const app = new Hono();
@@ -185,14 +192,16 @@ export function createApp({
    */
   app.get('/health', async (context) => {
     const caps = await capabilities();
-    const [store, coordination] = await Promise.all([
+    const [store, coordination, blobProbe] = await Promise.all([
       stores ? stores.probe() : Promise.resolve(null),
       coordinator.probe(),
+      blobs ? blobs.probe() : Promise.resolve(null),
     ]);
     // Two independent ways to be unhealthy: state that cannot be written, and
     // shared state that cannot be reached (so a limit two instances were
     // supposed to share is not being enforced).
-    const healthy = (store === null || store.ok) && coordination.ok;
+    const healthy =
+      (store === null || store.ok) && coordination.ok && (blobProbe === null || blobProbe.ok);
     return context.json(
       {
         status: healthy ? 'ok' : 'degraded',
@@ -204,6 +213,7 @@ export function createApp({
         authRequired: caps.auth.required,
         ...(store ? { store } : {}),
         coordination,
+        ...(blobProbe ? { blobs: blobProbe } : {}),
       },
       healthy ? 200 : 503,
     );
@@ -342,6 +352,25 @@ export function createApp({
   app.get('/api/v1/evidence/verify', async (context) =>
     context.json(await orchestrator.verifyRegistry()),
   );
+
+  // An evidence record names its artefacts by digest; this route hands back the
+  // bytes and re-hashes them first, so what a client downloads is what the chain
+  // recorded. Altered bytes answer `409` rather than streaming anyway.
+  app.get('/api/v1/evidence/:seq/artefacts/:name', async (context) => {
+    const seq = Number.parseInt(context.req.param('seq'), 10);
+    if (!Number.isInteger(seq) || seq < 0)
+      throw badRequest('"seq" must be a non-negative integer.');
+
+    const artefact = await orchestrator.artefact(seq, context.req.param('name'));
+    context.header('content-type', artefact.mediaType);
+    context.header('x-content-sha256', artefact.sha256);
+    context.header('etag', `"sha256-${artefact.sha256}"`);
+    context.header(
+      'content-disposition',
+      `inline; filename="${artefact.name.replace(/["\\]/g, '_')}"`,
+    );
+    return context.body(new Uint8Array(artefact.bytes).buffer as ArrayBuffer);
+  });
 
   // The audit trail is the answer to "who approved this gate": it is readable
   // per run, and never writable over HTTP.

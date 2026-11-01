@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createRun } from '@aeroscribe/pipeline';
 import type { Config } from '../src/config';
 import { describeCapabilities, loadConfig } from '../src/config';
+import { createFilesystemBlobStore } from '../src/blob';
 import { CfdService } from '../src/cfd';
 import { StoreUnavailableError } from '../src/errors';
 import { createApp } from '../src/http/app';
@@ -314,6 +315,7 @@ describe('an unreachable database', () => {
     };
 
     const orchestrator = new Orchestrator({
+      blobs: createFilesystemBlobStore({ dataDir: dataDir }),
       runs: stores.runs,
       registry: stores.evidence,
       audit: stores.audit,

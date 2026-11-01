@@ -251,6 +251,10 @@ export async function describeCapabilities(config: Config): Promise<Capabilities
       runsDir: config.store === 'filesystem' ? `${config.dataDir}/runs` : '',
       auditPath: config.store === 'filesystem' ? `${config.dataDir}/audit.ndjson` : '',
       database: config.databaseUrl === null ? null : redactDatabaseUrl(config.databaseUrl),
+      // Artefact bytes are content-addressed files under the data directory in
+      // every mode; a record's digest is checkable only against something that
+      // is actually stored.
+      blobsDir: `${config.dataDir}/blobs`,
     },
     coordination: {
       backend: config.coordination,

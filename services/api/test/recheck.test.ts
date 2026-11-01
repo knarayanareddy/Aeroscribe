@@ -15,6 +15,7 @@ import {
   referenceStatus,
   summarise,
 } from '../src/references/recheck';
+import { createFilesystemBlobStore } from '../src/blob';
 import { CfdService } from '../src/cfd';
 import { Orchestrator } from '../src/orchestrator';
 import { FilesystemAuditStore } from '../src/store';
@@ -417,6 +418,7 @@ describe('the acceptance path', () => {
     };
 
     const orchestrator = new Orchestrator({
+      blobs: createFilesystemBlobStore({ dataDir: directory }),
       runs: new FilesystemRunStore(join(directory, 'runs')),
       registry,
       audit: new FilesystemAuditStore(join(directory, 'audit.ndjson')),

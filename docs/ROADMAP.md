@@ -600,19 +600,30 @@ compose file into a single-instance deployment should not silently acquire a net
 on the request path. `/health` reports `coordination: { backend, ok, detail }`, so the difference
 is visible from outside.
 
-**D4 — S3 (2 d).** `AEROSCRIBE_S3_BUCKET`, `AEROSCRIBE_S3_ENDPOINT` (MinIO), `AEROSCRIBE_S3_REGION`;
-credentials from the standard `AWS_*` chain. Keys are content-addressed (`sha256/<hex>`), so a
-re-upload is a no-op and a mismatch is detectable. `cfd-run` artefacts gain `uri`; new endpoint
-`GET /api/v1/evidence/:seq/artefacts/:name` streams the object **after** re-hashing it and
-answers `409` on mismatch. Local disk remains the default; when S3 is configured, the working
-copy is deleted after upload.
+**D4 — artefact storage (2 d).** Split in two, because the half that can be proved here is the
+half the reader cares about.
+
+_D4a — done._ A content-addressed `BlobStore` (`services/api/src/blob/`), the evidence payload
+carrying `{ name, sha256, bytes, mediaType }`, and
+`GET /api/v1/evidence/:seq/artefacts/:name`, which streams the bytes **after** re-hashing them
+and answers `409 artefact_hash_mismatch` when they no longer match the record. Storage is local
+in every mode: `<dataDir>/blobs/sha256/<aa>/<rest>`, written with an atomic rename, never
+overwritten under a live digest.
+
+_D4b — not started._ `AEROSCRIBE_S3_BUCKET`, `AEROSCRIBE_S3_ENDPOINT` (MinIO),
+`AEROSCRIBE_S3_REGION`, credentials from the standard `AWS_*` chain: an adapter behind the same
+`BlobStore` port, and — when S3 is configured — deleting the working copy after upload. Two
+things are missing before it can be written honestly: an S3 endpoint to test `409` against
+(`dl.min.io` is unreachable from this environment and there is no Docker daemon for a service
+container), and a decision about whether a shared bucket replaces or mirrors the local copy.
 
 **Tasks.**
 
 - [x] D1 ports + adapter names (`FilesystemRunStore`, …) and a `store` factory.
 - [x] D2 schema, migrations, three stores, `db:migrate`, `db:verify`, `db:import`, trigger.
 - [x] D3 Redis limiter and run lock; `/health` reports both.
-- [ ] D4 blob store, artefact endpoint, artefact `uri` in records.
+- [x] D4a blob store, artefact endpoint, size and media type on recorded artefacts.
+- [ ] D4b S3 adapter behind `BlobStore` and the `uri` on `cfd-run` artefacts.
 - [x] **Contract suite**: `services/api/test/store-contract.test.ts` runs the same scenarios
       against every configured backend (create/get/list, append/verify, tamper detection,
       concurrent appends from two clients, audit read), on filesystem and Postgres.
@@ -635,7 +646,7 @@ copy is deleted after upload.
 
 ### Status of D
 
-**D1, D2 and D3 are done. D4 (object storage) is not started.**
+**D1, D2, D3 and D4a are done. D4b (object storage) is not started.**
 
 **D1 — ports.** `services/api/src/store/ports.ts` defines `RunStore`, `EvidenceStore` and
 `AuditStore`; `createStores()` is the only place an adapter is chosen, and the orchestrator,
@@ -676,12 +687,18 @@ implementation and the Redis one. What it guarantees, each with a test in
   answer `503 coordination_unavailable` and `/health` answer `503`; it never falls back to a
   local counter that would make the limit look enforced.
 
-**Why D4 is not here.** MinIO's installer fetches from `dl.min.io`, which this environment
-cannot reach, and there is no Docker daemon for a service container. The artefact endpoint's
-guarantee — re-hash on the way out and `409` on a mismatch — is not something a double can
-prove.
+**D4a — artefact bytes.** Stage 4 stores the bytes it hashed (`blobs/sha256/<aa>/<rest>`), and
+`GET /api/v1/evidence/:seq/artefacts/:name` re-hashes them before serving. A record whose bytes
+are gone says so; a file that no longer matches its digest answers `409` with both digests and
+no body. Verified against the synthetic solver's real artefacts in `artefacts-http.test.ts`.
 
-**Acceptance (D2 and D3 met; the D4 item remains).**
+**Why D4b is not here.** MinIO's installer fetches from `dl.min.io`, which this environment
+cannot reach, and there is no Docker daemon for a service container. The S3 adapter is the one
+part of D4 whose behaviour — signing, key layout against a real server, a `409` on altered
+object storage — cannot be exercised here, and an untested adapter is a claim. `BlobStore` is
+the seam it will slot into; nothing outside `createBlobStore` changes.
+
+**Acceptance (D2, D3 and D4a met; the S3 half of item 5 remains).**
 
 1. **Met.** The contract suite is green on both backends, and `postgres.test.ts` runs two
    connections appending 50 records each into one chain that a second reader verifies.
@@ -693,8 +710,11 @@ append-only: UPDATE on evidence is not permitted`; so do `DELETE` and `TRUNCATE`
 4. **Met.** `redis.test.ts` runs two apps over one Redis: requests 1–60 alternate between
    them and all return `200`, the 61st returns `429`. A lease taken by one instance makes the
    other's `advance` answer `409` with nothing written; after release the same call proceeds.
-5. An artefact uploaded to MinIO round-trips through the new endpoint with a matching digest; a
-   byte flipped in MinIO yields `409`.
+5. **Partly met.** The round trip and the `409` hold against the local content-addressed
+   store: `artefacts-http.test.ts` stores a stage's real artefacts, fetches each one, re-hashes
+   it against the digest in the record, then flips a byte on disk and asserts the endpoint
+   answers `409` with both digests and no body. The **MinIO** half is not met: there is no S3
+   server to test against here, and a fake would prove only that the fake works.
 
 **Risks.** Dual-store support doubles the surface for a while (mitigated by the contract suite,
 which is written first, D1); Postgres advisory locks are a bottleneck under very high write rates
@@ -1038,7 +1058,7 @@ Only after the acceptance criteria hold.
 | -------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `IMPLEMENTATION_STATUS.md` → dashboard | Implemented, fixture data                                | Implemented; **live against the API** when `VITE_API_URL` is set, fixtures otherwise, labelled either way                                                                       |
 | → LaTeX compilation                    | Implemented (B, § 6)                                     | `.tex` + inline bibliography + pgfplots figures always; PDF and a toolchain version when `LATEX_BINARY` answers, otherwise `typeset: "source-only"` and a named stage-8 blocker |
-| → Persistence                          | Implemented: filesystem **or** Postgres (D1–D2)          | Implemented: filesystem **or** Postgres, shared Redis for limits/locks (D1–D3); S3 artefacts                                                                                    |
+| → Persistence                          | Implemented: filesystem **or** Postgres (D1–D2)          | Implemented: filesystem **or** Postgres, shared Redis for limits/locks, content-addressed artefact bytes (D1–D4a); S3 is D4b                                                    |
 | → Authentication                       | Partial: one bearer token                                | OIDC accounts + roles; token mode for scripts; audit actor from the verified subject                                                                                            |
 | → CI / deployment                      | Typecheck, lint, coverage, builds, image build           | … plus image publish (GHCR, multi-arch, SBOM) and a staging deploy gated by a post-deploy smoke                                                                                 |
 | → CFD solver adapter                   | Real SU2 + synthetic                                     | unchanged — this plan does not touch the solver                                                                                                                                 |

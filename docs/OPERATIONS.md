@@ -87,6 +87,7 @@ npm run db:import -- ./data                 # copy a filesystem deployment in, v
 | `200`, `store.ok:true`                 | The process can write. Everything reported is current.                                                                         |
 | `503`, `store.ok:false`                | The configured store did not answer, or the data directory is not writable. **Writes will fail**; the message names the probe. |
 | `503`, `coordination.ok:false`         | Redis was configured and did not answer. Requests are refused (`503 coordination_unavailable`) rather than let through.        |
+| `503`, `blobs.ok:false`                | The artefact directory is not writable: stages can still record digests, but their bytes cannot be stored or fetched.          |
 | `coordination.backend:"process"`       | Rate limits and the stage lock are per instance: two replicas each get 60 req/min and may run the same stage.                  |
 | `authRequired:false`                   | `AEROSCRIBE_API_KEY` is unset. Anyone who can reach the port can drive the pipeline.                                           |
 | `capabilities.cfd.su2.available:false` | Stage 4 runs the synthetic benchmark and labels the output as such.                                                            |
@@ -152,7 +153,31 @@ capacity trade-off.
 
 ---
 
-## 7. Keys
+## 7. Artefacts
+
+Stage 4 stores the bytes it hashed under `<AEROSCRIBE_DATA_DIR>/blobs/sha256/<aa>/<rest>`, and
+the record carries the digest, size and media type:
+
+```sh
+curl -s -o study.json -D - \
+  localhost:8787/api/v1/evidence/12/artefacts/gci-study.json
+# x-content-sha256: <the digest the record holds>
+sha256sum study.json    # must match, or the API would have answered 409
+```
+
+| Answer | What to do                                                                                    |
+| ------ | --------------------------------------------------------------------------------------------- |
+| `200`  | Keep the file; compare `sha256sum` with the `x-content-sha256` header if it matters.          |
+| `409`  | The bytes on disk no longer match the chain. Preserve them and follow § 10; do not re-export. |
+| `404`  | Wrong name, or a record whose bytes were never stored (records written before this existed).  |
+
+Back the blobs up with the rest of the data directory or dump. A restore that brings back the
+registry but not `blobs/` still verifies — the chain only covers digests — but every artefact
+fetch then answers `404`, which is why § 5 restores both together.
+
+---
+
+## 8. Keys
 
 - `AEROSCRIBE_API_KEY` — one bearer token, compared in constant time. Rotate by setting the new
   value and restarting; there is no overlap window (single token).
@@ -163,7 +188,7 @@ capacity trade-off.
 
 ---
 
-## 8. DOI re-checks
+## 9. DOI re-checks
 
 Verification is never automatic. Schedule it from cron:
 
@@ -176,7 +201,7 @@ whose references are in that state, so a red exit here is an incident, not a war
 
 ---
 
-## 9. When verification fails
+## 10. When verification fails
 
 1. `npm run db:verify` (or `GET /api/v1/evidence/verify` on a filesystem deployment) names the
    first broken sequence number and the reason.
@@ -193,7 +218,7 @@ read is not a chain that passed.
 
 ---
 
-## 10. Not built
+## 11. Not built
 
 Stated here so nobody assumes it exists:
 
@@ -204,8 +229,10 @@ Stated here so nobody assumes it exists:
   default `process`, two replicas each get 60 req/min and can both advance the same run; the
   `/health` body names the backend. With `redis`, both are shared — and a Redis outage makes the
   API answer `503` rather than silently falling back to per-process counting.
-- **No object storage.** CFD artefacts and rendered manuscripts are local files; the durable
-  record is their SHA-256 in the chain. D4 is not built.
+- **No object storage.** Artefact bytes are content-addressed local files; the endpoint
+  re-hashes them on the way out, but a deployment cannot share them between hosts, and a
+  redeploy without a volume loses them (the chain still verifies; the fetches 404). S3/MinIO is
+  D4b and is not built.
 - **No migrations backwards.** Forward-only. Rolling back a release means restoring a dump
   taken before it.
 - **No scheduler.** Nothing advances a run or re-checks a DOI on its own; both are cron or
