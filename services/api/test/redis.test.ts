@@ -29,6 +29,14 @@ import { redisAvailability, startRedis, type RedisFixture } from './support/redi
 
 const availability = redisAvailability();
 
+// A skip is the right answer on a laptop without Redis and the wrong answer on
+// a runner that was told to provide one: the jobs in `.github/workflows/ci.yml`
+// start a `redis:7` service, so a skip there means the variable or the service
+// is broken and the suite silently stopped testing the thing it exists for.
+if (process.env.GITHUB_ACTIONS === 'true' && !availability.available) {
+  throw new Error(`Redis is required on CI. ${(availability as { reason: string }).reason}`);
+}
+
 describe('redactRedisUrl', () => {
   it('removes credentials and leaves the address', () => {
     expect(redactRedisUrl('redis://user:hunter2@cache.internal:6379/0')).toBe(
