@@ -156,7 +156,16 @@ jobs:
             texlive-latex-recommended texlive-pictures
 
       - name: Typeset the manuscript
-        run: npm run smoke:latex -- --require-pdf
+        run: |
+          set +e
+          output=$(npm run smoke:latex -- --require-pdf 2>&1)
+          status=$?
+          printf '%s\n' "$output"
+          if [ "$status" -ne 0 ]; then
+            tail=$(printf '%s' "$output" | tail -c 2400 | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g')
+            echo "::error title=LaTeX failure::$tail"
+          fi
+          exit "$status"
         env:
           LATEX_BINARY: /usr/bin/pdflatex
           AEROSCRIBE_DATA_DIR: ${{ runner.temp }}/aeroscribe-data
