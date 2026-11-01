@@ -43,6 +43,15 @@ export interface PipelineRun {
   noveltyScore: number;
   paperTitle: string;
   stages: StageInfo[];
+  /**
+   * The OIDC subject that created the run, when the deployment has accounts.
+   *
+   * Absent for a run created in `none`/`token` mode and for every run stored
+   * before accounts existed. Authorization treats "no owner" as "nobody's run":
+   * only a reviewer or an admin may read it, because handing historical runs to
+   * whoever logs in first would be a silent grant.
+   */
+  ownerSub?: string;
 }
 
 export interface Paper {

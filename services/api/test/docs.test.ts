@@ -16,13 +16,13 @@ async function readRepoFile(path: string): Promise<string> {
 }
 
 interface Route {
-  method: 'GET' | 'POST';
+  method: 'GET' | 'POST' | 'PATCH';
   path: string;
 }
 
-/** Routes registered with `app.get(...)` / `app.post(...)` in the app factory. */
+/** Routes registered with `app.get(...)` / `.post(...)` / `.patch(...)`. */
 function routesFromSource(source: string): Route[] {
-  return Array.from(source.matchAll(/app\.(get|post)\(\s*'([^']+)'/g), (match) => ({
+  return Array.from(source.matchAll(/app\.(get|post|patch)\(\s*'([^']+)'/g), (match) => ({
     method: match[1]!.toUpperCase() as Route['method'],
     path: match[2]!,
   }));
@@ -31,7 +31,7 @@ function routesFromSource(source: string): Route[] {
 /** Rows of the endpoint table in the HTTP API section of the backend map. */
 function routesFromDocs(source: string): Route[] {
   const section = source.slice(source.indexOf('## 8. HTTP API'), source.indexOf('## 9.'));
-  return Array.from(section.matchAll(/^\|\s*(GET|POST)\s*\|\s*`([^`]+)`/gm), (match) => ({
+  return Array.from(section.matchAll(/^\|\s*(GET|POST|PATCH)\s*\|\s*`([^`]+)`/gm), (match) => ({
     method: match[1] as Route['method'],
     // The table documents query parameters in the same cell; the router does not.
     path: match[2]!.split('?')[0]!,

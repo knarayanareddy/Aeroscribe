@@ -13,6 +13,9 @@ name: Deploy to staging
 # What it needs, all of it from the `staging` environment:
 #   secrets  AEROSCRIBE_SSH_HOST, AEROSCRIBE_SSH_USER, AEROSCRIBE_SSH_KEY,
 #            AEROSCRIBE_SSH_KNOWN_HOSTS, AEROSCRIBE_API_KEY, AEROSCRIBE_DB_PASSWORD
+#          vars:   AEROSCRIBE_AUTH (token|oidc, default token), OIDC_ISSUER,
+#                  OIDC_AUDIENCE, OIDC_CLIENT_ID, AEROSCRIBE_ADMIN_SUBS — the last
+#                  four are required for oidc and ignored by token
 #   vars     AEROSCRIBE_STAGING_URL, AEROSCRIBE_STAGING_DOMAIN,
 #            AEROSCRIBE_DEPLOY_PATH (default /opt/aeroscribe),
 #            AEROSCRIBE_STAGING_INSECURE (optional, 'true' for a self-signed host)
@@ -142,6 +145,11 @@ jobs:
           CONTACT_EMAIL: ${{ vars.AEROSCRIBE_CONTACT_EMAIL }}
           OFFLINE: ${{ vars.AEROSCRIBE_OFFLINE }}
           SEMANTIC_SCHOLAR_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
+          AUTH_MODE: ${{ vars.AEROSCRIBE_AUTH || 'token' }}
+          OIDC_ISSUER_URL: ${{ vars.OIDC_ISSUER }}
+          OIDC_AUDIENCE_ID: ${{ vars.OIDC_AUDIENCE }}
+          OIDC_CLIENT_ID_VALUE: ${{ vars.OIDC_CLIENT_ID }}
+          ADMIN_SUBS: ${{ vars.AEROSCRIBE_ADMIN_SUBS }}
         run: |
           set -euo pipefail
           TARGET="${SSH_USER}@${SSH_HOST}"
@@ -160,7 +168,14 @@ jobs:
             echo "AEROSCRIBE_DOMAIN=${DOMAIN:-localhost}"
             echo "AEROSCRIBE_HTTP_PORT=80"
             echo "AEROSCRIBE_HTTPS_PORT=443"
+            # Which credential this stack accepts. `token` needs the key below;
+            # `oidc` refuses one, and needs an issuer and an audience instead.
+            echo "AEROSCRIBE_AUTH=${AUTH_MODE}"
             echo "AEROSCRIBE_API_KEY=${API_KEY}"
+            echo "OIDC_ISSUER=${OIDC_ISSUER_URL:-}"
+            echo "OIDC_AUDIENCE=${OIDC_AUDIENCE_ID:-}"
+            echo "OIDC_CLIENT_ID=${OIDC_CLIENT_ID_VALUE:-}"
+            echo "AEROSCRIBE_ADMIN_SUBS=${ADMIN_SUBS:-}"
             echo "AEROSCRIBE_DB_PASSWORD=${DB_PASSWORD}"
             echo "AEROSCRIBE_OFFLINE=${OFFLINE:-true}"
             echo "AEROSCRIBE_CONTACT_EMAIL=${CONTACT_EMAIL:-}"

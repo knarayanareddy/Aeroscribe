@@ -84,16 +84,16 @@ npm run db:import -- ./data                 # copy a filesystem deployment in, v
 
 ## 4. Health and what it means
 
-| `GET /health`                          | Meaning                                                                                                                        |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `200`, `store.ok:true`                 | The process can write. Everything reported is current.                                                                         |
-| `503`, `store.ok:false`                | The configured store did not answer, or the data directory is not writable. **Writes will fail**; the message names the probe. |
-| `503`, `coordination.ok:false`         | Redis was configured and did not answer. Requests are refused (`503 coordination_unavailable`) rather than let through.        |
-| `503`, `blobs.ok:false`                | The artefact directory is not writable: stages can still record digests, but their bytes cannot be stored or fetched.          |
-| `coordination.backend:"process"`       | Rate limits and the stage lock are per instance: two replicas each get 60 req/min and may run the same stage.                  |
-| `authRequired:false`                   | `AEROSCRIBE_API_KEY` is unset. Anyone who can reach the port can drive the pipeline.                                           |
-| `capabilities.cfd.su2.available:false` | Stage 4 runs the synthetic benchmark and labels the output as such.                                                            |
-| `capabilities.latex.available:false`   | Stage 8 writes the `.tex` and blocks on the missing PDF.                                                                       |
+| `GET /health`                          | Meaning                                                                                                                                                                          |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `200`, `store.ok:true`                 | The process can write. Everything reported is current.                                                                                                                           |
+| `503`, `store.ok:false`                | The configured store did not answer, or the data directory is not writable. **Writes will fail**; the message names the probe.                                                   |
+| `503`, `coordination.ok:false`         | Redis was configured and did not answer. Requests are refused (`503 coordination_unavailable`) rather than let through.                                                          |
+| `503`, `blobs.ok:false`                | The artefact directory is not writable: stages can still record digests, but their bytes cannot be stored or fetched.                                                            |
+| `coordination.backend:"process"`       | Rate limits and the stage lock are per instance: two replicas each get 60 req/min and may run the same stage.                                                                    |
+| `authMode:none`                        | no credential is configured: `AEROSCRIBE_AUTH=none`, or unset with no `AEROSCRIBE_API_KEY`. Anyone who can reach the API can drive it — deliberate on a laptop, never on a host. |
+| `capabilities.cfd.su2.available:false` | Stage 4 runs the synthetic benchmark and labels the output as such.                                                                                                              |
+| `capabilities.latex.available:false`   | Stage 8 writes the `.tex` and blocks on the missing PDF.                                                                                                                         |
 
 Writes against an unreachable database return `503 store_unavailable`. Nothing is written to
 disk as a fallback and no partial record is left behind.
@@ -181,8 +181,15 @@ fetch then answers `404`, which is why § 5 restores both together.
 
 ## 8. Keys
 
-- `AEROSCRIBE_API_KEY` — one bearer token, compared in constant time. Rotate by setting the new
-  value and restarting; there is no overlap window (single token).
+- `AEROSCRIBE_API_KEY` — in `token` mode, one bearer token, compared in constant time. Rotate by
+  setting the new value and restarting; there is no overlap window (single token). In `oidc` mode
+  it must be empty: the credential is an access token the API verifies, not a secret it holds.
+- `OIDC_ISSUER` / `OIDC_AUDIENCE` — `oidc` mode only. Not secrets (both are public by
+  specification), so they live in a workflow variable rather than a secret; the issuer must be
+  `https` and must match its own discovery document or the API refuses to boot, and answers
+  `503 auth_unavailable` if it drifts at runtime.
+- `AEROSCRIBE_ADMIN_SUBS` — `oidc` mode only. The deployment's admin list; a login can promote from
+  it and never demote, so `PATCH /api/v1/users/:sub` remains the only way down.
 - `SEMANTIC_SCHOLAR_API_KEY` — server-side only, never sent to a browser, masked in logs.
 - The database password lives in `AEROSCRIBE_DATABASE_URL`, the Redis password in
   `AEROSCRIBE_REDIS_URL`. Both are redacted (`redactDatabaseUrl`, `redactRedisUrl`) before

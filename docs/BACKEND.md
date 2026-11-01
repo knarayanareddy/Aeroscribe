@@ -589,38 +589,46 @@ the ASME suggestion, 15 % is used here because three grids is the minimum to est
 
 ## 8. HTTP API
 
-Base path `/api/v1`. Authentication applies to `/api/v1/*` when `AEROSCRIBE_API_KEY` is
-set (`Authorization: Bearer <key>`); `/health` is always open. Errors are always
+Base path `/api/v1`. `/health`, `/api/v1/capabilities` and `/api/v1/auth/config` are always
+open; everything else needs a credential in whichever of the three auth modes the process was
+booted with (`AEROSCRIBE_AUTH`, §9): nothing at all (`none`), one shared key (`token`), or a
+verified OIDC identity (`oidc`). Errors are always
 `{ "error": { "code", "message", "details? } }`.
 
-| Method | Path                                     | Purpose                                         |
-| ------ | ---------------------------------------- | ----------------------------------------------- |
-| GET    | `/health`                                | liveness, capabilities, `authRequired`, `store` |
-| GET    | `/api/v1/capabilities`                   | literature mode, SU2 availability, storage      |
-| GET    | `/api/v1/runs`                           | list runs, newest first                         |
-| POST   | `/api/v1/runs`                           | create a run (`topic` ≥ 8 chars)                |
-| GET    | `/api/v1/runs/:id`                       | one run                                         |
-| POST   | `/api/v1/runs/:id/advance`               | execute the current stage                       |
-| POST   | `/api/v1/runs/:id/gates/:gateId/approve` | approve the open gate                           |
-| POST   | `/api/v1/runs/:id/gates/:gateId/reject`  | send the stage back for revision (`note`)       |
-| GET    | `/api/v1/runs/:id/evidence?kind=`        | registry records for the run                    |
-| GET    | `/api/v1/evidence/verify`                | re-hash the whole chain from disk               |
-| GET    | `/api/v1/evidence/:seq/artefacts/:name`  | artefact bytes, re-hashed; `409` on a mismatch  |
-| GET    | `/api/v1/audit?runId=&limit=`            | audit trail (read-only)                         |
-| GET    | `/api/v1/literature/search?q=&limit=`    | live/offline search                             |
-| POST   | `/api/v1/literature/verify-doi`          | `{ doi, expectedTitle? }` → 200 or 422          |
-| POST   | `/api/v1/claims/verify`                  | `{ text, runId }` → claim report                |
-| POST   | `/api/v1/runs/:id/references/recheck`    | re-resolve every stored DOI, one record         |
-| GET    | `/api/v1/runs/:id/references`            | stored references joined to latest re-check     |
-| GET    | `/api/v1/runs/:id/manuscript.tex`        | LaTeX source, `text/x-tex`, hash in a header    |
-| GET    | `/api/v1/runs/:id/manuscript.pdf`        | the typeset PDF, or `503` naming `LATEX_BINARY` |
+| Method | Path                                     | Purpose                                                            |
+| ------ | ---------------------------------------- | ------------------------------------------------------------------ |
+| GET    | `/health`                                | liveness, capabilities, `authRequired`, `authMode`, `store`        |
+| GET    | `/api/v1/capabilities`                   | literature mode, SU2 availability, storage, `auth.mode`            |
+| GET    | `/api/v1/auth/config`                    | how to log in: mode, issuer, client id, scopes                     |
+| GET    | `/api/v1/me`                             | `{ authMode, principal }`; `principal` is `null` in `none`/`token` |
+| GET    | `/api/v1/users`                          | every account, admin only, `oidc` only                             |
+| PATCH  | `/api/v1/users/:sub`                     | `{ role }`, admin only; `409` on self-demotion                     |
+| GET    | `/api/v1/runs`                           | list runs, newest first                                            |
+| POST   | `/api/v1/runs`                           | create a run (`topic` ≥ 8 chars)                                   |
+| GET    | `/api/v1/runs/:id`                       | one run                                                            |
+| POST   | `/api/v1/runs/:id/advance`               | execute the current stage                                          |
+| POST   | `/api/v1/runs/:id/gates/:gateId/approve` | approve the open gate                                              |
+| POST   | `/api/v1/runs/:id/gates/:gateId/reject`  | send the stage back for revision (`note`)                          |
+| GET    | `/api/v1/runs/:id/evidence?kind=`        | registry records for the run                                       |
+| GET    | `/api/v1/evidence/verify`                | re-hash the whole chain from disk                                  |
+| GET    | `/api/v1/evidence/:seq/artefacts/:name`  | artefact bytes, re-hashed; `409` on a mismatch                     |
+| GET    | `/api/v1/audit?runId=&limit=`            | audit trail (read-only)                                            |
+| GET    | `/api/v1/literature/search?q=&limit=`    | live/offline search                                                |
+| POST   | `/api/v1/literature/verify-doi`          | `{ doi, expectedTitle? }` → 200 or 422                             |
+| POST   | `/api/v1/claims/verify`                  | `{ text, runId }` → claim report                                   |
+| POST   | `/api/v1/runs/:id/references/recheck`    | re-resolve every stored DOI, one record                            |
+| GET    | `/api/v1/runs/:id/references`            | stored references joined to latest re-check                        |
+| GET    | `/api/v1/runs/:id/manuscript.tex`        | LaTeX source, `text/x-tex`, hash in a header                       |
+| GET    | `/api/v1/runs/:id/manuscript.pdf`        | the typeset PDF, or `503` naming `LATEX_BINARY`                    |
 
-Status codes used: `200`, `201`, `400` invalid request, `401` missing/wrong key, `404`
-unknown run or route, `409` gate discipline (**and** no manuscript to re-check, or no
-rendered manuscript yet), `422` DOI did not resolve / unverifiable claim, `429` rate
-limited, `500` an artefact on disk no longer matches its record, `502` upstream failed
-after retries (including a LaTeX engine that exited non-zero), `503` capability
-unavailable (SU2, or a PDF that was never typeset).
+Status codes used: `200`, `201`, `400` invalid request, `401` missing/wrong/expired
+credential, `403` authenticated but not allowed (see below), `404` unknown run, account or
+route, `409` gate discipline (**and** no manuscript to re-check, no rendered manuscript yet,
+or an admin removing their own admin role), `422` DOI did not resolve / unverifiable claim,
+`429` rate limited, `500` an artefact on disk no longer matches its record, `502` upstream
+failed after retries (including a LaTeX engine that exited non-zero), `503` capability
+unavailable (SU2, a PDF that was never typeset, or an identity provider that cannot be
+reached).
 
 The re-check route is idempotent in effect, not in output: calling it twice appends two
 records and the newer one wins. It answers
@@ -638,6 +646,45 @@ curl -s -X POST localhost:8787/api/v1/runs/run-1/gates/GATE-0/approve -d '{"acto
 curl -s 'localhost:8787/api/v1/runs/run-1/evidence?kind=stage-output'
 curl -s localhost:8787/api/v1/evidence/verify
 ```
+
+### Accounts, roles and what they may do
+
+`AEROSCRIBE_AUTH=oidc` turns a bearer token into a `Principal`. Three roles, one table
+(`services/api/src/auth/policy.ts`):
+
+| Action               | researcher        | reviewer   | admin      |
+| -------------------- | ----------------- | ---------- | ---------- |
+| create a run         | yes               | no         | yes        |
+| read a run           | own runs          | any run    | any        |
+| run a stage          | own runs          | no         | any        |
+| approve/reject       | own runs          | any run    | any        |
+| read the audit       | own runs' entries | everything | everything |
+| list/change accounts | no                | no         | yes        |
+
+Four decisions this table encodes, each of which was the alternative to a bug:
+
+- **Reviewers produce nothing.** A reviewer that can run a stage can write the evidence it
+  then approves, so `run:create` and `run:advance` are closed to it. What it can do is read
+  any run and judge any gate.
+- **Ownership is required, not implied.** A run created before accounts existed has no
+  `ownerSub`, and neither does one created in `none`/`token` mode; those are reviewer/admin
+  territory. `authorize` treats "no owner" as "nobody owns it", never as "everybody does".
+- **The audit actor is the token's subject.** In `oidc` mode a `POST …/approve` body may still
+  carry `actor`, and it is ignored: the entry says `user:<sub>`. Before accounts the body's
+  string was recorded verbatim, which meant any caller could approve a gate as somebody else.
+- **An unreachable IdP is `503`, not `401`.** `401` would log every user out during an outage
+  and hide the real fault; the code is `auth_unavailable` and the message names the issuer.
+
+A first login creates the account as `researcher`. `AEROSCRIBE_ADMIN_SUBS` names subjects
+that arrive as `admin`; a login can promote on that list and can never demote, so
+`PATCH /api/v1/users/:sub` is the only way down — and it refuses to let the last admin
+remove themselves (`409 self_demotion`). `GET /api/v1/auth/config` is the one `/api/v1`
+route that needs no credential, because it is how a client learns how to get one.
+
+In `none` and `token` mode there is no principal at all: `principal: null`, no ownership
+filter on `GET /api/v1/runs`, and the body's `actor` is recorded as typed. That is the
+documented behaviour of a deployment with one shared credential — not an oversight, and not
+something `/health` hides: it reports `authMode`.
 
 ### Calling it from the browser
 
@@ -676,29 +723,36 @@ that adds, removes or retypes a field fails that test until the dashboard's mapp
 
 ## 9. Configuration
 
-| Variable                         | Default                                       | Meaning                                                                         |
-| -------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------- |
-| `HOST`                           | `127.0.0.1`                                   | bind address (use `0.0.0.0` in a container)                                     |
-| `PORT`                           | `8787`                                        | bind port                                                                       |
-| `AEROSCRIBE_DATA_DIR`            | `./data`                                      | registry, runs, audit, CFD studies                                              |
-| `AEROSCRIBE_STORE`               | `filesystem`                                  | `filesystem` or `postgres`; anything else stops the process at boot             |
-| `AEROSCRIBE_DATABASE_URL`        | _unset_                                       | required by `postgres`, refused when the store is `filesystem`                  |
-| `AEROSCRIBE_COORDINATION`        | `process`                                     | `process` or `redis`; where the rate limit and the stage lock live              |
-| `AEROSCRIBE_REDIS_URL`           | _unset_                                       | required by `redis`, refused when coordination is `process`                     |
-| `AEROSCRIBE_API_KEY`             | _unset_                                       | unset ⇒ **no authentication**; `/health` says `authRequired:false`              |
-| `AEROSCRIBE_CONTACT_EMAIL`       | _unset_                                       | Crossref polite-pool `mailto`                                                   |
-| `AEROSCRIBE_OFFLINE`             | `false`                                       | `true` ⇒ fixture corpus, no network                                             |
-| `SU2_CFD_BINARY`                 | _unset_                                       | absolute path; availability is probed, not assumed                              |
-| `LATEX_BINARY`                   | _unset_                                       | absolute path to `pdflatex`; a PDF is produced only when it answers `--version` |
-| `LATEX_TIMEOUT_MS`               | `120000`                                      | wall-clock limit per engine pass (two passes)                                   |
-| `AEROSCRIBE_CORS_ORIGINS`        | `http://localhost:5173,http://localhost:5174` | comma-separated allowlist                                                       |
-| `AEROSCRIBE_UPSTREAM_TIMEOUT_MS` | `15000`                                       | per-attempt and per-provider deadline                                           |
-| `AEROSCRIBE_RETRY_BASE_MS`       | `2000`                                        | first backoff step (RULE-042)                                                   |
-| `AEROSCRIBE_DOI_MAX_AGE_DAYS`    | `30`                                          | age at which a stored DOI verification is `stale` (RULE-002)                    |
-| `SEMANTIC_SCHOLAR_API_KEY`       | _unset_                                       | server-side only; never sent to the browser                                     |
-| `LOG_LEVEL`                      | `info`                                        | `debug` \| `info` \| `warn` \| `error` \| `silent` (RULE-053)                   |
-| `AEROSCRIBE_VERSION`             | `dev`                                         | release identifier reported by `/health`                                        |
-| `GIT_SHA`                        | `unknown`                                     | commit the image was built from, reported by `/health`                          |
+| Variable                         | Default                                       | Meaning                                                                            |
+| -------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `HOST`                           | `127.0.0.1`                                   | bind address (use `0.0.0.0` in a container)                                        |
+| `PORT`                           | `8787`                                        | bind port                                                                          |
+| `AEROSCRIBE_DATA_DIR`            | `./data`                                      | registry, runs, audit, CFD studies                                                 |
+| `AEROSCRIBE_STORE`               | `filesystem`                                  | `filesystem` or `postgres`; anything else stops the process at boot                |
+| `AEROSCRIBE_DATABASE_URL`        | _unset_                                       | required by `postgres`, refused when the store is `filesystem`                     |
+| `AEROSCRIBE_COORDINATION`        | `process`                                     | `process` or `redis`; where the rate limit and the stage lock live                 |
+| `AEROSCRIBE_REDIS_URL`           | _unset_                                       | required by `redis`, refused when coordination is `process`                        |
+| `AEROSCRIBE_AUTH`                | _derived_                                     | `none` \| `token` \| `oidc`; unset ⇒ `token` when a key is configured, else `none` |
+| `AEROSCRIBE_API_KEY`             | _unset_                                       | the shared key in `token` mode; refused with `oidc`, and with `none`               |
+| `OIDC_ISSUER`                    | _unset_                                       | required by `oidc`; `https`, loopback exempt; must match the discovery document    |
+| `OIDC_AUDIENCE`                  | _unset_                                       | required by `oidc`; the `aud` every token must carry                               |
+| `OIDC_CLIENT_ID`                 | = `OIDC_AUDIENCE`                             | the public client id the dashboard uses                                            |
+| `OIDC_SCOPES`                    | `openid profile email`                        | space- or comma-separated scopes the dashboard asks for                            |
+| `OIDC_CLOCK_SKEW_SECONDS`        | `60`                                          | tolerated clock difference with the issuer                                         |
+| `AEROSCRIBE_ADMIN_SUBS`          | _unset_                                       | comma-separated subjects that arrive as `admin`; `oidc` only                       |
+| `AEROSCRIBE_CONTACT_EMAIL`       | _unset_                                       | Crossref polite-pool `mailto`                                                      |
+| `AEROSCRIBE_OFFLINE`             | `false`                                       | `true` ⇒ fixture corpus, no network                                                |
+| `SU2_CFD_BINARY`                 | _unset_                                       | absolute path; availability is probed, not assumed                                 |
+| `LATEX_BINARY`                   | _unset_                                       | absolute path to `pdflatex`; a PDF is produced only when it answers `--version`    |
+| `LATEX_TIMEOUT_MS`               | `120000`                                      | wall-clock limit per engine pass (two passes)                                      |
+| `AEROSCRIBE_CORS_ORIGINS`        | `http://localhost:5173,http://localhost:5174` | comma-separated allowlist                                                          |
+| `AEROSCRIBE_UPSTREAM_TIMEOUT_MS` | `15000`                                       | per-attempt and per-provider deadline                                              |
+| `AEROSCRIBE_RETRY_BASE_MS`       | `2000`                                        | first backoff step (RULE-042)                                                      |
+| `AEROSCRIBE_DOI_MAX_AGE_DAYS`    | `30`                                          | age at which a stored DOI verification is `stale` (RULE-002)                       |
+| `SEMANTIC_SCHOLAR_API_KEY`       | _unset_                                       | server-side only; never sent to the browser                                        |
+| `LOG_LEVEL`                      | `info`                                        | `debug` \| `info` \| `warn` \| `error` \| `silent` (RULE-053)                      |
+| `AEROSCRIBE_VERSION`             | `dev`                                         | release identifier reported by `/health`                                           |
+| `GIT_SHA`                        | `unknown`                                     | commit the image was built from, reported by `/health`                             |
 
 Every variable is described in `services/api/.env.example`; copy it to `services/api/.env`
 for local work. Neither browser app reads any of them — a key in a Vite bundle is a public key.

@@ -1,19 +1,19 @@
 {
   "record": {
     "seq": 10,
-    "id": "c6a1bc8a-1a59-4ce0-8442-530dce52a2ef",
+    "id": "61b940fd-ccaf-48ce-8cf5-4515848b8fba",
     "kind": "doi-recheck",
     "runId": "run-contract",
     "stageId": null,
     "label": "DOI re-check: 2 references (2 fresh, 0 stale, 0 broken, 0 mismatch, 0 unverified)",
-    "createdAt": "2026-11-01T18:42:51.244Z",
-    "payloadHash": "e557f81e9a2d0cd0a2125cb6dc4cb5b7b8279849bed00ddb5de266ecac37db06",
-    "prevHash": "866d142651899b622f5761e8586c6f0ad5c04b7dbba0930b0c07e10cd716bc2b",
+    "createdAt": "2026-11-01T19:54:47.542Z",
+    "payloadHash": "f7f2a5a6cb4934846b485aead0c200f74f7dc6fad6f47221fcf65af7786c9a71",
+    "prevHash": "3f76e8c33e5917fbfe1fabaaa951832a381c1d8bdb9313f17f670d1f4bfbcf51",
     "payload": {
       "stage": "reference-recheck",
       "schemaVersion": 1,
       "runId": "run-contract",
-      "checkedAt": "2026-11-01T18:42:51.244Z",
+      "checkedAt": "2026-11-01T19:54:47.542Z",
       "offline": false,
       "maxAgeDays": 30,
       "results": [
@@ -25,7 +25,7 @@
           "reason": null,
           "provider": "crossref",
           "titleSimilarity": 1,
-          "previousVerifiedAt": "2026-11-01T18:42:51.180Z"
+          "previousVerifiedAt": "2026-11-01T19:54:47.430Z"
         },
         {
           "key": "ref-02",
@@ -35,7 +35,7 @@
           "reason": null,
           "provider": "crossref",
           "titleSimilarity": 1,
-          "previousVerifiedAt": "2026-11-01T18:42:51.181Z"
+          "previousVerifiedAt": "2026-11-01T19:54:47.432Z"
         }
       ],
       "summary": {
@@ -47,7 +47,7 @@
         "total": 2
       }
     },
-    "hash": "7f7a0d0b674ea659f0892c4285f68b09857807a8c5b37309cec75aaf7ad93c13"
+    "hash": "f139fbe6927a684d3ef99ece5fc0a2ebcdfb187ac719ea30c3fdeac2c19d9778"
   },
   "summary": {
     "fresh": 2,
@@ -57,6 +57,6 @@
     "unverified": 0,
     "total": 2
   },
-  "checkedAt": "2026-11-01T18:42:51.244Z",
+  "checkedAt": "2026-11-01T19:54:47.542Z",
   "offline": false
 }

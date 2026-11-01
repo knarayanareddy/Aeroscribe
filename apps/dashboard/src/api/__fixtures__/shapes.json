@@ -1,6 +1,8 @@
 {
   "capabilities": {
     "auth": {
+      "issuer": "null",
+      "mode": "string",
       "required": "boolean"
     },
     "cfd": {
@@ -38,6 +40,17 @@
       "database": "null",
       "runsDir": "string"
     }
+  },
+  "auth-config": {
+    "clientId": "null",
+    "issuer": "null",
+    "mode": "string",
+    "required": "boolean",
+    "scopes": "empty-array"
+  },
+  "me": {
+    "authMode": "string",
+    "principal": "null"
   },
   "runs": {
     "runs": {

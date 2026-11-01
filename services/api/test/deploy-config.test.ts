@@ -210,6 +210,9 @@ describe('the edge refuses to leak the key or the API', () => {
     expect(caddyfile).toContain('header_up Authorization "Bearer {$AEROSCRIBE_API_KEY}"');
     expect(caddyfile).toContain('handle /api/*');
     expect(caddyfile).toContain('reverse_proxy api:8787');
+    // Only for a request that brought no credential of its own, or an `oidc`
+    // deployment would have every user's identity replaced by a shared key.
+    expect(caddyfile).toContain('@anonymous not header Authorization *');
     // A response header would put the token in the browser, which is the one
     // thing the proxy exists to prevent.
     expect(caddyfile).not.toMatch(/^\s*header Authorization/m);
@@ -229,9 +232,11 @@ describe('.env.example is safe to copy', () => {
     const example = dotenvAssignments(await readRepoFile('.env.example'));
 
     // A default token is a published token; a default password is a published
-    // password. compose.yaml's `:?` turns either empty value into a refusal.
+    // password. compose.yaml's `:?` turns the empty password into a refusal,
+    // and `AEROSCRIBE_AUTH` has to be chosen rather than inherited.
     expect(example.get('AEROSCRIBE_API_KEY')).toBe('');
     expect(example.get('AEROSCRIBE_DB_PASSWORD')).toBe('');
+    expect(example.get('AEROSCRIBE_AUTH')).toBe('token');
     // Offline by default, and no solver/engine that the image does not contain.
     expect(example.get('AEROSCRIBE_OFFLINE')).toBe('true');
     expect(example.get('AEROSCRIBE_INSTALL_LATEX')).toBe('false');

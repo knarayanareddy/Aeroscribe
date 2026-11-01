@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { AuthConfigResponse } from '@aeroscribe/contract';
 import CFDView from './components/CFDView';
 import DataModeBadge from './components/DataModeBadge';
 import Dashboard from './components/Dashboard';
@@ -10,9 +11,14 @@ import ReviewView from './components/ReviewView';
 import SettingsView from './components/SettingsView';
 import Sidebar, { type View } from './components/Sidebar';
 import WikiView from './components/WikiView';
+import { createApiClient } from './api/client';
+import { AuthGate } from './auth/AuthGate';
+import { createAuthSession, type AuthSession } from './auth/session';
+import { currentSession, currentToken, setCurrentSession, setTokenProvider } from './auth/token';
+import { createApiSource } from './state/apiSource';
 import { PipelineProvider } from './state/PipelineProvider';
 import { usePipeline } from './state/pipelineContext';
-import { createSourceFromEnv } from './state/sourceFromEnv';
+import { createSourceFromEnv, isLiveBuild } from './state/sourceFromEnv';
 
 export function AppShell() {
   const { selectRun } = usePipeline();
@@ -106,11 +112,86 @@ export function AppShell() {
 export default function App() {
   // The source is chosen once, from the build environment. There is no runtime
   // switch that could turn demo data into something that looks live.
-  const source = createSourceFromEnv();
+  if (isLiveBuild()) return <LiveApp />;
 
+  const source = createSourceFromEnv();
   return (
     <PipelineProvider source={source}>
       <AppShell />
     </PipelineProvider>
+  );
+}
+
+/**
+ * The live app: one client, one session, and the login gate in front.
+ *
+ * The single client is built before the login exists, because the question this
+ * deployment has to answer first — *how do I log in?* — is asked of the API
+ * itself. It reads its token through `currentToken`, so the moment the session
+ * has one every request carries it, and the moment it expires they stop
+ * carrying it.
+ */
+function LiveApp() {
+  const baseUrl = import.meta.env['VITE_API_URL'] ?? '';
+  const [config, setConfig] = useState<AuthConfigResponse | null>(null);
+  const [session, setSession] = useState<AuthSession | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  const client = useMemo(
+    () =>
+      createApiClient({
+        baseUrl,
+        token: currentToken,
+        onUnauthorized: () => {
+          // The login is over: forget the token and go back to the IdP. One
+          // redirect, not one failed request per view.
+          const current = currentSession();
+          current?.clear();
+          void current?.start().catch(() => undefined);
+        },
+      }),
+    [baseUrl],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void client
+      .authConfig()
+      .then((answer) => {
+        if (cancelled) return;
+        const next = createAuthSession({ config: answer });
+        setCurrentSession(next);
+        setTokenProvider(() => next.token());
+        setSession(next);
+        setConfig(answer);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setFailure(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client]);
+
+  const source = useMemo(() => createApiSource({ client }), [client]);
+
+  if (failure !== null) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
+        <p role="alert" className="max-w-md rounded-lg bg-red-50 p-4 text-sm text-red-700">
+          {failure}
+        </p>
+      </main>
+    );
+  }
+
+  return (
+    <AuthGate config={config} session={session} client={client}>
+      {() => (
+        <PipelineProvider source={source}>
+          <AppShell />
+        </PipelineProvider>
+      )}
+    </AuthGate>
   );
 }

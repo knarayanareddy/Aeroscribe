@@ -21,17 +21,19 @@
   },
   "registry": {
     "algorithm": "sha256",
-    "path": "/tmp/aeroscribe-contract-7REcl7/registry.ndjson"
+    "path": "/tmp/aeroscribe-contract-pJcdc6/registry.ndjson"
   },
   "auth": {
-    "required": false
+    "required": false,
+    "mode": "none",
+    "issuer": null
   },
   "storage": {
     "backend": "filesystem",
-    "runsDir": "/tmp/aeroscribe-contract-7REcl7/runs",
-    "auditPath": "/tmp/aeroscribe-contract-7REcl7/audit.ndjson",
+    "runsDir": "/tmp/aeroscribe-contract-pJcdc6/runs",
+    "auditPath": "/tmp/aeroscribe-contract-pJcdc6/audit.ndjson",
     "database": null,
-    "blobsDir": "/tmp/aeroscribe-contract-7REcl7/blobs"
+    "blobsDir": "/tmp/aeroscribe-contract-pJcdc6/blobs"
   },
   "coordination": {
     "backend": "process",

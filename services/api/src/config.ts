@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { parseLogLevel, type LogLevel } from './lib/logger';
 import { redactDatabaseUrl, type StoreBackend } from './store';
 import { redactRedisUrl, type CoordinationBackend } from './coord';
+import type { AuthMode, AuthSettings } from './auth';
 
 export interface Config {
   host: string;
@@ -53,6 +54,15 @@ export interface Config {
    * to a client: capabilities expose `redactRedisUrl()` instead.
    */
   redisUrl: string | null;
+  /**
+   * How callers are authenticated (`AEROSCRIBE_AUTH`).
+   *
+   * Optional in the type so a hand-built test config does not have to describe
+   * a deployment it is not testing: `authSettings()` derives the same answer
+   * from `apiKey` alone, which is exactly what every caller had before accounts
+   * existed. `loadConfig` always sets it.
+   */
+  auth?: AuthSettings;
   /** Verbosity of the JSON log stream (RULE-053). */
   logLevel: LogLevel;
   /** Release identifier reported by `/health`; the build sets it. */
@@ -108,6 +118,138 @@ function parseCoordination(env: NodeJS.ProcessEnv): CoordinationBackend {
   if (raw === 'redis') return 'redis';
   throw new Error(
     `AEROSCRIBE_COORDINATION="${raw}" is not a supported coordinator. Supported: process, redis.`,
+  );
+}
+
+/**
+ * Which authentication mode this deployment runs, from `AEROSCRIBE_AUTH`.
+ *
+ * Unset is derived from what is present: an API key means `token`, no key means
+ * `none` — the behaviour every existing deployment already had. Setting the
+ * variable makes the choice explicit, and an explicit choice that contradicts
+ * the rest of the environment is refused at boot rather than reconciled:
+ *
+ * - `oidc` without an issuer or an audience is a half-configured login screen;
+ * - `token` without a key would authenticate nobody;
+ * - `none` **with** a key set is the dangerous one. A key the API ignores looks
+ *   like an enforced credential in every runbook that mentions it, which is
+ *   worse than having no key at all.
+ *
+ * `oidc` and `AEROSCRIBE_API_KEY` together are refused for the same reason: a
+ * shared key that skips role checks makes the roles decorative.
+ */
+function parseAuth(env: NodeJS.ProcessEnv): AuthSettings {
+  const raw = envString(env, 'AEROSCRIBE_AUTH').toLowerCase();
+  const apiKey = envString(env, 'AEROSCRIBE_API_KEY');
+
+  if (raw !== '' && raw !== 'none' && raw !== 'token' && raw !== 'oidc') {
+    throw new Error(
+      `AEROSCRIBE_AUTH="${raw}" is not a supported mode. Supported: none, token, oidc.`,
+    );
+  }
+  const mode: AuthMode = raw === '' ? (apiKey === '' ? 'none' : 'token') : (raw as AuthMode);
+
+  if (mode === 'none' && apiKey !== '') {
+    throw new Error(
+      'AEROSCRIBE_API_KEY is set but AEROSCRIBE_AUTH=none. Unset the key, or set ' +
+        'AEROSCRIBE_AUTH=token — a key the API ignores is a credential every runbook believes in.',
+    );
+  }
+  if (mode === 'token' && apiKey === '') {
+    throw new Error(
+      'AEROSCRIBE_AUTH=token requires AEROSCRIBE_API_KEY (generate one with: openssl rand -hex 32).',
+    );
+  }
+
+  const adminSubs = envString(env, 'AEROSCRIBE_ADMIN_SUBS')
+    .split(',')
+    .map((sub) => sub.trim())
+    .filter((sub) => sub.length > 0);
+
+  if (mode !== 'oidc') {
+    if (adminSubs.length > 0) {
+      throw new Error(
+        'AEROSCRIBE_ADMIN_SUBS is set but nobody is authenticated: it only means something with ' +
+          'AEROSCRIBE_AUTH=oidc, where a subject can be promoted.',
+      );
+    }
+    return { mode, apiKey, oidc: null, adminSubs: [] };
+  }
+
+  if (apiKey !== '') {
+    throw new Error(
+      'AEROSCRIBE_AUTH=oidc cannot be combined with AEROSCRIBE_API_KEY. A shared key that ' +
+        'bypasses roles makes the roles decorative; scripts should present an access token ' +
+        '(set AEROSCRIBE_API_KEY in the *client* to that token — the deploy smoke test already ' +
+        'sends whatever it is given as a bearer token).',
+    );
+  }
+
+  const issuer = envString(env, 'OIDC_ISSUER');
+  const audience = envString(env, 'OIDC_AUDIENCE');
+  if (issuer === '') {
+    throw new Error(
+      'AEROSCRIBE_AUTH=oidc requires OIDC_ISSUER (e.g. https://login.example.org/realms/aeroscribe).',
+    );
+  }
+  if (audience === '') {
+    throw new Error(
+      'AEROSCRIBE_AUTH=oidc requires OIDC_AUDIENCE: the `aud` every access token must carry.',
+    );
+  }
+  try {
+    const parsed = new URL(issuer);
+    if (
+      parsed.protocol !== 'https:' &&
+      parsed.hostname !== 'localhost' &&
+      parsed.hostname !== '127.0.0.1'
+    ) {
+      throw new Error('not https');
+    }
+  } catch {
+    // A plain-HTTP issuer is a token in clear text and a JWKS anyone can spoof.
+    // Loopback is exempt so a local IdP can be tested.
+    throw new Error(
+      `OIDC_ISSUER="${issuer}" must be an https URL (loopback is allowed for a local issuer).`,
+    );
+  }
+
+  const scopes = envString(env, 'OIDC_SCOPES', 'openid profile email')
+    .split(/[\s,]+/)
+    .map((scope) => scope.trim())
+    .filter((scope) => scope.length > 0);
+
+  return {
+    mode,
+    apiKey: '',
+    adminSubs,
+    oidc: {
+      issuer: issuer.replace(/\/$/, ''),
+      audience,
+      // The dashboard is a public client; its id is not a secret and is served
+      // to the browser by `/api/v1/auth/config`.
+      clientId: envString(env, 'OIDC_CLIENT_ID', audience),
+      scopes,
+      clockSkewSeconds: envInt(env, 'OIDC_CLOCK_SKEW_SECONDS', 60),
+    },
+  };
+}
+
+/**
+ * The effective auth settings for a config object.
+ *
+ * `loadConfig` always fills `config.auth`; a hand-built config in a test may
+ * not, and then this derives the same answer from `apiKey` alone — the exact
+ * behaviour that config would have had before accounts existed.
+ */
+export function authSettings(config: Config): AuthSettings {
+  return (
+    config.auth ?? {
+      mode: config.apiKey === '' ? 'none' : 'token',
+      apiKey: config.apiKey,
+      oidc: null,
+      adminSubs: [],
+    }
   );
 }
 
@@ -183,6 +325,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     databaseUrl,
     coordination,
     redisUrl,
+    auth: parseAuth(env),
     logLevel: parseLogLevel(env.LOG_LEVEL),
     version: envString(env, 'AEROSCRIBE_VERSION', 'dev'),
     commit: envString(env, 'GIT_SHA', 'unknown'),
@@ -231,6 +374,8 @@ export async function describeCapabilities(config: Config): Promise<Capabilities
     detectSu2(config.su2Binary),
     detectLatex(config.latexBinary),
   ]);
+  const auth = authSettings(config);
+  const authMode = auth.mode;
   return {
     literature: {
       mode: config.offline ? 'offline' : 'live',
@@ -243,7 +388,13 @@ export async function describeCapabilities(config: Config): Promise<Capabilities
     cfd: { su2, synthetic: true },
     latex,
     registry: { algorithm: 'sha256', path: `${config.dataDir}/registry.ndjson` },
-    auth: { required: config.apiKey !== '' },
+    auth: {
+      // `required` keeps its old meaning — a credential is needed — and `mode`
+      // says which kind, so a client cannot mistake a shared key for identities.
+      required: authMode !== 'none',
+      mode: authMode,
+      issuer: auth?.oidc?.issuer ?? null,
+    },
     storage: {
       backend: config.store,
       // Kept for the filesystem adapter and for a reader comparing two

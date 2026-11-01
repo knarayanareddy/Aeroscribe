@@ -1,6 +1,6 @@
 import { serve } from '@hono/node-server';
 import { join } from 'node:path';
-import { describeCapabilities, loadConfig } from './config';
+import { authSettings, describeCapabilities, loadConfig, type Config } from './config';
 import { createApp } from './http/app';
 import { Orchestrator } from './orchestrator';
 import {
@@ -109,6 +109,9 @@ export async function buildServer(env: NodeJS.ProcessEnv = process.env) {
     stores,
     coordinator: coordination,
     blobs,
+    // Accounts live beside the runs, in the store the deployment chose; the
+    // app builds its authenticator from `config.auth` and this store.
+    users: stores.users,
     logger,
   });
 
@@ -123,6 +126,21 @@ export interface StartServerOptions {
   log?: (message: string) => void;
   /** Where the process exits to. Injected so tests do not kill the runner. */
   exit?: (code: number) => void;
+}
+
+/**
+ * One line, in the log, saying how this process decides who is calling.
+ *
+ * It is deliberately the same sentence `/health` supports: an operator reading
+ * `docker logs` should not have to guess whether a deployment has roles.
+ */
+function describeAuthForLog(config: Config): string {
+  const settings = authSettings(config);
+  if (settings.mode === 'oidc') {
+    return `OIDC (${settings.oidc?.issuer}) · ${settings.adminSubs.length} admin subject(s) from the environment`;
+  }
+  if (settings.mode === 'token') return 'API key required';
+  return 'disabled (set AEROSCRIBE_AUTH=token with AEROSCRIBE_API_KEY, or AEROSCRIBE_AUTH=oidc)';
 }
 
 /**
@@ -145,9 +163,7 @@ export function startServer(
 ) {
   const server = serveFn({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => {
     log(`listening on http://${info.address}:${info.port}`);
-    log(
-      `auth: ${config.apiKey ? 'API key required' : 'disabled (set AEROSCRIBE_API_KEY before exposing this)'}`,
-    );
+    log(`auth: ${describeAuthForLog(config)}`);
     log(
       `literature: ${config.offline ? 'offline corpus' : 'live providers'} · ` +
         `store: ${config.store}${config.store === 'filesystem' ? ` (${config.dataDir})` : ''}` +

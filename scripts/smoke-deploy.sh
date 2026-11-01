@@ -3,7 +3,14 @@
 # Prove a deployment is alive, honest, and actually running this build.
 #
 #   scripts/smoke-deploy.sh <base-url> [--expect-version VERSION] [--expect-auth] \
-#     [--expect-solver synthetic|su2] [--insecure] [--wait SECONDS]
+#     [--expect-auth-mode none|token|oidc] [--expect-solver synthetic|su2] \
+#     [--insecure] [--wait SECONDS]
+#
+# The credential is read from the environment: `AEROSCRIBE_ACCESS_TOKEN` when the
+# deployment uses OIDC (an access token minted for a service account), otherwise
+# `AEROSCRIBE_API_KEY`. With `--expect-auth-mode oidc` and no token, checks 2-4
+# cannot run - they are the ones that need a caller with a role - so the script
+# says so and exits 4 rather than reporting a pass it did not earn.
 #
 # What it checks, and why each one is worth failing a deploy over:
 #
@@ -18,10 +25,12 @@
 #      real solver is configured. This is the honesty contract: if a deploy ever
 #      reports a synthetic run as submittable, the deploy fails rather than
 #      shipping a plausible-looking result.
-#   5. `authRequired` matches what the operator said to expect. Deploying an open
-#      API where a key was promised is the other failure worth catching here.
+#   5. `authRequired`/`authMode` match what the operator said to expect. Deploying
+#      an open API where a key was promised is the other failure worth catching.
 #
-# Exit codes: 0 pass, 1 a check failed, 2 bad usage, 3 the server never answered.
+# Exit codes: 0 pass, 1 a check failed, 2 bad usage, 3 the server never answered,
+# 4 partial - the authenticated checks were skipped because no credential for the
+# configured mode was supplied.
 #
 # Deliberately bash + curl + node: it runs on the deploy host, where nothing but
 # the base image exists. No `jq` dependency (node is already there because the
@@ -34,6 +43,7 @@ shift || true
 
 EXPECT_VERSION=""
 EXPECT_AUTH=""
+EXPECT_AUTH_MODE=""
 EXPECT_SOLVER=""
 # `--insecure` accepts the certificate Caddy issues itself for `localhost` or a
 # bare name. Only ever for a staging host that has no public certificate yet: the
@@ -50,6 +60,7 @@ while [ $# -gt 0 ]; do
     --expect-version) EXPECT_VERSION="${2:-}"; shift 2 ;;
     --expect-auth) EXPECT_AUTH="true"; shift ;;
     --expect-anonymous) EXPECT_AUTH="false"; shift ;;
+    --expect-auth-mode) EXPECT_AUTH_MODE="${2:-}"; shift 2 ;;
     --expect-solver) EXPECT_SOLVER="${2:-}"; shift 2 ;;
     --wait) WAIT_SECONDS="${2:-60}"; shift 2 ;;
     --insecure) INSECURE=1; shift ;;
@@ -58,7 +69,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$BASE_URL" ]; then
-  echo "usage: smoke-deploy.sh <base-url> [--expect-version V] [--expect-auth|--expect-anonymous] [--expect-solver synthetic|su2] [--insecure] [--wait N]" >&2
+  echo "usage: smoke-deploy.sh <base-url> [--expect-version V] [--expect-auth|--expect-anonymous] [--expect-auth-mode none|token|oidc] [--expect-solver synthetic|su2] [--insecure] [--wait N]" >&2
   exit 2
 fi
 
@@ -76,11 +87,14 @@ fi
 # 4.4 treats an empty array as unset, and this script is meant to run anywhere.
 curl() { command curl ${TLS_OPTS[@]+"${TLS_OPTS[@]}"} "$@"; }
 
-# The API key is read from the environment, never from an argument: a key in
-# `ps` output is a leak, and `docker compose exec` shows the command line.
+# The credential is read from the environment, never from an argument: a token
+# in `ps` output is a leak, and `docker compose exec` shows the command line.
+# `AEROSCRIBE_ACCESS_TOKEN` is the OIDC one and wins, because a deployment in
+# that mode has no shared key to fall back to.
+CREDENTIAL="${AEROSCRIBE_ACCESS_TOKEN:-${AEROSCRIBE_API_KEY:-}}"
 AUTH_HEADER=()
-if [ -n "${AEROSCRIBE_API_KEY:-}" ]; then
-  AUTH_HEADER=(-H "Authorization: Bearer ${AEROSCRIBE_API_KEY}")
+if [ -n "$CREDENTIAL" ]; then
+  AUTH_HEADER=(-H "Authorization: Bearer ${CREDENTIAL}")
 fi
 
 fail() {
@@ -149,18 +163,32 @@ rm -f "/tmp/smoke-deploy-curl.$$"
 VERSION=$(printf '%s' "$health" | json version)
 COMMIT=$(printf '%s' "$health" | json commit)
 AUTH_REQUIRED=$(printf '%s' "$health" | json authRequired)
+AUTH_MODE=$(printf '%s' "$health" | json authMode)
 STORE=$(printf '%s' "$health" | json store.backend)
 COORDINATION=$(printf '%s' "$health" | json coordination.backend)
 SOLVER=$(printf '%s' "$health" | json capabilities.cfd.su2.available)
 
 echo "  version=${VERSION} commit=${COMMIT} store=${STORE:-none} coordination=${COORDINATION}"
-echo "  authRequired=${AUTH_REQUIRED} su2.available=${SOLVER}"
+echo "  authRequired=${AUTH_REQUIRED} authMode=${AUTH_MODE:-unknown} su2.available=${SOLVER}"
 
 if [ -n "$EXPECT_VERSION" ] && [ "$VERSION" != "$EXPECT_VERSION" ]; then
   fail "expected version ${EXPECT_VERSION}, the server reports ${VERSION} — this is not the build that was deployed"
 fi
 if [ -n "$EXPECT_AUTH" ] && [ "$AUTH_REQUIRED" != "$EXPECT_AUTH" ]; then
   fail "expected authRequired=${EXPECT_AUTH}, the server reports ${AUTH_REQUIRED}"
+fi
+if [ -n "$EXPECT_AUTH_MODE" ] && [ "$AUTH_MODE" != "$EXPECT_AUTH_MODE" ]; then
+  fail "expected authMode=${EXPECT_AUTH_MODE}, the server reports '${AUTH_MODE:-none}'"
+fi
+
+# A deployment that authenticates people cannot be driven without one, and this
+# script has no way to log in: it has no browser and no password. Saying so is
+# the difference between "not checked" and "checked and fine".
+if [ "$AUTH_MODE" = "oidc" ] && [ -z "$CREDENTIAL" ]; then
+  echo "smoke-deploy: PARTIAL - authMode=oidc and no AEROSCRIBE_ACCESS_TOKEN supplied" >&2
+  echo "  /health answered, but the authenticated checks (chain, full run, stage-8" >&2
+  echo "  blocker) did NOT run. Mint an access token for a service account and re-run." >&2
+  exit 4
 fi
 
 # What the deployment *can* do, checked before spending 30 seconds on a run. The
@@ -189,8 +217,9 @@ verify_status=$(curl -sS --max-time 30 -o /tmp/smoke-deploy-verify.$$ -w '%{http
 verification=$(cat /tmp/smoke-deploy-verify.$$ 2>/dev/null || true)
 rm -f /tmp/smoke-deploy-verify.$$
 if [ "$verify_status" != "200" ]; then
-  # 401 is the common operator mistake here — AEROSCRIBE_API_KEY not exported —
-  # so the message names it instead of saying "did not answer".
+  # 401 is the common operator mistake here - no credential exported, or one the
+  # issuer no longer honours - so the message names it instead of saying "did
+  # not answer".
   fail "/api/v1/evidence/verify answered ${verify_status}${verification:+: ${verification}}"
 fi
 VALID=$(printf '%s' "$verification" | json valid)
