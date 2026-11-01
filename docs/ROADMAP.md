@@ -730,56 +730,102 @@ verified”, documented in `OPERATIONS.md`.
 
 ---
 
-## 9. E — Publish the image, add a staging environment
+## 9. E — Publish the image, add a staging environment 🟡 written, not run
 
 **Why.** RULE-063 says no auto-deploy to production. That rule cannot be satisfied by a
-repository that deploys nothing: the current state is “no production at all”, which is honest but
-not the property the rule describes.
+repository that deploys nothing: the previous state was "no production at all", which is honest
+but not the property the rule describes.
 
-**Design.**
+**Design, as built.**
 
 - **Publishing.** `.github/workflows/release-api.yml` on tags `v*` and `workflow_dispatch`:
   `docker/build-push-action` → `ghcr.io/<owner>/aeroscribe-api` with semver, `sha-…` and `latest`
   tags; `platforms: linux/amd64,linux/arm64`; `provenance: true`, `sbom: true`;
-  `permissions: packages: write`. The image already installs production dependencies only.
+  `permissions: packages: write`. `AEROSCRIBE_VERSION` and `GIT_SHA` are build arguments the
+  image stamps into its environment, so `/health` reports the release it is.
+  **Changed from the sketch:** the workflow publishes a second image,
+  `aeroscribe-dashboard`, because a deploy should pull an immutable bundle rather than compile the
+  dashboard on the host. A job `verify` then boots the published **digest** and runs the smoke
+  script — a tag whose image cannot pass its own smoke is not a release yet.
 - **Environment split.** Two GitHub Environments: `staging` (self-service) and `production`
-  (required reviewers, restricted branches). The workflow that targets `production` is
-  dispatch-only and protected by the environment rule — the rule lives in repository settings,
-  and `docs/DEPLOYMENT.md` records exactly which toggles to set.
-- **Where it runs.** The repository cannot create an account, so the plan offers a default and
-  two alternatives rather than pretending:
-  1. **Default — self-hosted compose over SSH** (works with any VPS; uses `compose.yaml`, TLS by
-     Caddy, no cloud account needed beyond the host).
-  2. Render / Fly.io — one service + managed Postgres/Redis; fewer moving parts, needs an account
-     and their secrets.
-  3. Kubernetes — out of scope; listed so it is a decision, not an omission.
-- **`compose.yaml`** (also the local dev stack): `api` (image or build), `postgres`, `redis`,
-  `minio`, `caddy` (TLS + reverse proxy serving the dashboard build at `/` and `/api` to the API).
-  Same-origin removes CORS entirely and makes the auth cookie story in F first-party.
-- **Post-deploy smoke.** `scripts/smoke-deploy.sh <base-url>`: `/health` reports the expected auth
-  and solver state; create a run with `solver: "synthetic"`; walk all eight gates; assert stage 8
-  is `blocked` **and** names the synthetic solver; assert `/api/v1/evidence/verify` is `valid`.
-  A deploy that breaks a label fails the deploy.
+  (required reviewers, restricted branches). The rule lives in repository settings, and
+  [`DEPLOYMENT.md`](DEPLOYMENT.md) § 5 records exactly which toggles to set, because a workflow
+  file cannot turn a reviewer gate on by itself.
+- **Where it runs.** Self-hosted compose over SSH — the default the plan chose, needing no account
+  beyond the host. Render/Fly and Kubernetes stay recorded as decisions in
+  [`DEPLOYMENT.md`](DEPLOYMENT.md) § 12.
+- **`compose.yaml`** (also the local dev stack): `api`, `postgres`, `redis`, `migrate`, `caddy`
+  (TLS + reverse proxy serving the live dashboard bundle at `/` and `/api` to the API). Same-origin
+  removes CORS entirely, and the bearer token is injected at the edge, so the browser never holds
+  it. **One deviation from the sketch:** there is no `minio` service. The API has no
+  object-storage adapter (D4b is unbuilt), and a bucket nothing talks to is worse than an absent one;
+  artefact bytes are the `api-data` volume. `migrate` is a one-shot service rather than an inline
+  migration, because `AEROSCRIBE_STORE=postgres` refuses to boot against an empty database and a
+  request-handling process should not change the schema.
+- **Post-deploy smoke.** `scripts/smoke-deploy.sh <base-url>`: `/health` reports the expected
+  version, auth and solver state; create a run with `solver: "synthetic"`; walk every gate; assert
+  stage 8 is **blocked** and names the synthetic solver; assert the `cfd-run` record's solver
+  matches; assert `/api/v1/evidence/verify` is `valid`. A deploy that breaks a label fails the
+  deploy. It is run by `release-api.yml` (against the published digest) and by both deploy
+  workflows.
 
 **Tasks.**
 
-- [ ] `release-api.yml` with GHCR publish, multi-arch, SBOM, provenance; `AEROSCRIBE_VERSION` and
-      `GIT_SHA` build args surfaced in `/health`.
-- [ ] `compose.yaml` + `docker/Caddyfile` + `.env.example` for the stack; `docker compose up`
-      gives a working live dashboard against the real API.
-- [ ] `deploy-staging.yml` (dispatch, `environment: staging`) — SSH-to-compose by default,
-      documented alternatives.
-- [ ] `deploy-production.yml` (dispatch, `environment: production`, required reviewers) — never
-      triggered by a push.
-- [ ] `scripts/smoke-deploy.sh` + run it in the staging workflow; failure blocks promotion.
-- [ ] `docs/DEPLOYMENT.md`: topology, secret list, TLS, backup/restore, rollback to a previous
-      tag, environment-protection setup steps, and the explicit sentence that GitHub Pages hosts
-      the **fixture-only** dashboard.
-- [ ] Integrity table RULE-063 → **Process** (environment protection) instead of N/A.
+- [x] `release-api.yml` with GHCR publish, multi-arch, SBOM, provenance; `AEROSCRIBE_VERSION` and
+      `GIT_SHA` build args surfaced in `/health`; a `verify` job that boots the digest under smoke.
+- [x] `compose.yaml` + `docker/Caddyfile` + `.env.example` for the stack, plus
+      `docker/dashboard.Dockerfile` and the one-shot `migrate` service.
+- [x] `deploy-staging.yml` (dispatch, `environment: staging`) — SSH-to-compose, with the required
+      secrets and variables listed in [`DEPLOYMENT.md`](DEPLOYMENT.md) § 5.
+- [x] `deploy-production.yml` (dispatch only, `environment: production`, required reviewers) — never
+      triggered by a push, plus a `confirm` input that must equal the tag and optional digest pinning.
+- [x] `scripts/smoke-deploy.sh` + run it in the staging workflow; a failure blocks promotion.
+- [x] `DEPLOYMENT.md`: topology, secret list, TLS, backup/restore, rollback to a previous tag,
+      environment-protection setup steps, and the explicit sentence that GitHub Pages hosts the
+      **fixture-only** dashboard.
+- [x] Integrity table RULE-063 → **Process** (environment protection) instead of N/A.
 
-**Acceptance.** A tag `v0.3.0` publishes a multi-arch image with an SBOM; `docker compose up`
-brings the stack to a state where the dashboard lists live runs; a staging deploy is followed by a
-green smoke that proves the stage-8 blocker; a production deploy cannot start without a reviewer.
+### Status of E
+
+**Every artefact exists. The half that needs Docker or a host has never executed.**
+
+**Executed here, with the output in the pull request that added this section.** `scripts/smoke-deploy.sh` against a real API, anonymous
+and keyed; it fails on a wrong `--expect-version`, a wrong `--expect-auth`, a wrong `--expect-solver`
+and a 401 without a key, and passes with `stage 8 blocked and names the synthetic solver`. The same
+script over HTTPS against a self-signed certificate: `TLS verification failed`, exit 1, and a full
+pass with `--insecure`. The same-origin arrangement was exercised against a stand-in for the Caddy
+rules: `/api/v1/runs` with no `Authorization` header returns `200` through the edge and `401` when
+called directly, the live bundle's emitted URLs are relative, and a deep link falls back to
+`index.html`. `services/api/test/deploy-config.test.ts` compares `compose.yaml` to `config.ts`, to
+`.env.example` and to the Caddyfile, and asserts that nothing but the edge publishes a port — so a
+renamed variable or a published `8787` fails the suite rather than production. Every `run:` block in
+the three workflows is parsed and passed to `bash -n`.
+
+**Not executed.** The GHCR publish (there is no Docker daemon in this environment, so the multi-arch
+build, the SBOM and the provenance attestation are unproven); `docker compose up` and therefore every
+claim about Caddy, Postgres, Redis and the TLS handshake; `Deploy to staging` and
+`Deploy to production`, including the SSH path, the pinned host key and the digest check; and the
+`production` environment's required reviewers, which is repository configuration rather than
+something a file can demonstrate. These are recorded as written-not-run, the same way D4b is.
+
+**Acceptance, item by item.**
+
+1. _A tag `v0.3.0` publishes a multi-arch image with an SBOM._ **Written, not run.** The workflow
+   builds two images for `linux/amd64,linux/arm64` with `sbom: true` and `provenance: true`, and
+   refuses any ref that is not a `v*` tag on main. No tag has been pushed from this environment.
+2. _`docker compose up` brings the stack to a state where the dashboard lists live runs._ **Not
+   demonstrated; the mechanism is.** The stack is defined, the live bundle is same-origin and its
+   API calls are proven at the HTTP level, and the nine live views are covered by 22 component
+   tests. No Docker daemon here, and no browser-driven end-to-end test exists anywhere in the
+   repository — which is why [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) still says the
+   deployed Pages build is fixture-only.
+3. _A staging deploy is followed by a green smoke proving the stage-8 blocker._ **The smoke half is
+   proven against a real API; the deploy half is unexecuted.** The staging workflow's last step is
+   that exact script, so a deploy cannot be reported green without it.
+4. _A production deploy cannot start without a reviewer._ **Configuration, not code.** The workflow
+   is dispatch-only and declares `environment: production`; GitHub withholds the environment's
+   secrets until the required reviewers approve. With that toggle off the promise is empty, which is
+   why [`DEPLOYMENT.md`](DEPLOYMENT.md) § 5 spells out the two settings that make it true.
 
 **Size.** 3–5 days, plus whatever the chosen host costs.
 

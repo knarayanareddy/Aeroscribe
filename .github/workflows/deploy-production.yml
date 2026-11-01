@@ -1,0 +1,260 @@
+name: Deploy to production
+
+# Dispatch only, gated by a reviewer, and deployable by digest.
+#
+# Three separations from staging, and each one is the point:
+#
+#   1. No push trigger. Production is never a side effect of merging.
+#   2. `environment: production` carries required reviewers (Settings →
+#      Environments). GitHub does not hand the job its secrets until a human
+#      approves, so the deploy *cannot start* without one — that gate is
+#      configuration, and docs/DEPLOYMENT.md § 5 says exactly which boxes to
+#      tick, because a workflow file cannot turn it on by itself.
+#   3. A digest can be given instead of a tag. Staging proved `sha256:…`; a
+#      production deploy that pins the same digest runs the same bytes even if
+#      the tag has since moved.
+#
+# There is no `--insecure` path here on purpose: production must present a
+# certificate a client can verify.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to deploy (vX.Y.Z).'
+        required: true
+        type: string
+      digest:
+        description: 'Optional API image digest from staging (sha256:…). Pins the exact bytes.'
+        required: false
+        type: string
+      confirm:
+        description: 'Type the tag again to confirm. A typo here deploys the wrong release.'
+        required: true
+        type: string
+      solver:
+        description: 'Solver the host is expected to use. The smoke test asserts it.'
+        required: true
+        type: choice
+        options: [synthetic, su2]
+        default: synthetic
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.tag }} to production
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: production
+      url: ${{ vars.AEROSCRIBE_PRODUCTION_URL }}
+    steps:
+      # Before anything is fetched or connected to: a mistyped confirmation is
+      # the cheapest failure there is, and the reviewer should not be asked to
+      # approve a deploy that was never going to run.
+      - name: Confirm the request
+        env:
+          TAG: ${{ inputs.tag }}
+          CONFIRM: ${{ inputs.confirm }}
+          DIGEST: ${{ inputs.digest }}
+        run: |
+          set -euo pipefail
+          if [ "$TAG" != "$CONFIRM" ]; then
+            echo "::error::confirmation '$CONFIRM' does not match the tag '$TAG'."
+            exit 1
+          fi
+          case "$TAG" in
+            v[0-9]*) ;;
+            *)
+              echo "::error::'$TAG' is not a v* tag."
+              exit 1
+              ;;
+          esac
+          if [ -n "${DIGEST}" ]; then
+            case "$DIGEST" in
+              sha256:*) ;;
+              *)
+                echo "::error::a digest looks like sha256:<64 hex characters>, not '$DIGEST'."
+                exit 1
+                ;;
+            esac
+            if ! printf '%s' "${DIGEST#sha256:}" | grep -Eq '^[0-9a-f]{64}$'; then
+              echo "::error::'$DIGEST' is not a well-formed sha256 digest."
+              exit 1
+            fi
+          fi
+          echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+
+      - name: Checkout the tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Confirm the tag is a release on main
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::${TAG} is not on main."
+            exit 1
+          fi
+
+      - name: Check the required configuration is present
+        env:
+          PRODUCTION_URL: ${{ vars.AEROSCRIBE_PRODUCTION_URL }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in AEROSCRIBE_SSH_HOST AEROSCRIBE_SSH_USER AEROSCRIBE_SSH_KEY \
+                      AEROSCRIBE_SSH_KNOWN_HOSTS AEROSCRIBE_API_KEY AEROSCRIBE_DB_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::${name} is not set on the production environment."
+              missing=1
+            fi
+          done
+          if [ -z "${PRODUCTION_URL:-}" ]; then
+            echo "::error::The production environment has no AEROSCRIBE_PRODUCTION_URL variable."
+            missing=1
+          fi
+          [ "$missing" = 0 ] || exit 1
+
+      - name: Ship the deployment files
+        env:
+          SSH_KEY: ${{ secrets.AEROSCRIBE_SSH_KEY }}
+          SSH_HOST: ${{ secrets.AEROSCRIBE_SSH_HOST }}
+          SSH_USER: ${{ secrets.AEROSCRIBE_SSH_USER }}
+          KNOWN_HOSTS: ${{ secrets.AEROSCRIBE_SSH_KNOWN_HOSTS }}
+          DEPLOY_PATH: ${{ vars.AEROSCRIBE_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          DEPLOY_PATH="${DEPLOY_PATH:-/opt/aeroscribe}"
+          echo "DEPLOY_PATH=${DEPLOY_PATH}" >> "$GITHUB_ENV"
+
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          echo "SSH_TARGET=${SSH_USER}@${SSH_HOST}" >> "$GITHUB_ENV"
+
+          ssh "${SSH_USER}@${SSH_HOST}" "install -d -m 755 '${DEPLOY_PATH}'"
+          tar -czf - compose.yaml .env.example Dockerfile docker/Caddyfile docker/dashboard.Dockerfile \
+            | ssh "${SSH_USER}@${SSH_HOST}" "tar -xzf - -C '${DEPLOY_PATH}'"
+
+      - name: Write the environment file
+        env:
+          API_KEY: ${{ secrets.AEROSCRIBE_API_KEY }}
+          DB_PASSWORD: ${{ secrets.AEROSCRIBE_DB_PASSWORD }}
+          DOMAIN: ${{ vars.AEROSCRIBE_PRODUCTION_DOMAIN }}
+          CONTACT_EMAIL: ${{ vars.AEROSCRIBE_CONTACT_EMAIL }}
+          OFFLINE: ${{ vars.AEROSCRIBE_OFFLINE }}
+          SEMANTIC_SCHOLAR_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
+          DIGEST: ${{ inputs.digest }}
+        run: |
+          set -euo pipefail
+          TARGET="${SSH_TARGET}"
+          ssh "$TARGET" "test -f '${DEPLOY_PATH}/.env' && grep -E '^AEROSCRIBE_(API|WEB)_IMAGE=' '${DEPLOY_PATH}/.env' || true" \
+            > previous-images.txt || true
+
+          if [ -n "${DIGEST:-}" ]; then
+            # A digest reference ignores the tag entirely, which is what makes it
+            # the stronger pin: a re-pushed tag cannot change what runs.
+            API_REFERENCE="${REGISTRY}/${{ github.repository_owner }}/aeroscribe-api@${DIGEST}"
+          else
+            API_REFERENCE="${REGISTRY}/${{ github.repository_owner }}/aeroscribe-api:${VERSION}"
+          fi
+
+          {
+            echo "AEROSCRIBE_API_IMAGE=${API_REFERENCE}"
+            echo "AEROSCRIBE_WEB_IMAGE=${REGISTRY}/${{ github.repository_owner }}/aeroscribe-dashboard:${VERSION}"
+            echo "AEROSCRIBE_DOMAIN=${DOMAIN:?the production environment needs AEROSCRIBE_PRODUCTION_DOMAIN}"
+            echo "AEROSCRIBE_HTTP_PORT=80"
+            echo "AEROSCRIBE_HTTPS_PORT=443"
+            echo "AEROSCRIBE_API_KEY=${API_KEY}"
+            echo "AEROSCRIBE_DB_PASSWORD=${DB_PASSWORD}"
+            echo "AEROSCRIBE_OFFLINE=${OFFLINE:-false}"
+            echo "AEROSCRIBE_CONTACT_EMAIL=${CONTACT_EMAIL:-}"
+            echo "LOG_LEVEL=info"
+            echo "SU2_CFD_BINARY="
+            echo "LATEX_BINARY="
+            echo "LATEX_TIMEOUT_MS=120000"
+            echo "SEMANTIC_SCHOLAR_API_KEY=${SEMANTIC_SCHOLAR_KEY:-}"
+          } > deploy.env
+          trap 'rm -f deploy.env' EXIT
+          ssh "$TARGET" "install -m 600 /dev/null '${DEPLOY_PATH}/.env'"
+          cat deploy.env | ssh "$TARGET" "cat > '${DEPLOY_PATH}/.env'"
+
+      - name: Pull and replace the stack
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ssh "$SSH_TARGET" "docker login '${REGISTRY}' -u '${{ github.actor }}' --password-stdin" <<< "$GHCR_TOKEN"
+          ssh "$SSH_TARGET" "cd '${DEPLOY_PATH}' && docker compose pull --quiet"
+          ssh "$SSH_TARGET" "cd '${DEPLOY_PATH}' && docker compose up -d --no-build --remove-orphans"
+
+      - name: Verify the host is running the requested bytes
+        env:
+          DIGEST: ${{ inputs.digest }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DIGEST:-}" ]; then
+            echo "::notice::No digest was given; the deploy is pinned by tag ${VERSION} only."
+            exit 0
+          fi
+          # The digest was requested to prove *which bytes* run. Asking the host
+          # is the only way to know the pull actually produced them.
+          running=$(ssh "$SSH_TARGET" "docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' \$(cd '${DEPLOY_PATH}' && docker compose ps -q api)")
+          echo "$running"
+          case "$running" in
+            *"@${DIGEST}"*) echo "api is running ${DIGEST}" ;;
+            *)
+              echo "::error::The api container is not running the requested digest."
+              exit 1
+              ;;
+          esac
+
+      - name: Smoke the deployment
+        env:
+          PRODUCTION_URL: ${{ vars.AEROSCRIBE_PRODUCTION_URL }}
+          API_KEY: ${{ secrets.AEROSCRIBE_API_KEY }}
+        run: |
+          set -euo pipefail
+          AEROSCRIBE_API_KEY="$API_KEY" scripts/smoke-deploy.sh "$PRODUCTION_URL" \
+            --wait 180 --expect-version "$VERSION" --expect-auth --expect-solver "${{ inputs.solver }}"
+
+      - name: Summarise
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "### Production: \`${{ inputs.tag }}\`"
+            echo
+            echo "- image: \`${{ inputs.digest || format('tag {0}', inputs.tag) }}\`"
+            echo "- expected solver: \`${{ inputs.solver }}\`"
+            echo "- job: ${{ job.status }}"
+            if [ -s previous-images.txt ]; then
+              echo
+              echo "Previous release on the host, for a rollback:"
+              echo
+              echo '```'
+              cat previous-images.txt
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Container logs
+        if: failure()
+        run: ssh "$SSH_TARGET" "cd '${DEPLOY_PATH}' && docker compose logs --tail 200" || true
