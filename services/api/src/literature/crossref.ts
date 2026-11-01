@@ -73,6 +73,7 @@ export function mapCrossrefItem(item: CrossrefItem): Paper | null {
     // normalised to null so a citation style can tell "absent" from "blank".
     containerTitle: cleanText(item['container-title']?.[0]),
     volume: cleanText(item.volume),
+    issue: cleanText(item.issue),
     pages: cleanText(item.page),
     publisher: cleanText(item.publisher),
   };
@@ -135,7 +136,7 @@ export class CrossrefClient {
       query,
       rows: String(Math.min(Math.max(limit, 1), 100)),
       select:
-        'DOI,title,author,issued,abstract,is-referenced-by-count,URL,type,container-title,volume,page,publisher',
+        'DOI,title,author,issued,abstract,is-referenced-by-count,URL,type,container-title,volume,issue,page,publisher',
     });
     if (this.options.contactEmail) params.set('mailto', this.options.contactEmail);
 

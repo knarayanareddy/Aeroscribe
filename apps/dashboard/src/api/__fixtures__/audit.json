@@ -1,7 +1,7 @@
 {
   "entries": [
     {
-      "at": "2026-11-01T19:54:47.404Z",
+      "at": "2026-11-01T22:37:14.023Z",
       "action": "run.created",
       "runId": "run-contract",
       "actor": "anonymous",
@@ -11,7 +11,7 @@
       }
     },
     {
-      "at": "2026-11-01T19:54:47.416Z",
+      "at": "2026-11-01T22:37:14.032Z",
       "action": "run.advanced",
       "runId": "run-contract",
       "actor": "anonymous",
@@ -22,18 +22,18 @@
       }
     },
     {
-      "at": "2026-11-01T19:54:47.416Z",
+      "at": "2026-11-01T22:37:14.032Z",
       "action": "evidence.appended",
       "runId": "run-contract",
       "actor": "orchestrator",
       "detail": {
         "seq": 0,
         "kind": "stage-output",
-        "hash": "279d6c9efe093664427bdf0111b503fdc81d4b7c1a8205dd943e1d6f579956f8"
+        "hash": "b68bb2c5321fa73e763437a334af9586a0801f67891515232a8101baf1329bbd"
       }
     },
     {
-      "at": "2026-11-01T19:54:47.424Z",
+      "at": "2026-11-01T22:37:14.036Z",
       "action": "gate.approved",
       "runId": "run-contract",
       "actor": "ana",
@@ -44,7 +44,7 @@
       }
     },
     {
-      "at": "2026-11-01T19:54:47.434Z",
+      "at": "2026-11-01T22:37:14.041Z",
       "action": "run.advanced",
       "runId": "run-contract",
       "actor": "anonymous",
@@ -55,18 +55,18 @@
       }
     },
     {
-      "at": "2026-11-01T19:54:47.435Z",
+      "at": "2026-11-01T22:37:14.041Z",
       "action": "evidence.appended",
       "runId": "run-contract",
       "actor": "orchestrator",
       "detail": {
         "seq": 1,
         "kind": "literature-search",
-        "hash": "00b439ef5d1c9198d36c7bcbf4996d286e3a5255f66b060285599c27fef6aed2"
+        "hash": "fa88d9f43a8876d5bf66b58fd7e742c337a3d3ba00ede3f0b5a284d1c259f838"
       }
     },
     {
-      "at": "2026-11-01T19:54:47.439Z",
+      "at": "2026-11-01T22:37:14.046Z",
       "action": "gate.approved",
       "runId": "run-contract",
       "actor": "ana",
@@ -77,7 +77,7 @@
       }
     },
     {
-      "at": "2026-11-01T19:54:47.447Z",
+      "at": "2026-11-01T22:37:14.049Z",
       "action": "run.advanced",
       "runId": "run-contract",
       "actor": "anonymous",
@@ -88,18 +88,18 @@
       }
     },
     {
-      "at": "2026-11-01T19:54:47.447Z",
+      "at": "2026-11-01T22:37:14.050Z",
       "action": "evidence.appended",
       "runId": "run-contract",
       "actor": "orchestrator",
       "detail": {
         "seq": 2,
         "kind": "novelty-report",
-        "hash": "591b8f29dcc23b111239ec180f417e6a1ea6d6c847693b7bdff2671f4ae4a656"
+        "hash": "5165272f83f8443a39a26d934197c946954c1eeaa747afc59378f3ac90c889d1"
       }
     },
     {
-      "at": "2026-11-01T19:54:47.449Z",
+      "at": "2026-11-01T22:37:14.052Z",
       "action": "gate.approved",
       "runId": "run-contract",
       "actor": "ana",
@@ -110,7 +110,7 @@
       }
     },
     {
-      "at": "2026-11-01T19:54:47.454Z",
+      "at": "2026-11-01T22:37:14.054Z",
       "action": "run.advanced",
       "runId": "run-contract",
       "actor": "anonymous",
@@ -121,18 +121,18 @@
       }
     },
     {
-      "at": "2026-11-01T19:54:47.455Z",
+      "at": "2026-11-01T22:37:14.054Z",
       "action": "evidence.appended",
       "runId": "run-contract",
       "actor": "orchestrator",
       "detail": {
         "seq": 3,
         "kind": "stage-output",
-        "hash": "93b77e92067029b9fd58a03a50e034cc300ea11b02486ea6860b556328f70bcc"
+        "hash": "7fc4ae026c15e1f98b2cb46f0092aea38ad6712448db1c016188984bbab61e52"
       }
     },
     {
-      "at": "2026-11-01T19:54:47.457Z",
+      "at": "2026-11-01T22:37:14.055Z",
       "action": "gate.approved",
       "runId": "run-contract",
       "actor": "ana",
@@ -143,7 +143,7 @@
       }
     },
     {
-      "at": "2026-11-01T19:54:47.468Z",
+      "at": "2026-11-01T22:37:14.064Z",
       "action": "run.advanced",
       "runId": "run-contract",
       "actor": "anonymous",
@@ -154,18 +154,18 @@
       }
     },
     {
-      "at": "2026-11-01T19:54:47.469Z",
+      "at": "2026-11-01T22:37:14.065Z",
       "action": "evidence.appended",
       "runId": "run-contract",
       "actor": "orchestrator",
       "detail": {
         "seq": 4,
         "kind": "cfd-run",
-        "hash": "0d44b83c0ea78c3e71cc364e130bca67d5ab2e1fdda7cec224bb75b0453e5262"
+        "hash": "e947c2f146664f22e8c262b5ae772d021be87e77c12353e498f8f629ae48d33f"
       }
     },
     {
-      "at": "2026-11-01T19:54:47.471Z",
+      "at": "2026-11-01T22:37:14.067Z",
       "action": "gate.approved",
       "runId": "run-contract",
       "actor": "ana",
@@ -176,29 +176,29 @@
       }
     },
     {
-      "at": "2026-11-01T19:54:47.481Z",
+      "at": "2026-11-01T22:37:14.076Z",
       "action": "run.advanced",
       "runId": "run-contract",
       "actor": "anonymous",
       "detail": {
         "stage": 5,
-        "evidenceSeq": 5,
-        "summary": "6 sections, 2 verified references, 346 words. All 23 numeric claims traced to evidence."
+        "evidenceSeq": 6,
+        "summary": "6 sections from a 12-paragraph plan, 2 AIAA-formatted references, 356 words. All 22 numeric claims traced to evidence."
       }
     },
     {
-      "at": "2026-11-01T19:54:47.481Z",
+      "at": "2026-11-01T22:37:14.076Z",
       "action": "evidence.appended",
       "runId": "run-contract",
       "actor": "orchestrator",
       "detail": {
-        "seq": 5,
+        "seq": 6,
         "kind": "manuscript",
-        "hash": "f75ce4959eb6e40474550ce3ad449683cf2eaf56f3ec223aa1ed5a41b7a60dd0"
+        "hash": "ce7a94add711feda6e7a3f279063a0cd1af82cc16ebb38fd166fa7918cfa4a70"
       }
     },
     {
-      "at": "2026-11-01T19:54:47.485Z",
+      "at": "2026-11-01T22:37:14.078Z",
       "action": "gate.approved",
       "runId": "run-contract",
       "actor": "ana",
@@ -209,29 +209,29 @@
       }
     },
     {
-      "at": "2026-11-01T19:54:47.495Z",
+      "at": "2026-11-01T22:37:14.083Z",
       "action": "run.advanced",
       "runId": "run-contract",
       "actor": "anonymous",
       "detail": {
         "stage": 6,
-        "evidenceSeq": 6,
-        "summary": "2 major issue(s) found."
+        "evidenceSeq": 7,
+        "summary": "4 major issue(s) found."
       }
     },
     {
-      "at": "2026-11-01T19:54:47.495Z",
+      "at": "2026-11-01T22:37:14.084Z",
       "action": "evidence.appended",
       "runId": "run-contract",
       "actor": "orchestrator",
       "detail": {
-        "seq": 6,
+        "seq": 7,
         "kind": "review-report",
-        "hash": "f0185f61e7f617a08478dd4d182c0044bcbf3fb456e188ed4a123fa730276f45"
+        "hash": "267d73547f8d5f23c8d9f0be1940361cc87d625a0b3d1febdaf0dcfee8c501e9"
       }
     },
     {
-      "at": "2026-11-01T19:54:47.504Z",
+      "at": "2026-11-01T22:37:14.089Z",
       "action": "gate.approved",
       "runId": "run-contract",
       "actor": "ana",
@@ -242,29 +242,29 @@
       }
     },
     {
-      "at": "2026-11-01T19:54:47.508Z",
+      "at": "2026-11-01T22:37:14.092Z",
       "action": "run.advanced",
       "runId": "run-contract",
       "actor": "anonymous",
       "detail": {
         "stage": 7,
-        "evidenceSeq": 7,
+        "evidenceSeq": 8,
         "summary": "1 blocking issue(s) for AIAA Journal."
       }
     },
     {
-      "at": "2026-11-01T19:54:47.508Z",
+      "at": "2026-11-01T22:37:14.093Z",
       "action": "evidence.appended",
       "runId": "run-contract",
       "actor": "orchestrator",
       "detail": {
-        "seq": 7,
+        "seq": 8,
         "kind": "compliance-report",
-        "hash": "f573c801149b4d574f937556446c94300f80424c7c1056f9b6e90f22ae7efda8"
+        "hash": "0307927a35c151c1358b38904915b64a059d7dc58550052f2e2ad8ef122895e6"
       }
     },
     {
-      "at": "2026-11-01T19:54:47.511Z",
+      "at": "2026-11-01T22:37:14.095Z",
       "action": "gate.approved",
       "runId": "run-contract",
       "actor": "ana",
@@ -275,37 +275,37 @@
       }
     },
     {
-      "at": "2026-11-01T19:54:47.523Z",
+      "at": "2026-11-01T22:37:14.104Z",
       "action": "evidence.appended",
       "runId": "run-contract",
       "actor": "orchestrator",
       "detail": {
-        "seq": 9,
+        "seq": 10,
         "kind": "manuscript-render",
-        "hash": "3f76e8c33e5917fbfe1fabaaa951832a381c1d8bdb9313f17f670d1f4bfbcf51"
+        "hash": "e81a4f49ee7fa35a66afc08cf9b534dd3c4054b4adf7ae44b17e8387c05d1c87"
       }
     },
     {
-      "at": "2026-11-01T19:54:47.524Z",
+      "at": "2026-11-01T22:37:14.105Z",
       "action": "stage.blocked",
       "runId": "run-contract",
       "actor": "anonymous",
       "detail": {
         "stage": 8,
-        "evidenceSeq": 8,
+        "evidenceSeq": 9,
         "summary": "Submission blocked: the review council has not passed the manuscript; journal compliance has blocking issues; the results come from the synthetic solver; the manuscript PDF was not typeset (LATEX_BINARY is not set).",
         "reason": "The package is not submittable: the review council has not passed the manuscript; journal compliance has blocking issues; the results come from the synthetic solver; the manuscript PDF was not typeset (LATEX_BINARY is not set)."
       }
     },
     {
-      "at": "2026-11-01T19:54:47.525Z",
+      "at": "2026-11-01T22:37:14.105Z",
       "action": "evidence.appended",
       "runId": "run-contract",
       "actor": "orchestrator",
       "detail": {
-        "seq": 8,
+        "seq": 9,
         "kind": "submission-package",
-        "hash": "bbe3c2ad4fdb81036e369e0d0ef7e030dd2c9c54664d77c812e4fa488167b7e2"
+        "hash": "2b8f36c99c6913e51e83146f741f726a0363fd9739942ffa420ebf4063845e1c"
       }
     }
   ],

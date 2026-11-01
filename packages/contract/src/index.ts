@@ -35,6 +35,10 @@ export const EVIDENCE_KINDS = [
   'literature-search',
   'cfd-run',
   'novelty-report',
+  // The paragraph plan, written before the text it describes. It comes first in
+  // this list because a reader following the chain should meet the plan before
+  // the manuscript that claims to follow it.
+  'manuscript-plan',
   'manuscript',
   'review-report',
   'compliance-report',
@@ -100,6 +104,8 @@ export interface Paper {
    */
   containerTitle?: string | null;
   volume?: string | null;
+  /** Issue number as the provider reports it ("3", "Suppl. 1"); AIAA prints it as `No. N`. */
+  issue?: string | null;
   pages?: string | null;
   publisher?: string | null;
   /** Proceedings/venue as the provider names it, when it names one at all. */
@@ -175,6 +181,12 @@ export interface ReferenceRecord {
   year: number | null;
   venue: string | null;
   volume: string | null;
+  /**
+   * Issue number, when the provider reports one. Added in G for RULE-032's
+   * `No. N` field; records written before it simply lack the property, and a
+   * citation style omits it rather than printing a guess.
+   */
+  issue?: string | null;
   pages: string | null;
   publisher: string | null;
   url: string | null;
@@ -293,9 +305,34 @@ export interface CfdEvidencePayload {
   computedAt: string;
 }
 
+/** A citation style this project can produce from a structured record. */
+export type CitationStyle = 'aiaa-journal' | 'aiaa-book' | 'aiaa-conference' | 'incomplete';
+
+/** One bibliography entry, as the formatter rendered it. */
+export interface RenderedCitation {
+  key: string;
+  style: CitationStyle;
+  /** Fields RULE-032's form prints that this record does not carry. */
+  missing: string[];
+}
+
+/**
+ * One paragraph of the manuscript, with the id its plan gave it.
+ *
+ * The id is what makes stage 6's projection check possible: the review stage
+ * compares the plan's paragraphs with the text's by id, not by trying to match
+ * prose it did not write.
+ */
+export interface ManuscriptParagraph {
+  id: string;
+  text: string;
+}
+
 export interface ManuscriptSectionText {
   heading: string;
   body: string;
+  /** Present from G on; `body` is these paragraphs joined. */
+  paragraphs?: ManuscriptParagraph[];
 }
 
 export interface ManuscriptReference {
@@ -320,9 +357,63 @@ export interface ManuscriptPayload {
   referenceCount: number;
   references: ManuscriptReference[];
   numbers: Record<string, number>;
+  /**
+   * The `manuscript-plan` record this text was rendered from.
+   *
+   * Optional because records written before G have no plan; a reader must
+   * treat its absence as "this manuscript predates the hierarchy", which is a
+   * different statement from "the plan was lost".
+   */
+  planRef?: { seq: number; hash: string };
+  /** One entry per reference, in citation order. Absent on pre-G records. */
+  citations?: RenderedCitation[];
   generatedAt: string;
   /** True when any number came from the synthetic solver. */
   synthetic: boolean;
+}
+
+/* ─────────────────────────────── the plan ─────────────────────────────────── */
+
+/** One planned paragraph. Text is produced *from* this, never alongside it. */
+export interface PlannedParagraph {
+  /** `p-<section>-<n>`, stable and unique within the run. */
+  id: string;
+  /**
+   * A stable key naming the job this paragraph does, e.g. `method-meshes`.
+   * The renderer switches on it, so a paragraph in the plan always has text.
+   */
+  intent: string;
+  /** Evidence kinds this paragraph may draw on. */
+  evidenceRefs: string[];
+  /** Keys of `ManuscriptPayload.numbers` this paragraph may print. */
+  numberKeys: string[];
+  /** Soft budget, checked by stage 6 at +20 %. */
+  targetWords: number;
+}
+
+export interface ManuscriptPlanSection {
+  heading: string;
+  purpose: string;
+  paragraphs: PlannedParagraph[];
+}
+
+/**
+ * RULE-030's Levels 1–3, as an artefact.
+ *
+ * This is not an LLM outline: it is a deterministic structure written by
+ * `agents/plan.ts` from the run's evidence, and the manuscript is a projection
+ * of it. That is what makes "hierarchical generation" checkable — stage 6 can
+ * compare the plan with the text because both are records.
+ */
+export interface ManuscriptPlanPayload {
+  stage: 'plan';
+  schemaVersion: 1;
+  runId: string;
+  journalId: string;
+  /** Paper architecture: one sentence on what the manuscript is for. */
+  architecture: string;
+  sections: ManuscriptPlanSection[];
+  generatedAt: string;
 }
 
 export interface ReviewCommentRecord {
@@ -338,7 +429,12 @@ export interface ReviewPayload {
   manuscriptTitle: string;
   verdict: 'pass' | 'revise';
   comments: ReviewCommentRecord[];
-  checks: Array<{ id: string; description: string; passed: boolean }>;
+  /**
+   * One row per rule the council evaluated. `skipped` marks a rule it could not
+   * evaluate — a pre-plan manuscript has no plan to compare — so a check that
+   * never ran cannot be read as a check that passed.
+   */
+  checks: Array<{ id: string; description: string; passed: boolean; skipped?: boolean }>;
   reviewedAt: string;
 }
 

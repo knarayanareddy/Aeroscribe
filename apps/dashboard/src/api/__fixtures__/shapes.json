@@ -396,6 +396,8 @@
       "id": "number",
       "metrics": {
         "claimsChecked": "number",
+        "planSeq": "number",
+        "plannedParagraphs": "number",
         "references": "number",
         "words": "number"
       },

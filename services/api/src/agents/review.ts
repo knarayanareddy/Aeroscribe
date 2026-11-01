@@ -7,6 +7,7 @@ import { buildPolicy, verifyClaims } from '../claims/verify';
 import type { StageHandler, StageOutcome } from './types';
 import type { ManuscriptPayload } from './writing';
 import type { CfdEvidencePayload } from './evidence';
+import { checkProjection } from './plan';
 
 import type { CompliancePayload, ReviewCommentRecord, ReviewPayload } from '@aeroscribe/contract';
 
@@ -47,6 +48,8 @@ export const peerReview: StageHandler = async (context): Promise<StageOutcome> =
   ].join('\n\n');
 
   const claims = verifyClaims(text, buildPolicy(records));
+  // RULE-030: the text must be the projection of a plan record that exists.
+  const projection = checkProjection(manuscript, records);
   const abstractWords = words(manuscript.abstract);
   const hasDisclosure = manuscript.sections.some((section) =>
     /ai use disclosure/i.test(section.heading),
@@ -75,6 +78,14 @@ export const peerReview: StageHandler = async (context): Promise<StageOutcome> =
       id: 'RULE-041',
       description: 'grid convergence study is valid',
       passed: gciValid,
+    },
+    {
+      id: 'RULE-030',
+      description: projection.checked
+        ? 'manuscript text is a projection of its plan'
+        : 'manuscript text is a projection of its plan (pre-plan manuscript: nothing to compare)',
+      passed: projection.checked && projection.major.length === 0,
+      ...(projection.checked ? {} : { skipped: true }),
     },
   ];
 
@@ -119,6 +130,12 @@ export const peerReview: StageHandler = async (context): Promise<StageOutcome> =
       `The grid convergence study is not valid (${cfd?.gci?.reason ?? 'no reason recorded'}), so no uncertainty interval may be quoted.`,
     );
   }
+  for (const message of projection.major) {
+    add('Whole manuscript', 'major', message);
+  }
+  for (const message of projection.minor) {
+    add('Whole manuscript', 'minor', message);
+  }
   if (manuscript.synthetic) {
     add(
       'Results',
@@ -137,18 +154,25 @@ export const peerReview: StageHandler = async (context): Promise<StageOutcome> =
     reviewedAt: now().toISOString(),
   };
 
+  const skipped = checks.filter((check) => check.skipped === true);
+  const ran = checks.length - skipped.length;
+
   return {
     kind: 'review-report',
     label: `Review council report: ${manuscript.title}`,
     summary:
       payload.verdict === 'pass'
-        ? `Passed all ${checks.length} checks.`
+        ? `Passed ${ran} of ${checks.length} checks${
+            skipped.length > 0
+              ? `; ${skipped.map((check) => check.id).join(', ')} had nothing to check`
+              : ''
+          }.`
         : `${comments.filter((comment) => comment.severity === 'major').length} major issue(s) found.`,
     payload,
     metrics: {
       verdict: payload.verdict,
       checksPassed: checks.filter((check) => check.passed).length,
-      checksTotal: checks.length,
+      checksTotal: ran,
       majorComments: comments.filter((comment) => comment.severity === 'major').length,
     },
   };
@@ -196,6 +220,31 @@ export const complianceCheck: StageHandler = async (context): Promise<StageOutco
       severity: 'minor',
       detail: `${journal.name} uses numbered citations; at least one reference is not numbered.`,
     });
+  }
+  // RULE-032: a reference the formatter could not set in an AIAA form is a
+  // blocking issue; one that only lacks optional fields is a note. Manuscripts
+  // written before G carry no citation records, and there is nothing to check.
+  const citations = manuscript.citations ?? [];
+  const incomplete = citations.filter((citation) => citation.style === 'incomplete');
+  if (incomplete.length > 0) {
+    issues.push({
+      rule: 'citation-format',
+      severity: 'major',
+      detail: `${incomplete.length} reference(s) cannot be set in an AIAA form because the record does not carry the fields the form requires: ${incomplete
+        .slice(0, 3)
+        .map((citation) => citation.key)
+        .join(', ')}.`,
+    });
+  } else {
+    const thinner = citations.filter((citation) => citation.missing.length > 0);
+    if (thinner.length > 0) {
+      const fields = [...new Set(thinner.flatMap((citation) => citation.missing))].sort();
+      issues.push({
+        rule: 'citation-format',
+        severity: 'minor',
+        detail: `${thinner.length} reference(s) are set in AIAA form without ${fields.join(', ')}: the records do not carry those fields, so they are omitted rather than guessed.`,
+      });
+    }
   }
   if (review?.verdict === 'revise') {
     issues.push({

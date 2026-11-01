@@ -5,6 +5,7 @@ import {
   formatReferenceLine,
   isCfdPayload,
   isLiteraturePayload,
+  isPlanPayload,
   isRecheckPayload,
   isRenderPayload,
   latestPayload,
@@ -12,6 +13,7 @@ import {
   toLiveCfd,
   toLiveGaps,
   toLiveManuscript,
+  toLivePlan,
   toLiveRecheck,
   toLiveReferences,
   toLiveRender,
@@ -170,6 +172,45 @@ describe('novelty, manuscript and review', () => {
     expect(manuscript.references.length).toBe(manuscript.references.length);
   });
 
+  it('carries the AIAA form and the plan reference the payload names', () => {
+    const record = records.find((entry) => entry.kind === 'manuscript')!;
+    const manuscript = toLiveManuscript(record.payload as never);
+    const payload = record.payload as {
+      citations?: Array<{ key: string; style: string }>;
+      planRef?: { seq: number; hash: string };
+    };
+
+    expect(manuscript.citations.map((citation) => citation.key)).toEqual(
+      (payload.citations ?? []).map((citation) => citation.key),
+    );
+    expect(manuscript.planRef).toEqual(payload.planRef ?? null);
+  });
+
+  it('maps the plan record: sections, paragraph ids and declared numbers', () => {
+    const record = records.find((entry) => entry.kind === 'manuscript-plan');
+    expect(record).toBeDefined();
+    expect(isPlanPayload(record!.payload)).toBe(true);
+    expect(isPlanPayload({ stage: 'paper-synthesis' })).toBe(false);
+
+    const plan = toLivePlan(record!.payload as never);
+    expect(plan.sections.map((section) => section.heading)).toEqual([
+      'Introduction',
+      'Method',
+      'Results',
+      'Discussion',
+      'Conclusion',
+      'AI use disclosure',
+    ]);
+    expect(plan.paragraphCount).toBe(
+      plan.sections.reduce((total, section) => total + section.paragraphs.length, 0),
+    );
+    const results = plan.sections
+      .flatMap((section) => section.paragraphs)
+      .find((paragraph) => paragraph.id === 'p-results-2')!;
+    expect(results.numberKeys).toEqual(['apparentOrder', 'gciPercent', 'meshCount']);
+    expect(plan.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
   it('counts passed review checks from the checks themselves', () => {
     const record = records.find((entry) => entry.kind === 'review-report')!;
     const review = toLiveReview(record.payload as never);
@@ -191,8 +232,8 @@ describe('rendered manuscript mapping', () => {
     expect(live.files.map((file) => file.name)).toEqual([
       'manuscript.tex',
       'references.bib',
-      'figure-1.tex',
-      'figure-1.dat',
+      'figure-gci.tex',
+      'figure-gci.dat',
     ]);
     expect(live.pdf).toBeNull();
     expect(live.summary).toMatch(/LaTeX source only/);

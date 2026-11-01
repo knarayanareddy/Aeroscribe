@@ -80,7 +80,9 @@ services/api/src
     ├── types.ts          StageContext, RunOptions, StageOutcome, StageHandler
     ├── research.ts       stage 0 topic, stage 1 literature, stage 2 novelty, stage 3 framing
     ├── evidence.ts       stage 4 CFD evidence
-    ├── writing.ts        stage 5 manuscript (claim-verified)
+    ├── writing.ts        stage 5 plan record, then the manuscript (claim-verified)
+    ├── plan.ts           buildPlan / renderPlan / checkProjection (RULE-030)
+    ├── citation.ts       AIAA forms, their inverse, and the round-trip check (RULE-032)
     ├── review.ts         stage 6 review council, stage 7 compliance
     └── knowledge.ts      stage 8 wiki article, LaTeX render, submission manifest
 ```
@@ -91,7 +93,7 @@ The renderer sits outside `agents/` because it is a document builder, not a stag
 services/api/src/latex/
 ├── escape.ts       escapeLatex (one pass over code points) + stripLatex (prose out)
 ├── bibliography.ts BibTeX from ReferenceRecord; absent fields are omitted, not filled
-├── figures.ts      pgfplots axis + .dat from the cfd-run mesh study
+├── figures.ts      pgfplots two-panel figure + .dat from the cfd-run mesh study
 ├── render.ts       renderManuscript → deterministic .tex/.bib/figure files
 ├── toolchain.ts    probeLatex: `--version`, bounded, never throws
 ├── compile.ts      two passes, -halt-on-error, log tail on failure
@@ -183,8 +185,8 @@ Every stage is a `StageHandler` — one function, one evidence record, one gate.
 | 2   | Novelty Detection         | `noveltyDetection` (`agents/research.ts`)        | latest `literature-search`                                           | `novelty-report`                          | GATE-2  |
 | 3   | Contribution Framing      | `contributionFraming` (`agents/research.ts`)     | latest `novelty-report`, latest `stage-output`                       | `stage-output`                            | GATE-3  |
 | 4   | Evidence Generation (CFD) | `evidenceGeneration` (`agents/evidence.ts`)      | `CfdService`, `options.solver/quantity/meshes`                       | `cfd-run`                                 | GATE-4A |
-| 5   | Paper Synthesis           | `paperSynthesis` (`agents/writing.ts`)           | all prior records                                                    | `manuscript`                              | GATE-5  |
-| 6   | Peer Review Council       | `peerReview` (`agents/review.ts`)                | `manuscript`, `cfd-run`                                              | `review-report`                           | GATE-6  |
+| 5   | Paper Synthesis           | `paperSynthesis` (`agents/writing.ts`)           | all prior records                                                    | `manuscript-plan`, then `manuscript`      | GATE-5  |
+| 6   | Peer Review Council       | `peerReview` (`agents/review.ts`)                | `manuscript`, `manuscript-plan`, `cfd-run`                           | `review-report`                           | GATE-6  |
 | 7   | Revision & Compliance     | `complianceCheck` (`agents/review.ts`)           | `manuscript`, `review-report`, journal profile                       | `compliance-report`                       | GATE-7  |
 | 8   | AeroWiki & Submission     | `knowledgeAndSubmission` (`agents/knowledge.ts`) | `manuscript`, `review-report`, `compliance-report`, `novelty-report` | `submission-package`, `manuscript-render` | GATE-8  |
 
@@ -241,24 +243,71 @@ a defensible interval is not promoted to a result.
 
 ### Stage 5 — Paper Synthesis
 
-Reads every prior record, formats numbers at a declared precision
-(`formatMeasurement`), assembles Introduction / Method / Results / Discussion /
-Conclusion / **AI use disclosure**, then runs the whole text — title, abstract,
-sections, reference list — through `verifyClaims`. One unbacked number or one
-unresolved DOI throws `UnverifiableClaimError` (422) and no manuscript record is
-written.
+Stage 5 writes **two** records, in this order: a `manuscript-plan` and then the
+`manuscript` that names it. The text is a projection of the plan, not a parallel
+production of it.
+
+**The plan (`agents/plan.ts`).** `buildPlan` is a pure function of the records the run
+already holds: sections follow `journal.sectionOrder` (plus the mandatory AI use
+disclosure), and each paragraph carries `id` (`p-<section>-<n>`), `intent`,
+`evidenceRefs` (`<kind>#<seq>`), `numberKeys` and `targetWords`. There is **no language
+model** in this path — the hierarchy is an artefact, which is what makes it checkable.
+This is deliberately _not_ an LLM outline: nothing is inferred, and the same evidence
+rebuilds the same plan byte for byte.
+
+**Rendering.** `renderPlan` switches on `intent`. A paragraph's numbers may only come
+from the keys it declared, and `number()` throws if a renderer asks for anything else —
+so an undeclared number cannot reach the text in the first place. Two consequences are
+worth stating because they are deliberate:
+
+- **Free text is quoted only when it carries no numeral.** A solver note or disclaimer
+  containing digits is left in the `cfd-run` record and is not copied into prose; the
+  Results paragraphs already reproduce those numbers in structured form. This is what
+  keeps "every printed number has a declared key" a check and not a slogan.
+- **The abstract is not a planned section.** It is generated from the same numbers table
+  and is length-checked (`JOURNAL-ABSTRACT`), but it has no section heading to attach a
+  paragraph id to, so the plan covers the numbered sections. Stated here rather than
+  implied by silence.
+
+`ManuscriptPayload.schemaVersion` stays `2`: `planRef`, `citations` and the per-section
+`paragraphs` are additive. `planRef = { seq, hash }` names the plan record; `hash` is its
+`payloadHash`, so a reader can recompute it from the payload alone.
+
+**References.** Every reference is set by `agents/citation.ts` (RULE-032) and the list
+is round-tripped before the stage returns — see §5.
+
+**Verification.** The whole text — title, abstract, sections, reference list — still goes
+through `verifyClaims`. One unbacked number or one unresolved DOI throws
+`UnverifiableClaimError` (422) and no manuscript record is written.
 
 ### Stage 6 — Peer Review Council
 
-Six explicit checks, each with a rule id: RULE-001 (numbers trace), RULE-002 (DOIs
+Seven explicit checks, each with a rule id: RULE-001 (numbers trace), RULE-002 (DOIs
 resolve), journal abstract length, ≥3 references, RULE-004 (disclosure present),
-RULE-041 (valid GCI). Any _major_ comment makes the verdict `revise`. Synthetic
-results always produce a major comment.
+RULE-041 (valid GCI), and RULE-030 (the text is a projection of its plan). Any _major_
+comment makes the verdict `revise`; synthetic results always produce one.
+
+The projection check is the interesting one, because it compares two records instead of
+trusting one. It reports a `major` comment when
+
+- a planned paragraph id is missing from the text, or the text has a paragraph id the
+  plan never issued;
+- a paragraph prints a number that is not one of the values its `numberKeys` declare
+  (rounded prints of declared values are accepted: a plan declares values, not
+  spellings);
+- `planRef` does not resolve, points at a record of another kind, or names a hash the
+  record does not have.
+
+An overlong paragraph (more than `targetWords` + 20 %) is a `minor` finding: length is a
+budget, not a claim. A manuscript written before G carries neither ids nor `planRef`;
+that case is recorded as `skipped`, never as a pass.
 
 ### Stage 7 — Revision & Compliance
 
-Journal profile checks: abstract length, required sections, numbered citations, and a
-blocking `review-verdict` issue when the council asked for revisions.
+Journal profile checks: abstract length, required sections, numbered citations,
+RULE-032's `citation-format` (a reference the formatter marked `incomplete` is a
+blocking issue; one that merely lacks optional fields is a minor note), and a blocking
+`review-verdict` issue when the council asked for revisions.
 
 ### Stage 8 — AeroWiki & Submission
 
@@ -271,7 +320,7 @@ which marks the run failed: a prototype must not be able to "submit" itself.
 The renderer mirrors the SU2 pattern — **detected, never assumed**:
 
 - The `.tex` is always produced: `manuscript.tex`, `references.bib`, and
-  `figure-1.tex`/`figure-1.dat` when the run has a mesh study. Files land in
+  `figure-gci.tex`/`figure-gci.dat` when the run has a mesh study. Files land in
   `$AEROSCRIBE_DATA_DIR/manuscripts/<runId>/` and the payload records each one's
   SHA-256 and size.
 - The PDF exists only when `LATEX_BINARY` answered `--version`. Otherwise the record says
@@ -281,9 +330,23 @@ The renderer mirrors the SU2 pattern — **detected, never assumed**:
 - The `.tex` header carries the run id, the template, the manuscript's own
   `generated_at` and the SHA-256 of every input payload, so the file states its own
   provenance.
-- **Claim verification runs on the rendered text** (`stripLatex` of the abstract,
-  sections and captions), against the same policy stage 5 used. A number that never
-  reached a record cannot reach the PDF either.
+- **The figure is pgfplots source (RULE-033).** `figure-gci.tex` holds two panels —
+  value against cell count and Grid Convergence Index against cell count — over
+  `figure-gci.dat`, one row per mesh level with `nan` where the study reports no GCI.
+  There is no `\includegraphics` and no binary asset: the figure is diffable text. The
+  axis labels take the quantity and unit from the payload, a legend appears only when
+  the figure has more than one series, and the header carries
+  `% provenance: run <id>, evidence seq <n>, sha256 <hash>`. The caption repeats the run,
+  the record and the artefact digest, because a header does not survive a PDF.
+  `figure-gci.dat` is data only and opens with its column header (`cells value gci_percent`):
+  pgfplots reads the first line of the table as the header, so a provenance comment above it
+  is skipped and the first data row becomes the column names — a real `pdflatex` run failed
+  exactly that way. The `.dat` is traced through the render record, which hashes it.
+- **Claim verification runs on the rendered text** (`stripLatex` of the abstract and
+  sections), against the same policy stage 5 used. A number that never reached a record
+  cannot reach the PDF either. The figure's caption sits in its own `\input` file and is
+  not part of that span: it states provenance (a record number and a hexadecimal
+  digest), which is not a quantitative claim any evidence record can back.
 - Templates are built on the standard `article` class (`aiaa-style`, `elsevier-style`):
   the publisher class files are not shipped with TeX Live, and substituting a lookalike
   would be a claim the PDF cannot support. The record names the template that was used
@@ -351,6 +414,7 @@ Kinds, and who writes them:
 | `literature-search`  | stage 1                                | `1`       |
 | `novelty-report`     | stage 2                                | `2`       |
 | `cfd-run`            | stage 4                                | `4`       |
+| `manuscript-plan`    | stage 5, before its own record         | `5`       |
 | `manuscript`         | stage 5                                | `5`       |
 | `review-report`      | stage 6                                | `6`       |
 | `compliance-report`  | stage 7                                | `7`       |
@@ -394,6 +458,40 @@ gets a `RULE-002` violation.
 `verifyClaims` returns `{ ok, checked, unbacked[], allowedDois[], observedDois[] }`.
 `unbacked[]` items carry the token, the value, a ±40-character context and the reason —
 enough to fix the sentence without opening a debugger.
+
+### AIAA citations (RULE-032)
+
+`agents/citation.ts` is the only place a bibliography string is assembled. `formatAiaa`
+produces one of three AIAA forms from the structured `ReferenceRecord`:
+
+| Style             | Form                                                                                 |
+| ----------------- | ------------------------------------------------------------------------------------ |
+| `aiaa-journal`    | `[N] A. Author and B. Author, "Title," Journal, Vol. V, No. N, YYYY, pp. P–P. doi:…` |
+| `aiaa-conference` | `[N] A. Author, "Title," Proceedings, Publisher, YYYY, pp. P–P. doi:…`               |
+| `aiaa-book`       | `[N] A. Author, Title, Publisher, YYYY, pp. P–P. doi:…`                              |
+| `incomplete`      | whatever fields exist, plus every core field the record is missing                   |
+
+Rules that matter:
+
+- **Four or more authors become three and `et al.`**, as AIAA requires.
+- **A missing field is omitted and listed** in `missing` — never `Vol. ,` and never a
+  range inferred from the DOI. Volume, issue, pages and DOI are optional (a preprint has
+  no volume); authors, title, year, venue and — for books — publisher are core, and their
+  absence makes the style `incomplete`.
+- **The city an AIAA book entry prints is always listed as missing**, because no provider
+  reports it. That is the honest output, not an omission to be papered over.
+- **Every reference is round-tripped.** `validateCitations` formats, parses back with
+  `parseAiaa`, and compares each field that form prints. A lost volume, a swallowed page
+  range or a dropped `et al.` throws before the manuscript record is written. `parseAiaa`
+  understands this formatter's grammar and nothing else; text it cannot parse returns
+  `null` (which the validator reports) rather than a guessed citation.
+- **Stage 7 turns that into an issue.** `citation-format` is `major` when a reference is
+  `incomplete`, `minor` when a form merely omitted optional fields, and absent when the
+  manuscript carries no citation records at all (a pre-G payload).
+
+Known limitation, stated rather than hidden: an author name containing a comma cannot
+survive a comma-separated author list, and the round-trip validator fails the stage when
+it happens instead of emitting a wrong citation.
 
 ---
 
@@ -982,7 +1080,7 @@ runs/<runId>.json        run state (atomic replace)
 runs/<runId>.options.json run options (survive restarts)
 blobs/sha256/<aa>/<rest> artefact bytes, named by their digest
 cfd/study-<uuid>/        SU2 working directories: history.csv per mesh level
-manuscripts/<runId>/     manuscript.tex, references.bib, figure-N.tex|.dat, PDF when typeset
+manuscripts/<runId>/     manuscript.tex, references.bib, figure-gci.tex|.dat, PDF when typeset
 ```
 
 ---

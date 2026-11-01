@@ -156,8 +156,16 @@ describe('ManuscriptLive', () => {
     renderLive(<ManuscriptLive />);
 
     await waitFor(() => expect(screen.getByTestId('manuscript-synthetic-notice')).toBeVisible());
-    expect(screen.getByText(/Abstract/i)).toBeVisible();
+    // The heading, not the word: the plan's own architecture sentence mentions
+    // the journal's abstract limit.
+    expect(screen.getByRole('heading', { name: /^Abstract$/i })).toBeVisible();
     expect(screen.getByText(/Source files/i)).toBeVisible();
+
+    // RULE-030 is observable: the plan record the text was rendered from is
+    // shown, with its paragraph ids, intents and declared numbers.
+    await waitFor(() => expect(screen.getByTestId('manuscript-plan')).toBeVisible());
+    expect(screen.getByTestId('manuscript-plan')).toHaveTextContent(/written before the text/i);
+    expect(screen.getByTestId('manuscript-plan')).toHaveTextContent(/p-results-1/);
 
     // The recorded run has a LaTeX source and no PDF: the panel says exactly
     // that, lists the files and offers no PDF link.
