@@ -222,12 +222,19 @@ describe('figure', () => {
     const figure = cfdFigure(cfdPayload(), provenance)!;
     expect(figure.dat.map((file) => file.name)).toEqual(['figure-gci.dat']);
 
-    const rows = figure.dat[0]!.content.split('\n').filter(
-      (line) => !line.startsWith('#') && line.trim().length > 0,
-    );
+    const rows = figure.dat[0]!.content.split('\n').filter((line) => line.trim().length > 0);
+    // The first line is the header pgfplots reads by name: a comment above it
+    // would be skipped and the first data row would become the column names,
+    // which is exactly how a real `pdflatex` run failed once.
+    expect(rows[0]).toBe('cells value gci_percent');
+    expect(rows).not.toContainEqual(expect.stringMatching(/^#/));
     // One row per mesh level, ascending cell count; the coarsest level has no
     // GCI of its own, because Roache's procedure produces one per grid pair.
-    expect(rows).toEqual(['125000 0.4381 nan', '1000000 0.4299 0.0031', '8000000 0.4271 0.000787']);
+    expect(rows.slice(1)).toEqual([
+      '125000 0.4381 nan',
+      '1000000 0.4299 0.0031',
+      '8000000 0.4271 0.000787',
+    ]);
 
     // Two panels: value against cells, then GCI against cells.
     expect(figure.tex.content).toContain('group size=2 by 1');
@@ -243,8 +250,10 @@ describe('figure', () => {
     expect(figure.tex.content).toContain('sha256 def');
     expect(figure.tex.content).toContain('gci-study.json');
     expect(figure.tex.content).toContain('a'.repeat(64));
-    // The data file repeats the provenance, so a stray `.dat` is still traceable.
-    expect(figure.dat[0]!.content).toContain('run-1 evidence #4 sha256=def');
+    // The `.dat` is data only: pgfplots reads its first line as the column
+    // header, so a provenance comment above it would silently become data. The
+    // render record hashes the file instead, and the caption names the record.
+    expect(figure.dat[0]!.content.startsWith('cells value gci_percent')).toBe(true);
   });
 
   it('says in the caption that a synthetic study is not a physical result', () => {

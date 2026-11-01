@@ -338,6 +338,10 @@ The renderer mirrors the SU2 pattern — **detected, never assumed**:
   the figure has more than one series, and the header carries
   `% provenance: run <id>, evidence seq <n>, sha256 <hash>`. The caption repeats the run,
   the record and the artefact digest, because a header does not survive a PDF.
+  `figure-gci.dat` is data only and opens with its column header (`cells value gci_percent`):
+  pgfplots reads the first line of the table as the header, so a provenance comment above it
+  is skipped and the first data row becomes the column names — a real `pdflatex` run failed
+  exactly that way. The `.dat` is traced through the render record, which hashes it.
 - **Claim verification runs on the rendered text** (`stripLatex` of the abstract and
   sections), against the same policy stage 5 used. A number that never reached a record
   cannot reach the PDF either. The figure's caption sits in its own `\input` file and is

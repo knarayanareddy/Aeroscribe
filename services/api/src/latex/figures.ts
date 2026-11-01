@@ -117,14 +117,12 @@ export function figureFromSeries(
       });
     return {
       name: dataFileName(index),
-      content: [
-        `# ${provenance.runId} evidence #${provenance.seq} sha256=${provenance.payloadHash}${
-          multiSeries ? ` series=${index + 1}` : ''
-        }`,
-        '# cells value gci_percent — copied from the cfd-run record; nan means "not reported"',
-        ...rows,
-        '',
-      ].join('\n'),
+      // The first line is the header pgfplots reads, and it is the only line
+      // that may be one: a `#` comment above it would be skipped, and the first
+      // data row would silently become the column names. Provenance lives in
+      // the `.tex` header, the caption and the render record, which hashes both
+      // files.
+      content: ['cells value gci_percent', ...rows, ''].join('\n'),
     };
   });
 
