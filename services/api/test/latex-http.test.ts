@@ -90,6 +90,8 @@ function build(engine: LatexCapability): ReturnType<typeof createApp> {
     latexTimeoutMs: 5_000,
     store: 'filesystem',
     databaseUrl: null,
+    coordination: 'process',
+    redisUrl: null,
     corsOrigins: ['http://localhost:5174'],
     upstreamTimeoutMs: 5_000,
     retryBaseDelayMs: 1,

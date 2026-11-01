@@ -6,7 +6,7 @@ import {
   isRetryableStatus,
   parseRetryAfter,
 } from '../src/literature/http';
-import { RateLimiter } from '../src/http/rateLimit';
+import { FixedWindowCounter } from '../src/coord';
 
 function response(status: number, headers: Record<string, string> = {}) {
   return new Response(status === 204 ? null : '{}', {
@@ -150,10 +150,10 @@ describe('fetchWithRetry', () => {
   });
 });
 
-describe('RateLimiter', () => {
+describe('FixedWindowCounter', () => {
   it('allows up to the limit per window then blocks until reset', async () => {
     let now = 0;
-    const limiter = new RateLimiter({ limit: 2, windowMs: 1000, now: () => now });
+    const limiter = new FixedWindowCounter({ limit: 2, windowMs: 1000, now: () => now });
 
     expect(limiter.check('k').allowed).toBe(true);
     expect(limiter.check('k').allowed).toBe(true);
@@ -164,7 +164,7 @@ describe('RateLimiter', () => {
   });
 
   it('keeps separate budgets per key', () => {
-    const limiter = new RateLimiter({ limit: 1, windowMs: 1000, now: () => 0 });
+    const limiter = new FixedWindowCounter({ limit: 1, windowMs: 1000, now: () => 0 });
     expect(limiter.check('a').allowed).toBe(true);
     expect(limiter.check('b').allowed).toBe(true);
     expect(limiter.check('a').allowed).toBe(false);

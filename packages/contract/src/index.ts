@@ -614,6 +614,19 @@ export interface Capabilities {
     /** The database, with any password removed; `null` for `filesystem`. */
     database: string | null;
   };
+  /**
+   * Where the rate limit and the stage lock are enforced.
+   *
+   * `process` means each API instance counts its own 60 requests a minute and
+   * may run the same stage as another instance. `redis` means both are shared.
+   * Reported because the difference is invisible from the outside until it
+   * matters.
+   */
+  coordination: {
+    backend: 'process' | 'redis';
+    /** The Redis, with any password removed; `null` for `process`. */
+    redis: string | null;
+  };
 }
 
 /* ──────────────────────────────── envelopes ──────────────────────────────── */

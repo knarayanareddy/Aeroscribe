@@ -80,6 +80,17 @@ export default function SettingsLive() {
           ? `AEROSCRIBE_STORE = postgres · ${capabilities.storage.database ?? 'database'}`
           : 'AEROSCRIBE_STORE = filesystem · single writer',
     },
+    {
+      label: 'Rate limit and run lock',
+      value: capabilities.coordination.backend === 'redis' ? 'Redis (shared)' : 'This process only',
+      // Not a failure either way, but a reader adding a second replica needs to
+      // know whether the two share a budget before they do it.
+      ok: true,
+      note:
+        capabilities.coordination.backend === 'redis'
+          ? `AEROSCRIBE_COORDINATION = redis · ${capabilities.coordination.redis ?? 'redis'}`
+          : 'AEROSCRIBE_COORDINATION = process · every instance counts its own 60 requests a minute and may run the same stage',
+    },
     ...(capabilities.storage.backend === 'filesystem'
       ? [
           {

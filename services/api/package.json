@@ -22,6 +22,7 @@
     "@aeroscribe/pipeline": "0.1.0",
     "@hono/node-server": "^2.1.5",
     "hono": "^4.10.7",
+    "ioredis": "^5.11.1",
     "pg": "^8.23.1",
     "tsx": "^4.20.6"
   },

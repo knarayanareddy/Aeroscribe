@@ -7,7 +7,7 @@ import type { Config } from '../src/config';
 import { describeCapabilities } from '../src/config';
 import { CfdService } from '../src/cfd';
 import { createApp } from '../src/http/app';
-import { RateLimiter } from '../src/http/rateLimit';
+import { createProcessCoordinator, type Coordinator } from '../src/coord';
 import { createLogger } from '../src/lib/logger';
 import { LiteratureService } from '../src/literature';
 import { Orchestrator } from '../src/orchestrator';
@@ -40,6 +40,8 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
     latexTimeoutMs: 5_000,
     store: 'filesystem',
     databaseUrl: null,
+    coordination: 'process',
+    redisUrl: null,
     doiMaxAgeDays: 30,
     logLevel: 'silent',
     version: 'test',
@@ -48,13 +50,13 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
   };
 }
 
-function makeApp(overrides: Partial<Config> = {}, rateLimiter?: RateLimiter, stores?: Stores) {
+function makeApp(overrides: Partial<Config> = {}, coordinator?: Coordinator, stores?: Stores) {
   config = makeConfig(overrides);
   return createApp({
     orchestrator,
     config,
     capabilities: () => describeCapabilities(config),
-    ...(rateLimiter ? { rateLimiter } : {}),
+    ...(coordinator ? { coordinator } : {}),
     ...(stores ? { stores } : {}),
   });
 }
@@ -187,7 +189,7 @@ describe('authentication', () => {
 describe('rate limiting', () => {
   it('returns 429 with a retryable error shape once the window is spent', async () => {
     let now = 0;
-    const limiter = new RateLimiter({ limit: 2, windowMs: 1_000, now: () => now });
+    const limiter = createProcessCoordinator({ limit: 2, windowMs: 1_000, now: () => now });
     const app = makeApp({}, limiter);
 
     expect((await app.request('/api/v1/runs')).status).toBe(200);
@@ -204,7 +206,7 @@ describe('rate limiting', () => {
 
   it('limits each client separately', async () => {
     const now = 0;
-    const limiter = new RateLimiter({ limit: 1, windowMs: 1_000, now: () => now });
+    const limiter = createProcessCoordinator({ limit: 1, windowMs: 1_000, now: () => now });
     const app = makeApp({}, limiter);
 
     await app.request('/api/v1/runs', { headers: { 'x-forwarded-for': '203.0.113.9' } });
@@ -220,7 +222,7 @@ describe('rate limiting', () => {
   });
 
   it('does not rate limit the health probe', async () => {
-    const limiter = new RateLimiter({ limit: 1, windowMs: 60_000 });
+    const limiter = createProcessCoordinator({ limit: 1, windowMs: 60_000 });
     const app = makeApp({}, limiter);
 
     await app.request('/api/v1/runs');
