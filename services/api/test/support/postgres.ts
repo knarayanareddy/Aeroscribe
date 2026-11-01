@@ -1,4 +1,5 @@
 import { mkdtemp, rm } from 'node:fs/promises';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -36,7 +37,27 @@ export interface PostgresFixture {
   embedded: boolean;
 }
 
-const DEFAULT_PORT = 55_432;
+/**
+ * A port the OS says is free.
+ *
+ * The range-based guess this replaced could hand two parallel test files the
+ * same port and turn a green suite into a flaky one; asking the kernel is one
+ * `listen` call and is right almost always.
+ */
+async function findFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address !== null ? address.port : 0;
+      server.close(() => {
+        if (port > 0) resolve(port);
+        else reject(new Error('could not reserve a port'));
+      });
+    });
+  });
+}
 
 async function waitForServer(url: string, attempts = 60): Promise<void> {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -67,7 +88,7 @@ export async function startPostgres(): Promise<PostgresFixture> {
   }
 
   const directory = await mkdtemp(join(tmpdir(), 'aeroscribe-postgres-'));
-  const port = DEFAULT_PORT + Math.floor(Math.random() * 200);
+  const port = await findFreePort();
   const server = new EmbeddedPostgres({
     databaseDir: directory,
     user: 'aeroscribe',
