@@ -3,7 +3,7 @@ import type { JournalTarget } from '@aeroscribe/pipeline';
 import { sha256 } from '../lib/canonical';
 import { bibliographyFrom, citationText } from './bibliography';
 import { escapeLatex, stripLatex } from './escape';
-import { cfdFigure, type FigureFile } from './figures';
+import { cfdFigure, type Figure, type FigureFile, type FigureProvenance } from './figures';
 
 /**
  * Turn a stored manuscript record into a LaTeX project.
@@ -57,8 +57,14 @@ export interface RenderedManuscript {
   /** Text artefacts, including `manuscript.tex` itself. */
   files: Array<{ name: string; content: string }>;
   /**
-   * The part of the document a reader sees: abstract, sections and captions.
-   * Claim verification runs on this, never on the preamble.
+   * The body of the document: abstract and section text, between the verifiable
+   * markers. Claim verification runs on this, never on the preamble.
+   *
+   * A figure is a separate `\input` file, so its caption is not inside this
+   * span. That is deliberate: the caption states provenance (a record number and
+   * a SHA-256), and a hexadecimal digest is not a quantitative claim an evidence
+   * record can back. The figure files are hashed into the render record, which
+   * is where their contents are checked.
    */
   verifiableSource: string;
   /** `stripLatex(verifiableSource)` — what the claim verifier reads. */
@@ -80,6 +86,7 @@ function preamble(template: TemplateId, journal: JournalTarget): string {
     '\\usepackage[margin=1in]{geometry}',
     '\\usepackage{amsmath,amssymb,booktabs,graphicx}',
     '\\usepackage{pgfplots}',
+    '\\usepgfplotslibrary{groupplots}',
     '\\pgfplotsset{compat=1.18}',
   ];
   if (template === 'elsevier-style') {
@@ -104,12 +111,29 @@ function header(input: RenderInput, template: TemplateId): string {
   ].join('\n');
 }
 
+/**
+ * The study figure, bound to the record it came from.
+ *
+ * The provenance comes from the same hash list the header prints, so the figure
+ * and the document cannot name different evidence for the same numbers. A
+ * manuscript whose `cfd` payload has no `cfd-run` hash beside it is a wiring
+ * bug, and `cfdFigure` refuses rather than plot numbers with no origin.
+ */
+function buildFigure(input: RenderInput): Figure | null {
+  if (!input.cfd) return null;
+  const record = input.inputHashes.find((hash) => hash.kind === 'cfd-run');
+  const provenance: FigureProvenance | null = record
+    ? { runId: input.runId, seq: record.seq, payloadHash: record.sha256 }
+    : null;
+  return cfdFigure(input.cfd, provenance);
+}
+
 /** Render the manuscript. Throws when the journal's template is unknown. */
 export function renderManuscript(input: RenderInput): RenderedManuscript {
   const { manuscript, journal } = input;
   const template = templateIdFor(journal);
   const bibliography = bibliographyFrom(manuscript.references.map((line) => line.record));
-  const figure = cfdFigure(input.cfd);
+  const figure = buildFigure(input);
 
   const body = [
     BEGIN_MARK,
@@ -125,7 +149,7 @@ export function renderManuscript(input: RenderInput): RenderedManuscript {
       escapeLatex(section.body),
       '',
     ]),
-    ...(figure ? ['\\input{figure-1.tex}', ''] : []),
+    ...(figure ? [`\\input{${figure.tex.name}}`, ''] : []),
     END_MARK,
     ...(manuscript.references.length === 0
       ? []
@@ -160,7 +184,7 @@ export function renderManuscript(input: RenderInput): RenderedManuscript {
   const files: Array<{ name: string; content: string }> = [
     { name: 'manuscript.tex', content: tex },
     { name: 'references.bib', content: bibliography.bib },
-    ...(figure ? [figure.tex, figure.dat] : []),
+    ...(figure ? [figure.tex, ...figure.dat] : []),
   ];
 
   return {

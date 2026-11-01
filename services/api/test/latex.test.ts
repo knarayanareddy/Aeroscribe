@@ -7,11 +7,14 @@ import type { CfdEvidencePayload, ManuscriptPayload, ReferenceRecord } from '@ae
 import { DEFAULT_JOURNAL_TARGET, JOURNAL_TARGETS } from '@aeroscribe/pipeline';
 import { buildPolicy, verifyClaims } from '../src/claims/verify';
 import { UpstreamError } from '../src/errors';
+import { sha256 } from '../src/lib/canonical';
 import {
   LatexService,
   NO_LATEX,
   bibliographyFrom,
   cfdFigure,
+  figureFromSeries,
+  type FigureSeries,
   compileLatex,
   escapeLatex,
   probeLatex,
@@ -125,8 +128,36 @@ const input = () => ({
   manuscript: manuscript(),
   journal: DEFAULT_JOURNAL_TARGET,
   cfd: cfdPayload(),
-  inputHashes: [{ kind: 'manuscript' as const, seq: 5, sha256: 'abc' }],
+  inputHashes: [
+    { kind: 'manuscript' as const, seq: 5, sha256: 'abc' },
+    // The figure quotes this record and its digest, so the render needs it.
+    { kind: 'cfd-run' as const, seq: 4, sha256: 'def' },
+  ],
 });
+
+/** One plotted study, for the multi-series case the pipeline does not produce yet. */
+function series(): FigureSeries {
+  return {
+    label: 'benchmark',
+    levels: [
+      { cells: 125_000, value: 0.4381 },
+      { cells: 1_000_000, value: 0.4299 },
+      { cells: 8_000_000, value: 0.4271 },
+    ],
+    gciByCells: [
+      { cells: 1_000_000, percent: 0.0031 },
+      { cells: 8_000_000, percent: 0.000787 },
+    ],
+  };
+}
+
+/** Where a figure came from; the caption and the header both print it. */
+const provenance = {
+  runId: 'run-1',
+  seq: 4,
+  payloadHash: 'def',
+  artefacts: [{ name: 'gci-study.json', sha256: 'a'.repeat(64) }],
+};
 
 describe('escaping', () => {
   it('escapes every character that would otherwise end a command', () => {
@@ -152,7 +183,7 @@ describe('escaping', () => {
   it('strips layout, commands and file names but keeps prose', () => {
     const tex = [
       '\\begin{axis}[width=0.8\\linewidth, xmode=log]',
-      '\\addplot table {figure-1.dat};',
+      '\\addplot table {figure-gci.dat};',
       '\\end{axis}',
       'The value is 0.4264 with 50\\% confidence.',
     ].join('\n');
@@ -161,7 +192,7 @@ describe('escaping', () => {
     expect(text).toContain('0.4264');
     expect(text).toContain('50% confidence');
     // Not a claim: a plot width, a file name, a key.
-    expect(text).not.toMatch(/0\.8|figure-1|axis/);
+    expect(text).not.toMatch(/0\.8|figure-gci|axis/);
   });
 });
 
@@ -187,17 +218,109 @@ describe('bibliography', () => {
 });
 
 describe('figure', () => {
-  it('plots the recorded mesh values, unpublished numbers included', () => {
-    const figure = cfdFigure(cfdPayload())!;
-    expect(figure.dat.content).toContain('125000 0.4381');
-    expect(figure.tex.content).toContain('\\addplot table {figure-1.dat};');
-    // A synthetic study says so in the caption, where a reader will see it.
+  it('plots the recorded mesh values and both GCI points', () => {
+    const figure = cfdFigure(cfdPayload(), provenance)!;
+    expect(figure.dat.map((file) => file.name)).toEqual(['figure-gci.dat']);
+
+    const rows = figure.dat[0]!.content.split('\n').filter(
+      (line) => !line.startsWith('#') && line.trim().length > 0,
+    );
+    // One row per mesh level, ascending cell count; the coarsest level has no
+    // GCI of its own, because Roache's procedure produces one per grid pair.
+    expect(rows).toEqual(['125000 0.4381 nan', '1000000 0.4299 0.0031', '8000000 0.4271 0.000787']);
+
+    // Two panels: value against cells, then GCI against cells.
+    expect(figure.tex.content).toContain('group size=2 by 1');
+    expect(figure.tex.content).toContain('x=cells, y=value');
+    expect(figure.tex.content).toContain('x=cells, y=gci_percent');
+    expect(figure.tex.content).toContain('{figure-gci.dat}');
+  });
+
+  it('names the run, the record and the artefact digest in the source and caption', () => {
+    const figure = cfdFigure(cfdPayload(), provenance)!;
+    expect(figure.tex.content).toContain('% provenance: run run-1, evidence seq 4, sha256 def');
+    expect(figure.tex.content).toContain('evidence record #4');
+    expect(figure.tex.content).toContain('sha256 def');
+    expect(figure.tex.content).toContain('gci-study.json');
+    expect(figure.tex.content).toContain('a'.repeat(64));
+    // The data file repeats the provenance, so a stray `.dat` is still traceable.
+    expect(figure.dat[0]!.content).toContain('run-1 evidence #4 sha256=def');
+  });
+
+  it('says in the caption that a synthetic study is not a physical result', () => {
+    const figure = cfdFigure(cfdPayload(), provenance)!;
     expect(figure.tex.content).toMatch(/benchmark solver/);
+    expect(figure.tex.content).toMatch(/must not be read as a physical result/);
+  });
+
+  it('hashes the same twice: determinism is proven, not assumed', () => {
+    const first = cfdFigure(cfdPayload(), provenance)!;
+    const second = cfdFigure(cfdPayload(), provenance)!;
+    expect(sha256(second.tex.content)).toBe(sha256(first.tex.content));
+    expect(second.dat.map((file) => sha256(file.content))).toEqual(
+      first.dat.map((file) => sha256(file.content)),
+    );
+  });
+
+  it('draws a legend only when the figure holds more than one series', () => {
+    const single = figureFromSeries([series()], {
+      provenance,
+      quantity: 'drag coefficient',
+      unit: 'dimensionless',
+      caveats: [],
+    })!;
+    expect(single.tex.content).not.toContain('\\addlegendentry');
+
+    const two = figureFromSeries(
+      [
+        { ...series(), label: 'coarse-to-fine study' },
+        { ...series(), label: 'second study' },
+      ],
+      { provenance, quantity: 'drag coefficient', unit: 'dimensionless', caveats: [] },
+    )!;
+    expect(two.dat.map((file) => file.name)).toEqual(['figure-gci.dat', 'figure-gci-2.dat']);
+    expect(two.tex.content).toContain('group size=2 by 2');
+    expect(two.tex.content).toContain('\\addlegendentry{coarse-to-fine study}');
+    expect(two.tex.content).toContain('\\addlegendentry{second study}');
+    expect(two.tex.content).toContain('{figure-gci-2.dat}');
+  });
+
+  it('renders the study and says in one sentence that it did not converge', () => {
+    const invalid = {
+      ...cfdPayload(),
+      gci: {
+        ...cfdPayload().gci!,
+        valid: false,
+        fineGciPercent: null,
+        mediumGciPercent: null,
+        reason: 'values oscillate with mesh refinement',
+      },
+    };
+    const figure = cfdFigure(invalid, provenance)!;
+    expect(figure.tex.content).toMatch(/did not reach the asymptotic range/);
+    expect(figure.tex.content).toMatch(/no interval is reported/);
+    // No GCI panel is drawn, because there is no GCI to draw: one panel, not an
+    // empty axis that would imply a study that reported GCI.
+    expect(figure.tex.content).not.toContain('y=gci_percent');
+    expect(figure.tex.content).toContain('group size=1 by 1');
+    // The mesh values are still plotted: an invalid study is still evidence.
+    expect(figure.dat[0]!.content).toContain('125000 0.4381');
   });
 
   it('has no figure when the record has no study', () => {
-    expect(cfdFigure(null)).toBeNull();
-    expect(cfdFigure({ ...cfdPayload(), gci: null })).toBeNull();
+    expect(cfdFigure(null, provenance)).toBeNull();
+    expect(cfdFigure({ ...cfdPayload(), gci: null }, provenance)).toBeNull();
+  });
+
+  it('refuses to plot without the record the caption names', () => {
+    expect(() => cfdFigure(cfdPayload(), null)).toThrow(/cannot name its evidence/);
+  });
+
+  it('prints the unit from the payload and no unit when it is dimensionless', () => {
+    expect(cfdFigure(cfdPayload(), provenance)!.tex.content).toContain('ylabel={drag coefficient}');
+    expect(cfdFigure({ ...cfdPayload(), unit: 'N' }, provenance)!.tex.content).toContain(
+      'ylabel={drag coefficient (N)}',
+    );
   });
 });
 
@@ -238,10 +361,17 @@ describe('renderManuscript', () => {
   });
 
   it('includes the figure only when there is a study', () => {
-    expect(renderManuscript(input()).files.map((file) => file.name)).toContain('figure-1.tex');
+    const files = renderManuscript(input()).files.map((file) => file.name);
+    expect(files).toContain('figure-gci.tex');
+    expect(files).toContain('figure-gci.dat');
+    expect(renderManuscript(input()).tex).toContain('\\input{figure-gci.tex}');
     expect(
       renderManuscript({ ...input(), cfd: null }).files.map((file) => file.name),
-    ).not.toContain('figure-1.tex');
+    ).not.toContain('figure-gci.tex');
+  });
+
+  it('loads the pgfplots library the two-panel figure needs', () => {
+    expect(renderManuscript(input()).tex).toContain('\\usepgfplotslibrary{groupplots}');
   });
 });
 
@@ -426,8 +556,8 @@ describe('LatexService', () => {
     expect(outcome.payload.files.map((file) => file.name)).toEqual([
       'manuscript.tex',
       'references.bib',
-      'figure-1.tex',
-      'figure-1.dat',
+      'figure-gci.tex',
+      'figure-gci.dat',
     ]);
   });
 

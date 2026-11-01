@@ -21,6 +21,7 @@ import type {
 } from '@aeroscribe/contract';
 import { DEFAULT_JOURNAL_TARGET } from '@aeroscribe/pipeline';
 import { loadConfig, detectLatex } from '../src/config';
+import { canonicalJson, sha256 } from '../src/lib/canonical';
 import { LatexService } from '../src/latex';
 import { createStores } from '../src/store';
 
@@ -110,10 +111,17 @@ function sampleCfd(): CfdEvidencePayload {
   };
 }
 
-async function storedRun(
-  runId: string,
-  dataDir: string,
-): Promise<{ manuscript: ManuscriptPayload; cfd: CfdEvidencePayload | null }> {
+interface RenderSource {
+  manuscript: ManuscriptPayload;
+  cfd: CfdEvidencePayload | null;
+  /**
+   * The records the render may name. The figure quotes the `cfd-run` record and
+   * its digest, so a render without it is refused rather than plotted blind.
+   */
+  inputHashes: Array<{ kind: string; seq: number; sha256: string }>;
+}
+
+async function storedRun(runId: string, dataDir: string): Promise<RenderSource> {
   const registry = createStores({ dataDir, store: 'filesystem' }).evidence;
   const records = await registry.list({ runId });
   const manuscript = records.filter((record) => record.kind === 'manuscript').at(-1);
@@ -124,6 +132,11 @@ async function storedRun(
   return {
     manuscript: manuscript.payload as ManuscriptPayload,
     cfd: (cfd?.payload as CfdEvidencePayload | undefined) ?? null,
+    inputHashes: records.map((record) => ({
+      kind: record.kind,
+      seq: record.seq,
+      sha256: record.payloadHash,
+    })),
   };
 }
 
@@ -139,9 +152,17 @@ async function main(): Promise<number> {
     timeoutMs: config.latexTimeoutMs,
   });
 
-  const source = args.runId
+  const sampleCfdPayload = sampleCfd();
+  const source: RenderSource = args.runId
     ? await storedRun(args.runId, config.dataDir)
-    : { manuscript: sampleManuscript(), cfd: sampleCfd() };
+    : {
+        manuscript: sampleManuscript(),
+        cfd: sampleCfdPayload,
+        // A sample has no registry record behind it, so the digest is computed
+        // from the payload the figure plots: still a real hash of something real,
+        // never a plausible-looking constant.
+        inputHashes: [{ kind: 'cfd-run', seq: 4, sha256: sha256(canonicalJson(sampleCfdPayload)) }],
+      };
 
   const runId = args.runId ?? 'smoke-sample';
   const outcome = await service.build({
@@ -149,7 +170,7 @@ async function main(): Promise<number> {
     manuscript: source.manuscript,
     journal: DEFAULT_JOURNAL_TARGET,
     cfd: source.cfd,
-    inputHashes: [],
+    inputHashes: source.inputHashes,
   });
 
   const payload: ManuscriptRenderPayload = outcome.payload;
