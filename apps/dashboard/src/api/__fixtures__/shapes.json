@@ -29,6 +29,7 @@
     },
     "storage": {
       "auditPath": "string",
+      "backend": "string",
       "runsDir": "string"
     }
   },

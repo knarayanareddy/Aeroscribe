@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { EvidenceRegistry } from '../src/store/registry';
+import { FilesystemEvidenceStore } from '../src/store';
 
 let directory: string;
 
@@ -17,13 +17,13 @@ afterEach(async () => {
 
 function registry(path = join(directory, 'registry.ndjson')) {
   let counter = 0;
-  return new EvidenceRegistry(path, {
+  return new FilesystemEvidenceStore(path, {
     clock: () => new Date('2026-10-30T12:00:00Z'),
     newId: () => `id-${(counter += 1)}`,
   });
 }
 
-describe('EvidenceRegistry', () => {
+describe('FilesystemEvidenceStore', () => {
   it('chains records and verifies cleanly', async () => {
     const store = registry();
     const first = await store.append({

@@ -70,6 +70,15 @@ export default function SettingsLive() {
         : 'AEROSCRIBE_API_KEY is unset. Do not expose this instance to the internet.',
     },
     {
+      label: 'Storage adapter',
+      value:
+        capabilities.storage.backend === 'filesystem' ? 'Filesystem' : capabilities.storage.backend,
+      ok: true,
+      // Naming the backend is the point: a reader must be able to tell whether
+      // this instance is single-writer before trusting it with two replicas.
+      note: `AEROSCRIBE_STORE = ${capabilities.storage.backend} · single writer`,
+    },
+    {
       label: 'Data directory',
       value: 'On disk',
       ok: true,

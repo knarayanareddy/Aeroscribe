@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CapabilityUnavailableError, UpstreamError } from '../errors';
-import { hashBytes } from '../store/registry';
+import { hashBytes } from '../store';
 import { computeGci, gciUncertainty } from './gci';
 import type { CfdStudyRequest, CfdStudyResult, MeshSample } from './types';
 

@@ -599,7 +599,12 @@ export interface Capabilities {
   latex: LatexCapability;
   registry: { algorithm: 'sha256'; path: string };
   auth: { required: boolean };
-  storage: { runsDir: string; auditPath: string };
+  storage: {
+    /** Which store adapter the server is using (`AEROSCRIBE_STORE`). */
+    backend: 'filesystem';
+    runsDir: string;
+    auditPath: string;
+  };
 }
 
 /* ──────────────────────────────── envelopes ──────────────────────────────── */

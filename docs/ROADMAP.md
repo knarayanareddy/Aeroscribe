@@ -49,7 +49,7 @@ Every row names the code that would have to change. Nothing here is inferred fro
 | Dashboard wiring      | `apps/dashboard/src/state/PipelineProvider.tsx:16` seeds `useReducer` from `mockData`; every view imports `../data/mockData` directly; `apps/dashboard/vite.config.ts` has no proxy                                                                          | The only way to see a real run is `curl`. The UI is a clickable prototype.                             |
 | LaTeX / PDF           | `apps/dashboard/src/components/ManuscriptView.tsx:31` builds a `.tex` string in the browser; stage 8 (`services/api/src/agents/knowledge.ts:42`) packages evidence hashes and states “Manifest only: no PDF or .docx is compiled by this service” (line 109) | No server-side source of truth for the manuscript, no bibliography, no PDF anywhere.                   |
 | DOI re-verification   | `services/api/src/literature/index.ts:150` verifies at retrieval; `ManuscriptPayload.references` (`agents/writing.ts:26`) keeps only `{ index, citation, doi }` — no timestamp, no provider                                                                  | A DOI that resolves in March and 404s in June is still presented as verified by the stored manuscript. |
-| Postgres / Redis / S3 | `store/registry.ts:88` states “single writer”; `store/runs.ts:13` writes one JSON file per run; `http/rateLimit.ts:16` and `orchestrator.ts` in-flight set are per-process; CFD artefacts stay on local disk (`cfd/su2.ts:184`)                              | One API instance, one disk. No horizontal scale, no shared rate limit, no durable artefact store.      |
+| Postgres / Redis / S3 | `store/evidence.ts` states “single writer”; `store/runs.ts` writes one JSON file per run; `http/rateLimit.ts:16` and `orchestrator.ts` in-flight set are per-process; CFD artefacts stay on local disk (`cfd/su2.ts:184`)                                    | One API instance, one disk. No horizontal scale, no shared rate limit, no durable artefact store.      |
 | Staging / publishing  | `.github/workflows/deploy.yml` publishes static apps to Pages only; `Dockerfile` is built by CI but pushed nowhere                                                                                                                                           | There is no environment where the API runs, so “deploy” means “static site”.                           |
 | Accounts              | `http/app.ts:104` compares one bearer token; `actor` in the audit trail is **whatever the client sends** (`app.ts:160`)                                                                                                                                      | The audit trail can attribute an approval to any name. Multi-user use is impossible.                   |
 | RULE-030              | `agents/writing.ts:134` assembles sections in one pass; no plan artefact                                                                                                                                                                                     | “Hierarchical generation” is unimplemented; the rule is prose.                                         |
@@ -105,7 +105,7 @@ The repository's value is that its labels are true. Copy this list into every PR
 - [ ] **New capability is observable.** If it can be unavailable, `describeCapabilities()`
       reports it and a test asserts both states.
 - [ ] **New evidence kind has a producer.** Added to `EVIDENCE_KINDS`
-      (`services/api/src/store/registry.ts`), written by exactly one place, mapped in the
+      (`services/api/src/store/evidence.ts`), written by exactly one place, mapped in the
       dashboard, listed in `docs/BACKEND.md` § 4, and covered by `services/api/test/docs.test.ts`.
 - [ ] **Every number on screen is traceable.** Either it came from the API in this render, or
       the cell says “not recorded”. No placeholders, no demo values in live mode.
@@ -543,11 +543,11 @@ manuscript payload is byte-identical to before the re-check, and exactly one new
 
 **Why.** Three separate limitations, three separate fixes, one shared prerequisite (ports).
 
-| Limitation                                         | Today                                                | Fixed by                                       |
-| -------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------- |
-| One writer (registry file, `store/registry.ts:88`) | two API instances corrupt the chain                  | **D2** Postgres + unique `seq` + advisory lock |
-| Per-process rate limit and in-flight guard         | double budget and double stage runs across instances | **D3** Redis                                   |
-| Artefacts on local disk (`cfd/su2.ts:184`)         | lost on redeploy; not shareable                      | **D4** S3                                      |
+| Limitation                                      | Today                                                | Fixed by                                       |
+| ----------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------- |
+| One writer (registry file, `store/evidence.ts`) | two API instances corrupt the chain                  | **D2** Postgres + unique `seq` + advisory lock |
+| Per-process rate limit and in-flight guard      | double budget and double stage runs across instances | **D3** Redis                                   |
+| Artefacts on local disk (`cfd/su2.ts:184`)      | lost on redeploy; not shareable                      | **D4** S3                                      |
 
 **D1 — ports (0.5–1 d).** `services/api/src/store/ports.ts` with `RunStore`, `EvidenceStore`,
 `AuditStore`, `BlobStore` interfaces. Existing classes implement them unchanged; `Orchestrator`
@@ -602,7 +602,7 @@ copy is deleted after upload.
 
 **Tasks.**
 
-- [ ] D1 ports + adapter names (`FilesystemRunStore`, …) and a `store` factory.
+- [x] D1 ports + adapter names (`FilesystemRunStore`, …) and a `store` factory.
 - [ ] D2 schema, migrations, three stores, `db:migrate`, `db:verify`, `db:import`, trigger.
 - [ ] D3 Redis limiter and run lock; `/health` reports both.
 - [ ] D4 blob store, artefact endpoint, artefact `uri` in records.
@@ -618,7 +618,33 @@ copy is deleted after upload.
       `docs/OPERATIONS.md` (migrate, verify, restore, rotate keys, recheck cron), integrity table
       RULE-011/043/044 rows re-worded, `IMPLEMENTATION_STATUS` persistence row.
 
-**Acceptance.**
+### Status of D
+
+**D1 is done; D2–D4 have not been started.** `services/api/src/store/ports.ts` defines
+`RunStore`, `EvidenceStore` and `AuditStore`; the three filesystem adapters implement them
+unchanged (`FilesystemRunStore`, `FilesystemEvidenceStore`, `FilesystemAuditStore`), and
+`createStores()` is the only place that picks one. The orchestrator, the stage context and the
+HTTP layer take the ports, so a second adapter changes no caller.
+`services/api/test/store-contract.test.ts` runs one set of scenarios against whatever the
+factory returns — chains, filters, tamper detection, concurrent appends, audit reads, and a
+probe — and states per adapter what it cannot promise (the filesystem adapter is
+single-writer, so the cross-instance scenario is skipped with a reason rather than passing
+by accident). `AEROSCRIBE_STORE` is read and validated at boot: any value other than
+`filesystem` stops the process instead of falling back to disk, and `/health` reports
+`store: { backend, ok, detail }`, answering `503` when a real write to the data directory
+fails.
+
+**Why D2–D4 are not done here.** Each one needs a live backend to be more than code: a
+Postgres server (advisory lock, unique `seq`, the append-only trigger), a Redis server
+(`SET NX PX`, `INCR`/`EXPIRE`) and an S3/MinIO endpoint (content-addressed round trip, a
+flipped byte returning `409`). None is reachable from this development container — no
+`docker`, no server packages, and the only outbound network is the package registry — so
+writing the adapters and marking them built would be exactly the claim this plan forbids.
+D2–D4 land when a backend is reachable: CI service containers (`postgres:16`, `redis:7`,
+minio) cover every acceptance item below except "two processes behind one Redis", which the
+compose stack in E provides.
+
+**Acceptance (D2–D4, not yet met).**
 
 1. Same test suite green on filesystem and Postgres; two processes appending 50 records each
    produce a chain that `db:verify` accepts.

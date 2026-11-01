@@ -15,6 +15,7 @@ import { GENESIS_HASH, canonicalJson, hashEquals, hashPayload, sha256 } from '..
 // it and the HTTP layer validates `?kind=` against it, so it is defined once.
 import { EVIDENCE_KINDS } from '@aeroscribe/contract';
 import type { EvidenceKind, EvidenceRecord, RegistryVerification } from '@aeroscribe/contract';
+import type { AppendEvidenceInput, EvidenceQuery, EvidenceStore } from './ports';
 
 export { EVIDENCE_KINDS };
 export type { EvidenceKind, EvidenceRecord, RegistryVerification };
@@ -28,16 +29,6 @@ export type { EvidenceKind, EvidenceRecord, RegistryVerification };
  * RULE-041 (checksum every computed artefact) and RULE-043 (append-only).
  * The shape itself is the wire contract — see `EvidenceRecord` there.
  */
-export interface AppendEvidenceInput {
-  kind: EvidenceKind;
-  runId: string;
-  stageId?: number | null;
-  label: string;
-  payload: unknown;
-  /** Overrides the clock; used by tests to make chains reproducible. */
-  createdAt?: string;
-}
-
 interface HashedFields {
   seq: number;
   id: string;
@@ -57,6 +48,10 @@ function digestRecord(fields: HashedFields): string {
 /**
  * Append-only, hash-chained evidence registry backed by one NDJSON file.
  *
+ * This is the filesystem adapter for the `EvidenceStore` port. The design notes
+ * below are the adapter's, not the port's: another backend may make different
+ * trade-offs, and `/health` names the backend so a caller can see which.
+ *
  * Design notes, stated plainly because they are limitations:
  * - **Single writer.** Appends are serialised inside one process. Running two
  *   API processes against the same file would interleave lines; a real
@@ -67,7 +62,7 @@ function digestRecord(fields: HashedFields): string {
  * - **In memory index, on disk truth.** Listing uses the in-memory index;
  *   verification always re-reads the file.
  */
-export class EvidenceRegistry {
+export class FilesystemEvidenceStore implements EvidenceStore {
   private readonly path: string;
   private readonly clock: () => Date;
   private readonly newId: () => string;
@@ -133,7 +128,7 @@ export class EvidenceRegistry {
     return operation;
   }
 
-  async list(filter: { runId?: string; kind?: EvidenceKind } = {}): Promise<EvidenceRecord[]> {
+  async list(filter: EvidenceQuery = {}): Promise<EvidenceRecord[]> {
     await this.load();
     return this.records.filter(
       (record) =>

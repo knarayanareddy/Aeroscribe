@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 // The audit entry is served over HTTP (`GET /api/v1/audit`), so its shape lives
 // in the contract; the append-only file format is this module's business.
 import type { AuditAction, AuditEntry } from '@aeroscribe/contract';
+import type { AuditQuery, AuditStore } from './ports';
 
 export type { AuditAction, AuditEntry };
 
@@ -16,7 +17,7 @@ export type { AuditAction, AuditEntry };
  * itself is unwritable — in that case the caller should treat the operation as
  * failed, which `record()` enforces by propagating the error.
  */
-export class AuditLog {
+export class FilesystemAuditStore implements AuditStore {
   private readonly path: string;
   private readonly clock: () => Date;
   private queue: Promise<unknown> = Promise.resolve();
@@ -44,7 +45,7 @@ export class AuditLog {
    * skipped and counted in `malformed` rather than throwing, because losing the
    * ability to read the audit trail is worse than one bad record.
    */
-  async read(filter: { runId?: string; action?: AuditAction; limit?: number } = {}): Promise<{
+  async read(filter: AuditQuery = {}): Promise<{
     entries: AuditEntry[];
     malformed: number;
   }> {

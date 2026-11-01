@@ -18,18 +18,18 @@ import {
 import { paperSynthesis } from '../src/agents/writing';
 import { DEFAULT_RUN_OPTIONS } from '../src/agents/types';
 import type { StageContext } from '../src/agents/types';
-import type { EvidenceRecord } from '../src/store/registry';
-import { EvidenceRegistry } from '../src/store/registry';
+import type { EvidenceRecord } from '../src/store';
+import { FilesystemEvidenceStore } from '../src/store';
 
 let directory: string;
-let registry: EvidenceRegistry;
+let registry: FilesystemEvidenceStore;
 let run: PipelineRun;
 let literature: LiteratureService;
 let cfd: CfdService;
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'aeroscribe-agents-'));
-  registry = new EvidenceRegistry(join(directory, 'registry.ndjson'));
+  registry = new FilesystemEvidenceStore(join(directory, 'registry.ndjson'));
   run = createRun({
     id: 'run-1',
     topic: 'transonic wing drag prediction for a Mach 0.78 transport',

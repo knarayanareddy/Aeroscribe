@@ -1,6 +1,7 @@
 import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseLogLevel, type LogLevel } from './lib/logger';
+import type { StoreBackend } from './store';
 
 export interface Config {
   host: string;
@@ -29,6 +30,12 @@ export interface Config {
    * enforced: nothing deletes a reference because it aged.
    */
   doiMaxAgeDays: number;
+  /**
+   * Which storage adapter the process uses (`AEROSCRIBE_STORE`). Only
+   * `filesystem` exists today; the option is read and validated now so that a
+   * typo fails at boot instead of being ignored.
+   */
+  store: StoreBackend;
   /** Verbosity of the JSON log stream (RULE-053). */
   logLevel: LogLevel;
   /** Release identifier reported by `/health`; the build sets it. */
@@ -53,6 +60,22 @@ function envBool(env: NodeJS.ProcessEnv, key: string, fallback: boolean): boolea
   const raw = envString(env, key).toLowerCase();
   if (raw === '') return fallback;
   return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+}
+
+/**
+ * Which store backend to use.
+ *
+ * An unknown value is a configuration error, not a reason to fall back to the
+ * filesystem: a process told to use Postgres that silently writes JSON files
+ * instead is the exact failure mode ROADMAP section 8 exists to prevent.
+ */
+function parseStore(env: NodeJS.ProcessEnv): StoreBackend {
+  const raw = envString(env, 'AEROSCRIBE_STORE').toLowerCase();
+  if (raw === '' || raw === 'filesystem') return 'filesystem';
+  throw new Error(
+    `AEROSCRIBE_STORE="${raw}" is not a supported store. Supported: filesystem. ` +
+      'A Postgres adapter is planned (ROADMAP § 8, D2) and does not exist yet.',
+  );
 }
 
 /**
@@ -84,6 +107,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     upstreamTimeoutMs: envInt(env, 'AEROSCRIBE_UPSTREAM_TIMEOUT_MS', 15_000),
     retryBaseDelayMs: envInt(env, 'AEROSCRIBE_RETRY_BASE_MS', 2_000),
     doiMaxAgeDays: envInt(env, 'AEROSCRIBE_DOI_MAX_AGE_DAYS', 30),
+    store: parseStore(env),
     logLevel: parseLogLevel(env.LOG_LEVEL),
     version: envString(env, 'AEROSCRIBE_VERSION', 'dev'),
     commit: envString(env, 'GIT_SHA', 'unknown'),
@@ -146,6 +170,7 @@ export async function describeCapabilities(config: Config): Promise<Capabilities
     registry: { algorithm: 'sha256', path: `${config.dataDir}/registry.ndjson` },
     auth: { required: config.apiKey !== '' },
     storage: {
+      backend: config.store,
       runsDir: `${config.dataDir}/runs`,
       auditPath: `${config.dataDir}/audit.ndjson`,
     },

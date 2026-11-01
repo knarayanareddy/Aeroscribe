@@ -1,4 +1,4 @@
-import type { EvidenceRecord } from '../store/registry';
+import type { EvidenceRecord } from '../store';
 import {
   extractDois,
   extractNumericTokens,

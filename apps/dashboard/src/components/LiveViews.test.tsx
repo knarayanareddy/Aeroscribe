@@ -104,6 +104,9 @@ describe('SettingsLive', () => {
     expect(screen.getByText(/SU2_CFD_BINARY is unset/i)).toBeVisible();
     expect(screen.getByText(/LATEX_BINARY is unset/i)).toBeVisible();
     expect(screen.getByText(/AEROSCRIBE_API_KEY is unset/i)).toBeVisible();
+    // The store backend is a capability too: a reader must be able to see that
+    // this instance is single-writer before pointing a second replica at it.
+    expect(screen.getByText(/AEROSCRIBE_STORE = filesystem/i)).toBeVisible();
     // ADR-0001: no model is called, and the screen says so.
     expect(screen.getByText('Not used')).toBeVisible();
   });

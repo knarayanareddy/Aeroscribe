@@ -2,7 +2,7 @@ import type { PipelineRun, StageInfo } from '@aeroscribe/pipeline';
 import type { CfdService } from '../cfd';
 import type { LatexService } from '../latex';
 import type { LiteratureService } from '../literature';
-import type { EvidenceRegistry, EvidenceKind } from '../store/registry';
+import type { EvidenceKind, EvidenceStore } from '../store';
 
 export interface StageContext {
   run: PipelineRun;
@@ -11,7 +11,7 @@ export interface StageContext {
   cfd: CfdService;
   /** Renders the manuscript; typesets only when a TeX engine answered the probe. */
   latex: LatexService;
-  registry: EvidenceRegistry;
+  registry: EvidenceStore;
   now: () => Date;
   /** How old a generation-time DOI verification may be before it counts as stale. */
   doiMaxAgeDays: number;

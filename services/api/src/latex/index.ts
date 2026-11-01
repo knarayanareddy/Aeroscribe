@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { LatexCapability, ManuscriptRenderPayload } from '@aeroscribe/contract';
 import { CapabilityUnavailableError } from '../errors';
-import { hashBytes } from '../store/registry';
+import { hashBytes } from '../store';
 import { sha256 } from '../lib/canonical';
 import { compileLatex, type CompileResult } from './compile';
 import { renderManuscript, type RenderInput, type RenderedManuscript } from './render';

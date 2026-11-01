@@ -2,6 +2,7 @@ import { readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { PipelineRun } from '@aeroscribe/pipeline';
 import { readJson, writeJsonAtomic } from '../lib/atomic';
+import type { RunStore } from './ports';
 
 /**
  * Pipeline runs persisted as one JSON document each.
@@ -9,8 +10,11 @@ import { readJson, writeJsonAtomic } from '../lib/atomic';
  * Writes are atomic (temp file + rename), so a crash mid-write leaves the
  * previous version intact rather than a truncated file. The directory is the
  * source of truth; there is no in-process cache to invalidate.
+ *
+ * One process, one directory. Two API instances sharing it is a configuration
+ * the adapter refuses to pretend to support — see `store/ports.ts`.
  */
-export class RunRepository {
+export class FilesystemRunStore implements RunStore {
   private readonly directory: string;
 
   constructor(directory: string) {

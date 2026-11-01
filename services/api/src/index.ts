@@ -10,9 +10,7 @@ import {
   SemanticScholarClient,
 } from './literature';
 import { CfdService } from './cfd';
-import { AuditLog } from './store/audit';
-import { EvidenceRegistry } from './store/registry';
-import { RunRepository } from './store/runs';
+import { createStores } from './store';
 import { detectSu2, detectLatex } from './config';
 import { LatexService } from './latex';
 import { createLogger } from './lib/logger';
@@ -28,9 +26,9 @@ export async function buildServer(env: NodeJS.ProcessEnv = process.env) {
   const config = loadConfig(env);
   const su2 = await detectSu2(config.su2Binary);
 
-  const registry = new EvidenceRegistry(join(config.dataDir, 'registry.ndjson'));
-  const runs = new RunRepository(join(config.dataDir, 'runs'));
-  const audit = new AuditLog(join(config.dataDir, 'audit.ndjson'));
+  // One factory decides which adapter the process uses; every caller below sees
+  // the ports, never a concrete class (ROADMAP § 8, D1).
+  const stores = createStores({ dataDir: config.dataDir, store: config.store });
 
   const literature = new LiteratureService({
     offline: config.offline,
@@ -74,9 +72,9 @@ export async function buildServer(env: NodeJS.ProcessEnv = process.env) {
   });
 
   const orchestrator = new Orchestrator({
-    runs,
-    registry,
-    audit,
+    runs: stores.runs,
+    registry: stores.evidence,
+    audit: stores.audit,
     literature,
     cfd,
     latex,
@@ -88,6 +86,7 @@ export async function buildServer(env: NodeJS.ProcessEnv = process.env) {
     orchestrator,
     config,
     capabilities: () => describeCapabilities(config),
+    stores,
     logger,
   });
 
@@ -152,7 +151,7 @@ if (isMain) {
 
 export * from './orchestrator';
 export * from './config';
-export * from './store/registry';
+export * from './store';
 export * from './literature';
 export * from './cfd';
 export * from './claims/verify';

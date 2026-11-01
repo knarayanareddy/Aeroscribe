@@ -9,9 +9,7 @@ import { describeCapabilities } from '../src/config';
 import { createApp } from '../src/http/app';
 import { LiteratureService } from '../src/literature';
 import { Orchestrator } from '../src/orchestrator';
-import { AuditLog } from '../src/store/audit';
-import { EvidenceRegistry } from '../src/store/registry';
-import { RunRepository } from '../src/store/runs';
+import { createStores } from '../src/store';
 
 /**
  * The contract test.
@@ -173,15 +171,20 @@ beforeAll(async () => {
     retryBaseDelayMs: 1,
     latexBinary: null,
     latexTimeoutMs: 5_000,
+    store: 'filesystem',
     logLevel: 'silent',
     version: '0.2.0',
     commit: 'contract',
   };
 
+  // The same factory production uses, so the recorded wire shape includes
+  // everything a real server sends — including `/health`'s store probe.
+  const stores = createStores({ dataDir: directory, store: 'filesystem' });
+
   const orchestrator = new Orchestrator({
-    runs: new RunRepository(join(directory, 'runs')),
-    registry: new EvidenceRegistry(join(directory, 'registry.ndjson')),
-    audit: new AuditLog(join(directory, 'audit.ndjson')),
+    runs: stores.runs,
+    registry: stores.evidence,
+    audit: stores.audit,
     // A stubbed Crossref stands in for the network: the capture is a real
     // server run, but its two provider calls are answered locally so the test
     // works offline and produces references with DOIs. Everything downstream —
@@ -200,6 +203,7 @@ beforeAll(async () => {
     orchestrator,
     config,
     capabilities: () => describeCapabilities(config),
+    stores,
   });
 
   const json = async (path: string, init?: RequestInit) => {

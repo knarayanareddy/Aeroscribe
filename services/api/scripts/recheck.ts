@@ -20,14 +20,11 @@
  * stored check is old", and unverified means the check could not be made (offline
  * mode, no DOI). Both are printed; neither is silently treated as a pass.
  */
-import { join } from 'node:path';
 import { loadConfig } from '../src/config';
 import { LiteratureService } from '../src/literature';
 import { CrossrefClient, SemanticScholarClient, ArxivClient } from '../src/literature';
 import { recheckRun } from '../src/references/recheck';
-import { AuditLog } from '../src/store/audit';
-import { EvidenceRegistry } from '../src/store/registry';
-import { RunRepository } from '../src/store/runs';
+import { createStores } from '../src/store';
 
 interface Args {
   runId: string | null;
@@ -85,9 +82,10 @@ async function main(): Promise<number> {
         ],
   });
 
-  const registry = new EvidenceRegistry(join(config.dataDir, 'registry.ndjson'));
-  const runs = new RunRepository(join(config.dataDir, 'runs'));
-  const audit = new AuditLog(join(config.dataDir, 'audit.ndjson'));
+  const stores = createStores({ dataDir: config.dataDir, store: config.store });
+  const registry = stores.evidence;
+  const runs = stores.runs;
+  const audit = stores.audit;
 
   const targets = args.all ? (await runs.list()).map((run) => run.id) : [args.runId as string];
 

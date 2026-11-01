@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { extractDois, extractNumericTokens } from '../src/claims/extract';
 import { buildPolicy, verifyClaims } from '../src/claims/verify';
-import type { EvidenceRecord } from '../src/store/registry';
+import type { EvidenceRecord } from '../src/store';
 
 function record(payload: unknown): EvidenceRecord {
   return {

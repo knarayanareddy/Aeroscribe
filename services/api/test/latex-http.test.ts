@@ -12,9 +12,9 @@ import { createApp } from '../src/http/app';
 import { LatexService } from '../src/latex';
 import { LiteratureService } from '../src/literature';
 import { Orchestrator } from '../src/orchestrator';
-import { AuditLog } from '../src/store/audit';
-import { EvidenceRegistry } from '../src/store/registry';
-import { RunRepository } from '../src/store/runs';
+import { FilesystemAuditStore } from '../src/store';
+import { FilesystemEvidenceStore } from '../src/store';
+import { FilesystemRunStore } from '../src/store';
 
 /**
  * The typeset manuscript, driven over HTTP.
@@ -65,9 +65,9 @@ function build(engine: LatexCapability): ReturnType<typeof createApp> {
     timeoutMs: 5_000,
   });
   orchestrator = new Orchestrator({
-    runs: new RunRepository(join(directory, 'runs')),
-    registry: new EvidenceRegistry(join(directory, 'registry.ndjson')),
-    audit: new AuditLog(join(directory, 'audit.ndjson')),
+    runs: new FilesystemRunStore(join(directory, 'runs')),
+    registry: new FilesystemEvidenceStore(join(directory, 'registry.ndjson')),
+    audit: new FilesystemAuditStore(join(directory, 'audit.ndjson')),
     literature: new LiteratureService({ offline: true, providers: [] }),
     cfd: new CfdService({
       su2: { available: false, binary: null },
@@ -88,6 +88,7 @@ function build(engine: LatexCapability): ReturnType<typeof createApp> {
     su2Binary: null,
     latexBinary: engine.binary,
     latexTimeoutMs: 5_000,
+    store: 'filesystem',
     corsOrigins: ['http://localhost:5174'],
     upstreamTimeoutMs: 5_000,
     retryBaseDelayMs: 1,
@@ -196,9 +197,9 @@ describe('without a TeX engine', () => {
   it('409s for a run that has not reached stage 8, and 404s for an unknown run', async () => {
     // `beforeEach` already advanced this run; a second run has no render yet.
     orchestrator = new Orchestrator({
-      runs: new RunRepository(join(directory, 'runs')),
-      registry: new EvidenceRegistry(join(directory, 'registry.ndjson')),
-      audit: new AuditLog(join(directory, 'audit.ndjson')),
+      runs: new FilesystemRunStore(join(directory, 'runs')),
+      registry: new FilesystemEvidenceStore(join(directory, 'registry.ndjson')),
+      audit: new FilesystemAuditStore(join(directory, 'audit.ndjson')),
       literature: new LiteratureService({ offline: true, providers: [] }),
       cfd: new CfdService({
         su2: { available: false, binary: null },
