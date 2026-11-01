@@ -8,8 +8,9 @@ claim is meant to trace back to a recorded computation.
 a real API in `services/api` are implemented and tested: nine stage handlers, Crossref/arXiv/
 Semantic Scholar clients, a SU2 adapter with grid-convergence verification, and an append-only
 hash-chained evidence registry that the writing stage is checked against. Two honest caveats:
-the dashboard still renders fixture data (it is not wired to the API yet), and without a real
-SU2 binary the CFD stage runs a **labelled synthetic benchmark** that blocks submission. Read
+the dashboard's _published_ build renders fixture data (live mode is opt-in at build time, and the
+Pages build does not opt in), and without a real SU2 binary the CFD stage runs a **labelled
+synthetic benchmark** that blocks submission. Read
 [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) before trusting any number.
 
 [Landing page](https://knarayanareddy.github.io/Aeroscribe/) ·
@@ -59,9 +60,11 @@ printf 'VITE_API_URL=\n' > apps/dashboard/.env.local   # empty = same origin, vi
 npm run dev:dashboard
 ```
 
-Live mode currently covers Overview, Pipeline, Literature, CFD and Settings. Novelty,
-Manuscript, Review and Wiki refuse to render in live mode rather than show fixture numbers under a
-live badge. Unreachable API ⇒ `API unreachable · <reason>`, never a silent fallback.
+Live mode covers all nine views: each one reads the evidence record the server wrote, and a view
+whose run has no such record says so rather than showing fixture numbers under a live badge.
+Unreachable API ⇒ `API unreachable · <reason>`, never a silent fallback. The published Pages build
+is the fixture one; [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) describes the stack that serves the
+live build same-origin.
 
 The API runs a whole pipeline for real. This creates a run, executes stage 0, and stops at its
 gate (run ids are UUIDs, so capture the id rather than guessing it):

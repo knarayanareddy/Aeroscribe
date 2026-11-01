@@ -1,0 +1,246 @@
+name: Deploy to staging
+
+# Manual, deliberate, and followed by a smoke test that has to pass.
+#
+# Staging exists to answer one question before production asks it: does *this
+# release* come up, report itself honestly, and block where it must? The answer
+# is not the deploy log — it is `scripts/smoke-deploy.sh`, which drives a whole
+# run through every stage and fails if stage 8 ever claims a synthetic solver is
+# submittable (ROADMAP § 9 c).
+#
+# Not triggered by a push. A deploy is an intent, and the tag has to be chosen.
+#
+# What it needs, all of it from the `staging` environment:
+#   secrets  AEROSCRIBE_SSH_HOST, AEROSCRIBE_SSH_USER, AEROSCRIBE_SSH_KEY,
+#            AEROSCRIBE_SSH_KNOWN_HOSTS, AEROSCRIBE_API_KEY, AEROSCRIBE_DB_PASSWORD
+#   vars     AEROSCRIBE_STAGING_URL, AEROSCRIBE_STAGING_DOMAIN,
+#            AEROSCRIBE_DEPLOY_PATH (default /opt/aeroscribe),
+#            AEROSCRIBE_STAGING_INSECURE (optional, 'true' for a self-signed host)
+# See docs/DEPLOYMENT.md § 5 for how to create them, and § 8 for rollback.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to deploy (vX.Y.Z), already published by "Release images".'
+        required: true
+        type: string
+      solver:
+        description: 'Solver the host is expected to use. The smoke test asserts it.'
+        required: true
+        type: choice
+        options: [synthetic, su2]
+        default: synthetic
+
+permissions:
+  contents: read
+  packages: read
+
+# One deploy at a time, never cancelled: an interrupted `compose up` leaves a
+# half-replaced stack, and the smoke test would then fail against a state nobody
+# chose.
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.tag }} to staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: staging
+      url: ${{ vars.AEROSCRIBE_STAGING_URL }}
+    steps:
+      - name: Checkout the tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Confirm the tag is a release on main
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          case "$TAG" in
+            v[0-9]*) ;;
+            *)
+              echo "::error::'$TAG' is not a v* tag. Staging deploys a released tag, not a branch."
+              exit 1
+              ;;
+          esac
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::${TAG} is not on main; it was never reviewed or released from it."
+            exit 1
+          fi
+          echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+
+      - name: Check the required configuration is present
+        env:
+          SSH_HOST: ${{ secrets.AEROSCRIBE_SSH_HOST }}
+          STAGING_URL: ${{ vars.AEROSCRIBE_STAGING_URL }}
+        run: |
+          set -euo pipefail
+          # Failing here costs seconds. Failing halfway through an ssh session
+          # costs a stack that is half old and half new, and it fails as an
+          # inscrutable shell error.
+          missing=0
+          for name in AEROSCRIBE_SSH_HOST AEROSCRIBE_SSH_USER AEROSCRIBE_SSH_KEY \
+                      AEROSCRIBE_SSH_KNOWN_HOSTS AEROSCRIBE_API_KEY AEROSCRIBE_DB_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::${name} is not set on the staging environment."
+              missing=1
+            fi
+          done
+          if [ -z "${STAGING_URL:-}" ]; then
+            echo "::error::The staging environment has no AEROSCRIBE_STAGING_URL variable."
+            missing=1
+          fi
+          [ "$missing" = 0 ] || exit 1
+
+      - name: Ship the deployment files
+        env:
+          SSH_KEY: ${{ secrets.AEROSCRIBE_SSH_KEY }}
+          SSH_HOST: ${{ secrets.AEROSCRIBE_SSH_HOST }}
+          SSH_USER: ${{ secrets.AEROSCRIBE_SSH_USER }}
+          KNOWN_HOSTS: ${{ secrets.AEROSCRIBE_SSH_KNOWN_HOSTS }}
+          DEPLOY_PATH: ${{ vars.AEROSCRIBE_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          DEPLOY_PATH="${DEPLOY_PATH:-/opt/aeroscribe}"
+          echo "DEPLOY_PATH=${DEPLOY_PATH}" >> "$GITHUB_ENV"
+
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          # A pinned host key, not `ssh-keyscan`: keyscan trusts whoever answered
+          # first, which is the attack it looks like it prevents.
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+          TARGET="${SSH_USER}@${SSH_HOST}"
+          echo "SSH_TARGET=${TARGET}" >> "$GITHUB_ENV"
+
+          # Only what `docker compose up --no-build` reads: the compose file, the
+          # edge config, and the Dockerfiles the build stanzas point at (compose
+          # resolves those paths even when it does not build).
+          ssh "$TARGET" "install -d -m 755 '${DEPLOY_PATH}'"
+          tar -czf - compose.yaml .env.example Dockerfile docker/Caddyfile docker/dashboard.Dockerfile \
+            | ssh "$TARGET" "tar -xzf - -C '${DEPLOY_PATH}'"
+
+      - name: Write the environment file
+        env:
+          SSH_HOST: ${{ secrets.AEROSCRIBE_SSH_HOST }}
+          SSH_USER: ${{ secrets.AEROSCRIBE_SSH_USER }}
+          API_KEY: ${{ secrets.AEROSCRIBE_API_KEY }}
+          DB_PASSWORD: ${{ secrets.AEROSCRIBE_DB_PASSWORD }}
+          DOMAIN: ${{ vars.AEROSCRIBE_STAGING_DOMAIN }}
+          CONTACT_EMAIL: ${{ vars.AEROSCRIBE_CONTACT_EMAIL }}
+          OFFLINE: ${{ vars.AEROSCRIBE_OFFLINE }}
+          SEMANTIC_SCHOLAR_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
+        run: |
+          set -euo pipefail
+          TARGET="${SSH_USER}@${SSH_HOST}"
+          # The previous release, so the summary can say how to go back.
+          ssh "$TARGET" "test -f '${DEPLOY_PATH}/.env' && grep -E '^AEROSCRIBE_(API|WEB)_IMAGE=' '${DEPLOY_PATH}/.env' || true" \
+            > previous-images.txt || true
+
+          # Written here rather than kept on the host by hand: a second copy of
+          # the truth is a copy that drifts. `AEROSCRIBE_VERSION`/`GIT_SHA` are
+          # deliberately absent — the image carries the release identity it was
+          # built with, and setting them here would let a host claim a version it
+          # is not running.
+          {
+            echo "AEROSCRIBE_API_IMAGE=${REGISTRY}/${{ github.repository_owner }}/aeroscribe-api:${VERSION}"
+            echo "AEROSCRIBE_WEB_IMAGE=${REGISTRY}/${{ github.repository_owner }}/aeroscribe-dashboard:${VERSION}"
+            echo "AEROSCRIBE_DOMAIN=${DOMAIN:-localhost}"
+            echo "AEROSCRIBE_HTTP_PORT=80"
+            echo "AEROSCRIBE_HTTPS_PORT=443"
+            echo "AEROSCRIBE_API_KEY=${API_KEY}"
+            echo "AEROSCRIBE_DB_PASSWORD=${DB_PASSWORD}"
+            echo "AEROSCRIBE_OFFLINE=${OFFLINE:-true}"
+            echo "AEROSCRIBE_CONTACT_EMAIL=${CONTACT_EMAIL:-}"
+            echo "LOG_LEVEL=info"
+            # Both empty: the published image carries neither an SU2 binary nor
+            # a TeX engine. Setting a path that is not in the image would make
+            # /health report `configured: true, available: false` — a broken
+            # mount, which is a different and more confusing lie than the truth,
+            # which is that this release cannot typeset or solve. See
+            # docs/DEPLOYMENT.md § 6 for the image that can.
+            echo "SU2_CFD_BINARY="
+            echo "LATEX_BINARY="
+            echo "LATEX_TIMEOUT_MS=120000"
+            echo "SEMANTIC_SCHOLAR_API_KEY=${SEMANTIC_SCHOLAR_KEY:-}"
+          } > deploy.env
+          # The file holds the bearer token and the database password; nothing
+          # may leave it behind, including a step that fails midway.
+          trap 'rm -f deploy.env' EXIT
+          # 600, because it holds the bearer token and the database password.
+          ssh "$TARGET" "install -m 600 /dev/null '${DEPLOY_PATH}/.env'"
+          cat deploy.env | ssh "$TARGET" "cat > '${DEPLOY_PATH}/.env'"
+          rm -f deploy.env
+
+      - name: Pull and replace the stack
+        env:
+          SSH_HOST: ${{ secrets.AEROSCRIBE_SSH_HOST }}
+          SSH_USER: ${{ secrets.AEROSCRIBE_SSH_USER }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TARGET="${SSH_USER}@${SSH_HOST}"
+          # The token goes in on stdin, never on the command line: a remote
+          # `ps` would show it, and this is a packed-into-one-string registry
+          # credential that can read every package the repository publishes.
+          ssh "$TARGET" "docker login '${REGISTRY}' -u '${{ github.actor }}' --password-stdin" <<< "$GHCR_TOKEN"
+          ssh "$TARGET" "cd '${DEPLOY_PATH}' && docker compose pull --quiet"
+          # `--no-build`: the images are the release, built once and verified by
+          # the release workflow. Building on the host would deploy something the
+          # smoke test in `Release images` never saw.
+          ssh "$TARGET" "cd '${DEPLOY_PATH}' && docker compose up -d --no-build --remove-orphans"
+          ssh "$TARGET" "cd '${DEPLOY_PATH}' && docker compose ps"
+
+      - name: Smoke the deployment
+        env:
+          STAGING_URL: ${{ vars.AEROSCRIBE_STAGING_URL }}
+          API_KEY: ${{ secrets.AEROSCRIBE_API_KEY }}
+          INSECURE: ${{ vars.AEROSCRIBE_STAGING_INSECURE }}
+        run: |
+          set -euo pipefail
+          ARGS=(--wait 180 --expect-version "$VERSION" --expect-auth --expect-solver "${{ inputs.solver }}")
+          if [ "${INSECURE:-false}" = "true" ]; then
+            ARGS+=(--insecure)
+          fi
+          # A host with no public certificate is a staging host; a production
+          # host with no public certificate is a bug, so `--insecure` is only
+          # ever reachable from here.
+          AEROSCRIBE_API_KEY="$API_KEY" scripts/smoke-deploy.sh "$STAGING_URL" "${ARGS[@]}"
+
+      - name: Summarise
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "### Staging: \`${{ inputs.tag }}\`"
+            echo
+            echo "- expected solver: \`${{ inputs.solver }}\`"
+            echo "- smoke: ${{ job.status }}"
+            if [ -s previous-images.txt ]; then
+              echo
+              echo "Previous release on the host, for a rollback:"
+              echo
+              echo '```'
+              cat previous-images.txt
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Container logs
+        if: failure()
+        env:
+          SSH_HOST: ${{ secrets.AEROSCRIBE_SSH_HOST }}
+          SSH_USER: ${{ secrets.AEROSCRIBE_SSH_USER }}
+        run: ssh "${SSH_USER}@${SSH_HOST}" "cd '${DEPLOY_PATH}' && docker compose logs --tail 200" || true

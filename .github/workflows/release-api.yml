@@ -1,0 +1,313 @@
+name: Release images
+
+# A release is a tag, never a branch push.
+#
+# `workflow_dispatch` exists so a release can be re-run against a tag that was
+# already cut (the build failed, the registry was down). It refuses any ref that
+# is not a `v*` tag for exactly the same reason `push` does: an image built from
+# a branch is an image nobody can find again.
+#
+# Two images are published from one tag:
+#   ghcr.io/<owner>/aeroscribe-api         — services/api, the Dockerfile at the root
+#   ghcr.io/<owner>/aeroscribe-dashboard   — the live bundle, served by Caddy
+#
+# The dashboard is published rather than built on the deploy host because a
+# deploy should pull an immutable artefact, not compile one. `compose.yaml`
+# builds both from source for a laptop, and consumes these tags on a host.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Tag to build (vX.Y.Z). Must already exist.'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+  # `provenance: true` signs the build attestation with the workflow identity.
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  resolve:
+    name: Resolve the tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.ref.outputs.tag }}
+      version: ${{ steps.ref.outputs.version }}
+    steps:
+      - name: Refuse anything that is not a version tag
+        id: ref
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TARGET="${{ inputs.ref }}"
+          else
+            TARGET="${GITHUB_REF_NAME}"
+          fi
+          case "$TARGET" in
+            v[0-9]*) ;;
+            *)
+              echo "::error::Releases are built from v* tags only; '$TARGET' is not one."
+              exit 1
+              ;;
+          esac
+          echo "tag=${TARGET}" >> "$GITHUB_OUTPUT"
+          # `v0.3.0` and `0.3.0` are both reasonable tags; the image labels and
+          # `/health` are semver, so strip the `v` once, here.
+          echo "version=${TARGET#v}" >> "$GITHUB_OUTPUT"
+
+  build-api:
+    name: Build and publish the API image
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout the tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Confirm the tag is on main
+        env:
+          TAG: ${{ needs.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::${TAG} is not on main. Release from main so the image is reproducible from history."
+            exit 1
+          fi
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/aeroscribe-api
+          # Order matters: `latest` only ever moves on a version tag, and the
+          # immutable `sha-…` tag is what a rollback can pin.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.title=AeroScribe API
+            org.opencontainers.image.description=Research pipeline API with a hash-chained evidence registry
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # `/health` reports these, and the staging smoke test asserts the
+          # deployed version is the tag that was released.
+          build-args: |
+            AEROSCRIBE_VERSION=${{ needs.resolve.outputs.version }}
+            GIT_SHA=${{ github.sha }}
+          # Attestations, not loose files: the SBOM and the provenance record are
+          # attached to the digest, so `docker buildx imagetools inspect` answers
+          # "what is in this image and where was it built" for the exact bytes a
+          # host pulled.
+          provenance: true
+          sbom: true
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+  build-dashboard:
+    name: Build and publish the dashboard image
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout the tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Confirm the tag is on main
+        env:
+          TAG: ${{ needs.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Repeated here rather than left to build-api: the two jobs run in
+          # parallel, so without this check a tag off main could still publish a
+          # dashboard image for a commit that never reached it.
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::${TAG} is not on main."
+            exit 1
+          fi
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/aeroscribe-dashboard
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.title=AeroScribe dashboard
+            org.opencontainers.image.description=Research pipeline dashboard, served same-origin as the API by Caddy
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./docker/dashboard.Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Present and empty is same origin, which is how the stack serves it.
+          # Omitting it would publish the fixture-only dashboard under a release
+          # tag, and every screen of it would say the numbers are fixtures.
+          build-args: |
+            VITE_API_URL=
+          provenance: true
+          sbom: true
+          cache-from: type=gha,scope=dashboard
+          cache-to: type=gha,mode=max,scope=dashboard
+
+  verify:
+    name: Boot the published digest and smoke it
+    needs: [resolve, build-api]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout the tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull the digest that was just published
+        env:
+          DIGEST: ${{ needs.build-api.outputs.digest }}
+        run: |
+          set -euo pipefail
+          # By digest, never by tag: metadata-action derives `sha-…` from its own
+          # committed sha, which need not equal `git rev-parse --short HEAD`, and
+          # a tag can be moved. The digest is the only name that cannot be.
+          if [ -z "${DIGEST}" ]; then
+            echo "::error::build-api produced no digest; nothing to verify."
+            exit 1
+          fi
+          echo "verify: ${REGISTRY}/${{ github.repository_owner }}/aeroscribe-api@${DIGEST}"
+          docker pull "${REGISTRY}/${{ github.repository_owner }}/aeroscribe-api@${DIGEST}"
+
+      - name: Boot it
+        env:
+          DIGEST: ${{ needs.build-api.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker run -d --name api -p 8787:8787 \
+            -e AEROSCRIBE_OFFLINE=true \
+            -e AEROSCRIBE_DATA_DIR=/data \
+            "${REGISTRY}/${{ github.repository_owner }}/aeroscribe-api@${DIGEST}"
+
+      - name: Set up Node for the smoke script
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Smoke it
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          # The same script staging and production run after a deploy. If it
+          # passes here, the image is worth promoting; if it fails, the tag is
+          # not a release yet.
+          scripts/smoke-deploy.sh http://127.0.0.1:8787 \
+            --wait 90 \
+            --expect-version "${VERSION}" \
+            --expect-anonymous \
+            --expect-solver synthetic
+
+      - name: Attestations and digest
+        run: |
+          set -euo pipefail
+          IMAGE="${REGISTRY}/${{ github.repository_owner }}/aeroscribe-api:${{ needs.resolve.outputs.version }}"
+          {
+            echo "### Released \`${{ needs.resolve.outputs.tag }}\`"
+            echo
+            echo "| image | digest |"
+            echo "| --- | --- |"
+            echo "| \`$IMAGE\` | \`${{ needs.build-api.outputs.digest }}\` |"
+            echo "| \`${REGISTRY}/${{ github.repository_owner }}/aeroscribe-dashboard:${{ needs.resolve.outputs.version }}\` | see its build log |"
+            echo
+            echo "Platforms: linux/amd64, linux/arm64. SBOM and provenance are"
+            echo "attestations attached to the digest:"
+            echo
+            echo '```'
+            # Informational: a runner without buildx should not turn a green
+            # release into a red one after the smoke test already passed.
+            docker buildx imagetools inspect "$IMAGE" || echo '(buildx imagetools unavailable on this runner)'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Container logs
+        if: always()
+        run: docker logs api || true
+
+      - name: Remove the container
+        if: always()
+        run: docker rm -f api || true

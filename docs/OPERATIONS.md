@@ -13,7 +13,7 @@ says so instead of describing how it would work.
 | Component            | What it is                                      | Where its state lives                                               |
 | -------------------- | ----------------------------------------------- | ------------------------------------------------------------------- |
 | `@aeroscribe/api`    | the HTTP API and the pipeline                   | `AEROSCRIBE_DATA_DIR`, or Postgres, or both                         |
-| `apps/dashboard`     | static assets; **not wired to the API yet**     | nothing                                                             |
+| `apps/dashboard`     | static assets; a live build reads the API       | nothing (the API holds every fact it shows)                         |
 | Evidence chain       | append-only, hash-chained records               | `registry.ndjson` or the `evidence` table                           |
 | Runs and audit trail | one document per run; one line per state change | `runs/` + `audit.ndjson`, or two tables                             |
 | Artefacts            | CFD working directories, rendered manuscripts   | under `AEROSCRIBE_DATA_DIR` (D4 would move these to object storage) |
@@ -51,9 +51,11 @@ A first `200` means the process can write: the store probe really wrote and remo
 really opened a database connection. `503` names what failed. There is no "healthy but
 degraded" state that still accepts writes.
 
-The dashboard is a separate build (`npm run build -w @aeroscribe/dashboard`) and is **not wired
-to the API** in this version; it renders recorded fixtures. Do not treat it as a monitoring
-surface.
+The dashboard is a separate build (`npm run build -w @aeroscribe/dashboard`). With `VITE_API_URL`
+unset it renders recorded fixtures and labels every screen — that is the build GitHub Pages serves.
+With it set (empty for same-origin) it reads this API, so it reflects reality but is still a
+researcher's workspace, not a monitoring surface: it has no retention, no alerting and no history.
+Use `/health`, `/api/v1/evidence/verify` and the log stream when something is wrong.
 
 ---
 
@@ -237,3 +239,9 @@ Stated here so nobody assumes it exists:
   taken before it.
 - **No scheduler.** Nothing advances a run or re-checks a DOI on its own; both are cron or
   operator actions.
+
+## 12. Where the deployment lives
+
+This document covers a running process. The stack that runs it — compose services, TLS, the
+reviewer gate, backup and rollback on a host — is [`DEPLOYMENT.md`](DEPLOYMENT.md). The two overlap
+only on backup (§ 5 there, § 5 here): this one describes the data, that one describes the host.

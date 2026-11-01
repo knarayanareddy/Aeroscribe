@@ -45,10 +45,21 @@ RUN if [ "$INSTALL_LATEX" = "true" ]; then \
 # default image does not contain, and the service would then report a toolchain
 # that "did not answer" instead of an unset one. Build with `INSTALL_LATEX=true`
 # and run with `-e LATEX_BINARY=/usr/bin/pdflatex` to get PDFs.
+# Release identity, so `/health` can answer "which build is this?".
+#
+# They are build arguments rather than fixed values because the answer has to
+# come from the release: a tag-pushed image reports its version and commit, and
+# an image built from a working tree reports `dev` / `unknown` — which is the
+# truth, and is exactly what a staging smoke test checks before promoting.
+ARG AEROSCRIBE_VERSION=dev
+ARG GIT_SHA=unknown
+
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=8787 \
-    AEROSCRIBE_DATA_DIR=/data
+    AEROSCRIBE_DATA_DIR=/data \
+    AEROSCRIBE_VERSION=${AEROSCRIBE_VERSION} \
+    GIT_SHA=${GIT_SHA}
 
 # Manifests first: a source-only change then reuses the install layer.
 COPY package.json package-lock.json ./

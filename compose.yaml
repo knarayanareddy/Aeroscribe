@@ -1,0 +1,178 @@
+# The whole stack, for a laptop and for a host.
+#
+#   cp .env.example .env        # then edit: at minimum AEROSCRIBE_API_KEY
+#   docker compose up -d --build
+#   open https://localhost      # Caddy issues itself a certificate
+#
+#   scripts/smoke-deploy.sh https://localhost --expect-auth --expect-solver synthetic \
+#     --expect-version "$(git describe --tags --always)"   # AEROSCRIBE_API_KEY exported
+#
+# This file is the same one staging and production run. Nothing in it is
+# laptop-only: the only differences between the environments are the `.env`
+# values and whether Caddy gets a real hostname.
+#
+# What is deliberately absent: MinIO. The API has no object-storage adapter yet
+# (ROADMAP §8 D4b), so a bucket in this file would be a service nothing talks to.
+# When D4b lands it becomes one more service here and one more variable.
+
+name: aeroscribe
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: aeroscribe
+      POSTGRES_USER: aeroscribe
+      POSTGRES_PASSWORD: ${AEROSCRIBE_DB_PASSWORD:?set AEROSCRIBE_DB_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # The API must not start against a database that is still initialising:
+      # `pg_isready` answers before the entrypoint has finished creating the
+      # database, so the check reads the database the API will actually use.
+      test: ['CMD-SHELL', 'pg_isready -U aeroscribe -d aeroscribe']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [internal]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # No persistence: Redis holds one rate window and one stage lease
+    # (docs/OPERATIONS.md § 6). Nothing durable lives here.
+    command:
+      ['redis-server', '--save', '', '--appendonly', 'no', '--maxmemory-policy', 'noeviction']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [internal]
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        AEROSCRIBE_VERSION: ${AEROSCRIBE_VERSION:-dev}
+        GIT_SHA: ${GIT_SHA:-unknown}
+        # The engine is ~250 MB and only useful if you want a PDF, so it is off
+        # by default and `/health` reports `latex.available: false` until it is
+        # turned on. Stage 8 then still writes the `.tex`, says
+        # `typeset: "source-only"` and blocks submission — no silent fallback.
+        INSTALL_LATEX: ${AEROSCRIBE_INSTALL_LATEX:-false}
+    image: ${AEROSCRIBE_API_IMAGE:-aeroscribe-api:local}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      AEROSCRIBE_DATA_DIR: /data
+      AEROSCRIBE_STORE: postgres
+      AEROSCRIBE_DATABASE_URL: postgres://aeroscribe:${AEROSCRIBE_DB_PASSWORD}@postgres:5432/aeroscribe
+      AEROSCRIBE_COORDINATION: redis
+      AEROSCRIBE_REDIS_URL: redis://redis:6379/0
+      AEROSCRIBE_API_KEY: ${AEROSCRIBE_API_KEY:?set AEROSCRIBE_API_KEY in .env}
+      AEROSCRIBE_CONTACT_EMAIL: ${AEROSCRIBE_CONTACT_EMAIL:-}
+      # Offline by default: a stack that reaches the internet the first time it
+      # is started is a stack that fails behind a firewall. Set it to false to
+      # talk to Crossref/arXiv/Semantic Scholar.
+      AEROSCRIBE_OFFLINE: ${AEROSCRIBE_OFFLINE:-true}
+      # Empty CORS: the dashboard and the API share an origin through Caddy.
+      AEROSCRIBE_CORS_ORIGINS: ''
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # ── Capability switches ────────────────────────────────────────────────
+      # Passed through rather than set: this image contains no SU2 binary and no
+      # TeX engine unless built with INSTALL_LATEX=true, so the honest default is
+      # "unset". A path that is set but absent is reported by /health as
+      # `configured: true, available: false` — a broken mount, not a silent
+      # downgrade. Without SU2 every run is synthetic and blocked at stage 8.
+      SU2_CFD_BINARY: ${SU2_CFD_BINARY:-}
+      LATEX_BINARY: ${LATEX_BINARY:-}
+      LATEX_TIMEOUT_MS: ${LATEX_TIMEOUT_MS:-120000}
+      # Server-side only; raises the Semantic Scholar rate allowance.
+      SEMANTIC_SCHOLAR_API_KEY: ${SEMANTIC_SCHOLAR_API_KEY:-}
+    volumes:
+      # Artefact bytes and CFD working directories are local files even with
+      # Postgres (docs/OPERATIONS.md § 1); the chain records their digests.
+      - api-data:/data
+    # No published port on purpose: the API is reachable only through Caddy,
+    # which is also what injects the bearer token. `docker compose port api` is
+    # empty, and that is a feature.
+    #
+    # It is on `edge` as well as `internal` for one reason: with
+    # AEROSCRIBE_OFFLINE=false it must reach Crossref, arXiv and Semantic
+    # Scholar, and an `internal: true` network has no egress. Caddy can resolve
+    # it on `edge`, so the proxy path still crosses no network that has a port.
+    networks: [internal, edge]
+
+  # One shot, before the API: `AEROSCRIBE_STORE=postgres` refuses to boot against
+  # a database with no tables, and the migrations are not run at startup by the
+  # service itself (a request-handling process should not be the thing that
+  # changes the schema). `docker compose up` runs this to completion first, and
+  # `depends_on: service_completed_successfully` is what makes that ordering a
+  # guarantee rather than a hope. Re-running is a no-op — see the script header.
+  migrate:
+    image: ${AEROSCRIBE_API_IMAGE:-aeroscribe-api:local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        AEROSCRIBE_VERSION: ${AEROSCRIBE_VERSION:-dev}
+        GIT_SHA: ${GIT_SHA:-unknown}
+    restart: 'no'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      AEROSCRIBE_DATA_DIR: /data
+      AEROSCRIBE_STORE: postgres
+      AEROSCRIBE_DATABASE_URL: postgres://aeroscribe:${AEROSCRIBE_DB_PASSWORD}@postgres:5432/aeroscribe
+    command: ['node', '--import', 'tsx', 'services/api/scripts/db-migrate.ts']
+    networks: [internal]
+
+  caddy:
+    build:
+      context: .
+      dockerfile: docker/dashboard.Dockerfile
+      args:
+        # Present and empty: same origin. `VITE_API_URL=` is *not* the same as
+        # omitting it — omitting it builds the fixture-only dashboard.
+        VITE_API_URL: ''
+    image: ${AEROSCRIBE_WEB_IMAGE:-aeroscribe-dashboard:local}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      AEROSCRIBE_DOMAIN: ${AEROSCRIBE_DOMAIN:-localhost}
+      # Injected into the upstream request, never sent to the browser.
+      AEROSCRIBE_API_KEY: ${AEROSCRIBE_API_KEY:?set AEROSCRIBE_API_KEY in .env}
+    ports:
+      - '${AEROSCRIBE_HTTP_PORT:-80}:80'
+      - '${AEROSCRIBE_HTTPS_PORT:-443}:443'
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [internal, edge]
+
+networks:
+  # Nothing but Caddy and the API talk on `edge`; Postgres and Redis are on
+  # `internal` only, which also means they have no address on any host network.
+  internal:
+    internal: true
+  edge: {}
+
+volumes:
+  postgres-data: {}
+  api-data: {}
+  caddy-data: {}
+  caddy-config: {}

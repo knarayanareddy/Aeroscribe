@@ -1,0 +1,64 @@
+# The edge: TLS, static dashboard, and the API under the same origin.
+#
+# Three things this buys, in order of importance:
+#
+# 1. **TLS without another service.** Caddy obtains and renews the certificate
+#    from Let's Encrypt when `AEROSCRIBE_DOMAIN` is a real name with an A record,
+#    and falls back to its internal CA for `localhost` / bare IPs. A deployment
+#    with no certificate is a deployment whose API key travels in clear text.
+#
+# 2. **One origin.** The browser loads the dashboard from `/` and calls
+#    `/api/v1/…` on the same origin, so there is no CORS preflight and no second
+#    origin to mention in a token story (ROADMAP §8 F). The API's own CORS
+#    allowlist stays empty in this topology.
+#
+# 3. **The key never reaches the browser.** `header_up Authorization` injects the
+#    bearer token server-side, the same thing the Vite dev proxy does. That is
+#    the honest reading of `AEROSCRIBE_API_KEY` here: the edge is the client.
+#    It also means `/api` must never be exposed on the API container directly —
+#    keep it on the internal network only, which `compose.yaml` does.
+#
+# The dashboard bundle is the *live* build only if the image was built with
+# `VITE_API_URL=` (present, empty ⇒ same origin). A fixture build served here
+# still renders, and still says on every screen that the numbers are fixtures.
+
+# Set AEROSCRIBE_DOMAIN to a real hostname in a deployment; the default keeps
+# `docker compose up` working on a laptop, where Caddy issues itself an internal
+# certificate (browsers warn once, which is correct for a self-signed name).
+{$AEROSCRIBE_DOMAIN:localhost} {
+	encode zstd gzip
+
+	# Everything the API owns. `handle` keeps the matcher exclusive, so a future
+	# `/api/…` file on disk can never shadow a route.
+	handle /api/* {
+		reverse_proxy api:8787 {
+			header_up Authorization "Bearer {$AEROSCRIBE_API_KEY}"
+			# The rate limiter keys on the client, not on this proxy.
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	handle /health {
+		reverse_proxy api:8787 {
+			header_up Authorization "Bearer {$AEROSCRIBE_API_KEY}"
+		}
+	}
+
+	# The dashboard: a single-page app, so unknown paths get index.html rather
+	# than a 404 from the file server.
+	handle {
+		root * /srv/www
+		try_files {path} /index.html
+		file_server
+	}
+
+	# Hashed asset names are immutable; index.html must not be cached, or a
+	# deploy keeps serving yesterday's script for a day.
+	header /assets/* Cache-Control "public, max-age=31536000, immutable"
+	header /index.html Cache-Control "no-cache"
+
+	log {
+		output stdout
+		format console
+	}
+}
