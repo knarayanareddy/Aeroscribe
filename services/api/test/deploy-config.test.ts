@@ -442,6 +442,48 @@ describe('scripts/check-site.mjs', () => {
     );
   });
 
+  it('checks media the bundle references, which no HTML scan can see', async () => {
+    // The demo video is referenced from React, so its 404 would never appear in
+    // `index.html`. This is the check that catches a forgotten file.
+    const root = await site();
+    await mkdir(join(root, 'demo'), { recursive: true });
+    await writeFile(join(root, 'demo', 'aeroscribe-demo.mp4'), 'not really a video');
+    await writeFile(
+      join(root, 'assets', 'landing.js'),
+      'const url = "/Aeroscribe/demo/aeroscribe-demo.mp4";',
+    );
+
+    const { problems, media } = await checkSite(root);
+    expect(problems).toEqual([]);
+    expect(media).toEqual(['demo/aeroscribe-demo.mp4']);
+  });
+
+  it('rejects a bundle pointing at media that did not ship', async () => {
+    const root = await site();
+    await writeFile(
+      join(root, 'assets', 'landing.js'),
+      'const url = "/Aeroscribe/demo/aeroscribe-demo.mp4";',
+    );
+
+    const { problems } = await checkSite(root);
+    expect(problems).toEqual([
+      'the bundle references /Aeroscribe/demo/aeroscribe-demo.mp4, but demo/aeroscribe-demo.mp4 is not in the site',
+    ]);
+  });
+
+  it('rejects a poster the page would request and never get', async () => {
+    // A `<video poster>` is fetched before anyone presses play: a 404 there is a
+    // black rectangle where the thumbnail belongs.
+    const root = await site();
+    await writeFile(
+      join(root, 'index.html'),
+      '<script type="module" src="/Aeroscribe/assets/landing.js"></script><link rel="stylesheet" href="/Aeroscribe/assets/landing.css"><video poster="/Aeroscribe/demo/poster.jpg"></video>',
+    );
+
+    const { problems } = await checkSite(root);
+    expect(problems.join('\n')).toMatch(/demo\/poster\.jpg is not in the assembled site/);
+  });
+
   it('maps a URL to the file the browser would ask for', () => {
     expect(SITE_PREFIX).toBe('/Aeroscribe/');
     expect(targetOf('index.html', '/Aeroscribe/assets/a.js')).toEqual({

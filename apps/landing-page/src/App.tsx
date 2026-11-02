@@ -1,6 +1,7 @@
 import About from './components/About';
 import Capabilities from './components/Capabilities';
 import ContactSection from './components/ContactSection';
+import DemoVideo from './components/DemoVideo';
 import Docs from './components/Docs';
 import Footer from './components/Footer';
 import Hero from './components/Hero';
@@ -21,6 +22,7 @@ export default function App() {
       <Navbar />
       <main id="main">
         <Hero />
+        <DemoVideo />
         <About />
         <Capabilities />
         <ResearchAreas />

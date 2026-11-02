@@ -53,3 +53,9 @@ data/
 # sharing.
 apps/demo-video/render/
 *.mp4
+
+# Except the copy the published site serves. GitHub Pages has no build step that
+# could produce it, so the landing page needs the file in the repository — and a
+# `*.mp4` rule that silently excluded it would publish a "watch the demo" button
+# that 404s. `scripts/check-site.mjs` fails the deploy if it goes missing anyway.
+!apps/landing-page/public/demo/*.mp4

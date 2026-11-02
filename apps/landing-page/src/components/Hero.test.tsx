@@ -30,6 +30,16 @@ describe('Hero', () => {
     );
   });
 
+  it('offers the demo without making anyone hunt for it', () => {
+    render(<Hero />);
+
+    // The demo is the fastest way to understand the project; a visitor who has
+    // to scroll past three sections to find it is a visitor who leaves.
+    const demo = screen.getByRole('link', { name: /watch the .*demo/i });
+    expect(demo).toHaveAttribute('href', '#demo');
+    expect(demo.textContent).toMatch(/2½-minute/);
+  });
+
   it('does not advertise invented accuracy figures', () => {
     render(<Hero />);
 
