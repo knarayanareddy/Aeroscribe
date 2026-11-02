@@ -24,6 +24,16 @@ unset, so that bundle contains no API address and every screen carries the "Fixt
 data" label. It is a demonstration of the interface, not a window into a deployment, and nothing in
 this document turns it into one.
 
+Two things the workflow does that are easy to lose in a later edit:
+
+- It runs the test suite with a `redis:7` service. The coordination tests refuse to skip when no
+  server is reachable, so without the service the job fails and the site keeps serving an older
+  build — which is what happened between E and G.
+- It checks the assembled tree with `scripts/check-site.mjs` before uploading it. The landing page
+  is published under `BASE_PATH`, the dashboard under `DASHBOARD_BASE_PATH`; a single shared value
+  built the dashboard with the landing page's base, whose scripts 404 once published. The checker
+  resolves every absolute URL in the published HTML against the artefact and fails the deploy.
+
 The compose stack is the opposite: its dashboard image is built with `VITE_API_URL=` — present and
 empty — which means _this origin_. The browser calls `/api/v1/…` on the page it already loaded, and
 Caddy adds the bearer token on the way in (§ 3).

@@ -36,7 +36,7 @@ ENV VITE_API_URL=${VITE_API_URL}
 # The bundle is served from the origin root here, not from the Pages sub-path.
 # Vite bakes `base` into every asset URL, so getting this wrong serves an
 # index.html whose scripts 404 — a blank page that looks like an API problem.
-ENV BASE_PATH=/
+ENV DASHBOARD_BASE_PATH=/
 RUN npm run build -w @aeroscribe/dashboard
 
 FROM caddy:2-alpine AS runtime
