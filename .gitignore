@@ -47,3 +47,9 @@ data/
 # Local archives and large binaries (use Releases for distribution)
 *.zip
 *.tar.gz
+
+# Rendered video. A demo MP4 is a build artefact, not source: `npm run render`
+# regenerates it from the scene components, and Releases carry the copies worth
+# sharing.
+apps/demo-video/render/
+*.mp4

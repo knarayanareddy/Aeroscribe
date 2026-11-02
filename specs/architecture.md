@@ -9,7 +9,8 @@ This document describes the repository as it exists today, not the larger system
 aeroscribe/
 ├── apps/
 │   ├── landing-page/          Vite + React 19 static marketing site
-│   └── dashboard/             Vite + React 19 prototype researcher dashboard
+│   ├── dashboard/             Vite + React 19 prototype researcher dashboard
+│   └── demo-video/            Remotion scenes → MP4; reads the dashboard's evidence fixture
 ├── packages/
 │   ├── contract/              Wire types shared by services/api and the dashboard
 │   ├── pipeline/              Domain types, stage catalogue, reducer, stats, formatting

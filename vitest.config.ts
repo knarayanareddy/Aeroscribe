@@ -24,7 +24,15 @@ export default defineConfig({
       thresholds: {
         // The whole repository: UI components are exercised through behaviour
         // tests rather than every branch, so the floor is deliberately lower.
-        global: { statements: 79, branches: 68, functions: 73, lines: 81 },
+        //
+        // These four are top-level keys on purpose. Vitest reads `thresholds`
+        // as "these four fields = every file, every other key = a glob", so a
+        // nested `global: { … }` is not a global floor at all — it is a glob
+        // named `global`, which matches no file and enforces nothing.
+        statements: 79,
+        branches: 68,
+        functions: 73,
+        lines: 81,
         // The service holds the integrity machinery: every stage handler, the
         // chain, the claim verifier. This is the part that must not rot.
         // Measured on the glob, which istanbul sums per matched file; the
