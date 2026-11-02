@@ -514,6 +514,16 @@ describe('peer review', () => {
     };
 
     expect(payload.verdict).toBe('revise');
+    // The landing page's "Seven deterministic checks" is counted from here.
+    expect(payload.checks.map((check) => check.id)).toEqual([
+      'RULE-001',
+      'RULE-002',
+      'JOURNAL-ABSTRACT',
+      'REFERENCES',
+      'RULE-004',
+      'RULE-041',
+      'RULE-030',
+    ]);
     expect(payload.checks.find((check) => check.id === 'RULE-004')).toMatchObject({ passed: true });
     expect(payload.checks.find((check) => check.id === 'RULE-001')).toMatchObject({ passed: true });
     expect(payload.checks.find((check) => check.id === 'REFERENCES')).toMatchObject({

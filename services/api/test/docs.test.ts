@@ -252,9 +252,16 @@ describe('specs/architecture.md matches the repository', () => {
   it('still states the two limits that are true today', async () => {
     const doc = await readRepoFile('specs/architecture.md');
 
-    // The dashboard is not wired to the API.
-    expect(doc).toMatch(/dashboard[^.]*static prototype|fixtures/i);
-    expect(doc).toMatch(/wiring the dashboard/i);
+    // The published dashboard is the fixture build; live mode is opt-in at
+    // build time. The old copy said the dashboard was not wired at all, which
+    // stopped being true when live mode reached all nine views.
+    expect(doc).toMatch(/Pages build is the\s+fixture one/i);
+    expect(doc).toMatch(/opt-in/i);
+    expect(doc).toContain('VITE_API_URL');
+    expect(doc).not.toMatch(/do not meet yet/i);
+    expect(doc).not.toMatch(/Wiring the dashboard to the API is tracked/i);
+    // Nor may it claim the browser never reaches the API.
+    expect(doc).not.toMatch(/Neither app calls the API/i);
     // A run without SU2_CFD_BINARY is synthetic, and stage 8 will not pass it.
     expect(doc).toContain('SU2_CFD_BINARY');
     expect(doc).toMatch(/synthetic/i);

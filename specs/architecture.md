@@ -33,7 +33,8 @@ deleted.
 ```
 browser ──► apps/landing-page, apps/dashboard     (static, GitHub Pages)
    │
-   └── no requests: the dashboard still renders fixtures
+   ├── published build: no requests; the dashboard renders fixtures
+   └── live build (VITE_API_URL at build time): GET/POST /api/v1/…
 
 HTTP client ──► services/api  (Hono, Node 22)
                     │
@@ -45,10 +46,14 @@ HTTP client ──► services/api  (Hono, Node 22)
                     └── AEROSCRIBE_DATA_DIR/         runs/*.json, registry, audit
 ```
 
-Two separate flows, and they do not meet yet: **the dashboard is a static prototype fed by
-fixtures**, and **the API is a real service driven by HTTP clients** (the smoke scripts,
-`curl`, or the tests). Wiring the dashboard to the API is tracked in
-[`../docs/IMPLEMENTATION_STATUS.md`](../docs/IMPLEMENTATION_STATUS.md).
+Two builds, and only one of them is what this repository publishes. **The Pages build is the
+fixture one**: `VITE_API_URL` is unset, so no API address is baked into the bundle, the page makes
+no requests, and every screen says the data is illustrative. **A live build** — `VITE_API_URL`
+present at build time, opt-in — reads the API and covers all nine views; it is what the compose
+stack serves and what `apps/dashboard/src/components/LiveViews.test.tsx` exercises. The API is a
+real service driven by HTTP clients as well as that build (the smoke scripts, `curl`, or the
+tests). Which build is which, and what each view does with a run that has no record, is kept
+current in [`../docs/IMPLEMENTATION_STATUS.md`](../docs/IMPLEMENTATION_STATUS.md).
 
 What each stage computes, and what it only records, is documented in
 [`../docs/BACKEND.md`](../docs/BACKEND.md); the service never renders a number it did not
@@ -66,9 +71,11 @@ PipelineProvider (useReducer)  ──►  PipelineView / Dashboard / ReviewView 
         └── PipelineState { runs, activeRunId }
 ```
 
-- **Fixtures, not results.** Every number shown in the dashboard comes from `mockData.ts`.
-  The file says so at the top, and views that display results carry an "illustrative data"
-  banner. See [`../docs/IMPLEMENTATION_STATUS.md`](../docs/IMPLEMENTATION_STATUS.md).
+- **Fixtures, not results.** In the published build every number comes from `mockData.ts`; the
+  file says so at the top, and views that display results carry an "illustrative data" banner.
+  The live build renders only what the API returned for the selected run, and a view whose run
+  has no record says so rather than filling the gap. See
+  [`../docs/IMPLEMENTATION_STATUS.md`](../docs/IMPLEMENTATION_STATUS.md).
 - **Timestamps.** Fixtures are authored with fixed ISO strings so diffs stay reviewable, then
   shifted at import time so relative labels ("2 days ago") stay plausible. `FIXTURE_NEWEST`
   is the anchor.
@@ -76,10 +83,11 @@ PipelineProvider (useReducer)  ──►  PipelineView / Dashboard / ReviewView 
   Actions: `createRun`, `selectRun`, `approveGate`, `requestRevision`. The reducer never mutates
   its input; `apps/dashboard/src/components/PipelineView.test.tsx` asserts that approving a gate
   leaves the imported fixtures byte-for-byte unchanged.
-- **No network from the browser.** Neither app calls the API, an LLM or an analytics service;
-  the dashboard's gate buttons drive the in-memory reducer. The landing page's contact form
-  posts to `VITE_CONTACT_ENDPOINT` only when that variable is configured; otherwise it opens
-  a prefilled GitHub issue and says so explicitly.
+- **No silent network.** The published build makes no requests at all: there is no API address
+  in the bundle, and the dashboard's gate buttons drive the in-memory reducer. The live build
+  calls the API and nothing else — no LLM, no analytics. The landing page's contact form posts
+  to `VITE_CONTACT_ENDPOINT` only when that variable is configured; otherwise it opens a
+  prefilled GitHub issue and says so explicitly.
 
 ## Shared domain package
 
