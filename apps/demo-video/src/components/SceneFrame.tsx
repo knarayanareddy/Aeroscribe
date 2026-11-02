@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { AbsoluteFill } from 'remotion';
-import { useEased, useRise } from '../anim';
+import { clamp, easeOut, useEased, useRise, useSceneProgress } from '../anim';
 import { theme } from '../theme';
 import { Backdrop } from './Backdrop';
 
@@ -25,6 +25,13 @@ interface SceneFrameProps {
 export function SceneFrame({ kicker, title, lede, children, footnote }: SceneFrameProps) {
   const enter = useEased(0, 16);
   const rise = useRise(0, 18, 18);
+  // A frame that holds for ten seconds while the narrator talks needs *some*
+  // motion. This is the whole of it: a 14-pixel push over the scene, far too
+  // slow to read as movement and enough that the picture is never frozen.
+  const progress = useSceneProgress();
+  const drift = -14 * progress;
+  // The footnote is the caveat, so it brightens as the sentence about it lands.
+  const caption = 0.55 + 0.45 * easeOut(clamp((progress - 0.4) / 0.3));
 
   return (
     <AbsoluteFill style={{ color: theme.colors.text, fontFamily: theme.fonts.body }}>
@@ -90,7 +97,13 @@ export function SceneFrame({ kicker, title, lede, children, footnote }: SceneFra
         </header>
 
         <div
-          style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            transform: `translateY(${drift}px)`,
+          }}
         >
           {children}
         </div>
@@ -103,6 +116,7 @@ export function SceneFrame({ kicker, title, lede, children, footnote }: SceneFra
               display: 'flex',
               alignItems: 'center',
               gap: 10,
+              opacity: caption,
             }}
           >
             {footnote}

@@ -1,5 +1,4 @@
-import { useCurrentFrame } from 'remotion';
-import { easedAt, stagger } from '../anim';
+import { easedAt, stagger, useSceneFrame } from '../anim';
 import { Chip } from '../components/Chip';
 import { SceneFrame } from '../components/SceneFrame';
 import { council, projectionFinding, submission } from '../data';
@@ -22,7 +21,7 @@ const WORDS: Record<number, string> = {
 };
 
 export function Review() {
-  const frame = useCurrentFrame();
+  const frame = useSceneFrame();
   const verdict = easedAt(frame, 62, 18);
 
   return (

@@ -16,7 +16,7 @@ import {
   submission,
   typesetting,
 } from './data';
-import { SCENES, durationSeconds, timeline, totalFrames } from './timeline';
+import { durationSeconds, timeline, totalFrames } from './timeline';
 
 /**
  * The video's facts are the recorded run's facts.
@@ -111,12 +111,13 @@ describe('the timeline', () => {
       const previous = timeline[index - 1]!;
       expect(scene.from).toBe(previous.from + previous.frames);
     }
-    expect(totalFrames).toBe(SCENES.reduce((total, scene) => total + scene.frames, 0));
+    expect(totalFrames).toBe(timeline.reduce((total, scene) => total + scene.frames, 0));
   });
 
-  it('is long enough to read and short enough to watch', () => {
-    // Under two minutes at 30 fps: a demo nobody finishes is a demo nobody sees.
-    expect(durationSeconds).toBeGreaterThan(30);
-    expect(durationSeconds).toBeLessThan(120);
+  it('is long enough to say the script and short enough to watch', () => {
+    // The cut is its narration plus air, so the floor is the reading time; the
+    // ceiling is the point past which a product demo stops being watched.
+    expect(durationSeconds).toBeGreaterThan(120);
+    expect(durationSeconds).toBeLessThan(180);
   });
 });

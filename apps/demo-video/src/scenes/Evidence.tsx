@@ -1,5 +1,4 @@
-import { useCurrentFrame } from 'remotion';
-import { easedAt, stagger } from '../anim';
+import { easedAt, stagger, useSceneFrame } from '../anim';
 import { Chip } from '../components/Chip';
 import { Hash } from '../components/Hash';
 import { SceneFrame } from '../components/SceneFrame';
@@ -14,7 +13,7 @@ import { theme } from '../theme';
  * the shape: a list where every line commits to the line above it.
  */
 export function Evidence() {
-  const frame = useCurrentFrame();
+  const frame = useSceneFrame();
 
   return (
     <SceneFrame

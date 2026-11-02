@@ -1,9 +1,14 @@
 # AeroScribe demo video
 
 The product demo, made of React components and rendered to MP4 with
-[Remotion](https://remotion.dev). No After Effects, no screen recording: each
-scene is a `.tsx` file in `src/scenes/`, the timeline is a list of frame counts
-in `src/timeline.ts`, and the renderer turns that into a file.
+[Remotion](https://remotion.dev). No After Effects, no screen recording, no
+stock footage: each scene is a `.tsx` file in `src/scenes/`, the timeline is
+derived in `src/timeline.ts`, and the renderer turns that into a file.
+
+It is narrated, and the voice is **synthesised** — it is not a person. The
+script lives in `src/narration.ts`, one paragraph per scene, and the rendered
+clips are committed in `public/narration/` so the MP4 can be reproduced without
+a text-to-speech service.
 
 ```bash
 npm install
@@ -15,7 +20,25 @@ A render needs a Chromium binary; `npm run render` uses Remotion's own
 downloader if you have none, or point it at yours with
 `--browser-executable=/path/to/chrome`.
 
+To change what the video says, edit `src/narration.ts`, re-record the clip with
+the same voice, and update `NARRATION_SECONDS`. The cut follows from those
+numbers — a scene lasts its clip plus a lead and a tail (`timeline.ts`) — so a
+longer line pushes the next scene later instead of talking over it.
+
+You do not have to measure the clip by hand: `npm test` compares every entry in
+`NARRATION_SECONDS` against the committed MP3 (parsed in `src/mp3.ts`, no
+ffprobe needed) and fails with both numbers if they disagree by more than 50 ms.
+Forget to update it and the suite tells you the value; it does not let a stale
+constant reach a render.
+
 ## The scenes
+
+Each scene has its own narration clip, which starts a fifth of a second after
+the cut. The visuals were drawn for five-second scenes, so with the voiceover
+they run two to three times longer; `SceneTimingProvider` in `src/anim.tsx`
+slows each scene's animation clock by the square root of that stretch, spreading
+the staged reveals across the scene instead of finishing them in the first
+second.
 
 | #   | Scene       | What it claims                                                                    |
 | --- | ----------- | --------------------------------------------------------------------------------- |
@@ -43,6 +66,13 @@ and the same one the dashboard's mapper tests replay against. No scene types a
 numeral of its own, and `src/data.test.ts` fails if the capture stops carrying a
 record the video needs, if the headline result drifts from the manuscript's, or
 if the plan the video shows is not the one the manuscript names in `planRef`.
+
+`src/narration.test.ts` checks the parts of a voiceover that can be checked:
+every scene has a script and a clip on disk, each scene is long enough for its
+own clip, the script avoids notation a voice reads badly (`3.36e-06`), and the
+figures it speaks come from the data layer — the assertions call the same
+`spoken()` the script does, so they test the record rather than a string typed
+twice.
 
 `src/scenes.test.tsx` renders every scene at its first, middle and last frame
 with `remotion` stubbed to a frame counter, then checks that the text on screen

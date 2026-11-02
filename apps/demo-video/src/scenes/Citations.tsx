@@ -1,5 +1,4 @@
-import { useCurrentFrame } from 'remotion';
-import { easedAt } from '../anim';
+import { easedAt, useSceneFrame } from '../anim';
 import { Chip } from '../components/Chip';
 import { SceneFrame } from '../components/SceneFrame';
 import { firstReference, references } from '../data';
@@ -13,7 +12,7 @@ import { theme } from '../theme';
  * the stage, so the bibliography cannot quietly disagree with the registry.
  */
 export function Citations() {
-  const frame = useCurrentFrame();
+  const frame = useSceneFrame();
   const reference = references[0]!;
   const words = reference.line.split(' ');
   const fields: Array<[string, string]> = [

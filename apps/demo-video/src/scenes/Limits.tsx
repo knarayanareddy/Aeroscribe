@@ -1,5 +1,4 @@
-import { useCurrentFrame } from 'remotion';
-import { easedAt, stagger } from '../anim';
+import { easedAt, stagger, useSceneFrame } from '../anim';
 import { Chip } from '../components/Chip';
 import { SceneFrame } from '../components/SceneFrame';
 import { cfd, render, submission } from '../data';
@@ -13,7 +12,7 @@ import { theme } from '../theme';
  * captured run did not exercise. A demo that hides these would be advertising.
  */
 export function Limits() {
-  const frame = useCurrentFrame();
+  const frame = useSceneFrame();
 
   const rows = [
     {

@@ -1,5 +1,4 @@
-import { useCurrentFrame } from 'remotion';
-import { easedAt, stagger } from '../anim';
+import { easedAt, stagger, useSceneFrame } from '../anim';
 import { Chip } from '../components/Chip';
 import { SceneFrame } from '../components/SceneFrame';
 import { gateCount, stages, submission } from '../data';
@@ -14,7 +13,7 @@ import { theme } from '../theme';
  * twice.
  */
 export function Pipeline() {
-  const frame = useCurrentFrame();
+  const frame = useSceneFrame();
   const cfdStage = stages.find((stage) => stage.gateIds.length > 1);
 
   return (

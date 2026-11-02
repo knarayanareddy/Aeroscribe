@@ -13,7 +13,7 @@ import { Plan } from './scenes/Plan';
 import { Review } from './scenes/Review';
 import { Title } from './scenes/Title';
 import { Trace } from './scenes/Trace';
-import { SCENES } from './timeline';
+import { timeline } from './timeline';
 
 /**
  * A frame of video is not a test, so the scenes get one.
@@ -67,7 +67,7 @@ function markupAt(Scene: ComponentType, at: number): string {
 }
 
 describe('every scene renders at every point in its life', () => {
-  for (const scene of SCENES) {
+  for (const scene of timeline) {
     const Scene = SCENE_COMPONENTS[scene.id]!;
 
     it(`${scene.id} renders at its first, middle and last frame`, () => {

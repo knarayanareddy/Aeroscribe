@@ -24,17 +24,17 @@ synthetic benchmark** that blocks submission. Read
 
 ## What is here
 
-| Path                            | What it is                                                                                                          |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `apps/landing-page`             | Static marketing/info site (Vite, React 19, Tailwind 4). No third-party requests; fonts are self-hosted.            |
-| `apps/dashboard`                | Researcher dashboard prototype: nine views over fixtures, plus a real (in-memory) pipeline state machine.           |
-| `apps/demo-video`               | The product demo: ten Remotion scenes — React components — rendered to MP4. Reads the dashboard's evidence fixture. |
-| `services/api`                  | The agent runtime: orchestrator, stage handlers, evidence registry, literature and CFD adapters, HTTP API.          |
-| `packages/pipeline`             | Domain types, the nine-stage catalogue, the pure reducer, derived statistics and number formatting.                 |
-| `packages/ui`                   | `cn()` class-name helper.                                                                                           |
-| `specs/`                        | Short, maintained specifications. `specs/archive/` keeps the original design drafts, clearly marked as historical.  |
-| `docs/IMPLEMENTATION_STATUS.md` | What works, what is a mock, what is missing.                                                                        |
-| `docs/BACKEND.md`               | Step-by-step map of the backend: stages, evidence, endpoints, configuration, failure modes.                         |
+| Path                            | What it is                                                                                                         |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `apps/landing-page`             | Static marketing/info site (Vite, React 19, Tailwind 4). No third-party requests; fonts are self-hosted.           |
+| `apps/dashboard`                | Researcher dashboard prototype: nine views over fixtures, plus a real (in-memory) pipeline state machine.          |
+| `apps/demo-video`               | The narrated product demo: ten Remotion scenes — React components — plus synthesised voiceover, rendered to MP4.   |
+| `services/api`                  | The agent runtime: orchestrator, stage handlers, evidence registry, literature and CFD adapters, HTTP API.         |
+| `packages/pipeline`             | Domain types, the nine-stage catalogue, the pure reducer, derived statistics and number formatting.                |
+| `packages/ui`                   | `cn()` class-name helper.                                                                                          |
+| `specs/`                        | Short, maintained specifications. `specs/archive/` keeps the original design drafts, clearly marked as historical. |
+| `docs/IMPLEMENTATION_STATUS.md` | What works, what is a mock, what is missing.                                                                       |
+| `docs/BACKEND.md`               | Step-by-step map of the backend: stages, evidence, endpoints, configuration, failure modes.                        |
 
 ## Requirements
 
