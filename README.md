@@ -114,7 +114,8 @@ its fixture papers carry no DOIs, so an offline run can never cite anything.
 
 | Variable                | Used by      | Purpose                                                                                                                                                                                |
 | ----------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BASE_PATH`             | both builds  | Production asset base path. Defaults to `/Aeroscribe/` (landing) and `/Aeroscribe/dashboard/` (dashboard). Set when deploying under a different path or domain.                        |
+| `BASE_PATH`             | landing page | Production asset base path for the landing page. Defaults to `/Aeroscribe/`. Set when deploying under a different path or domain.                                                      |
+| `DASHBOARD_BASE_PATH`   | dashboard    | Production asset base path for the dashboard. Defaults to `/Aeroscribe/dashboard/` (the Pages sub-app); the Docker image sets `/` because Caddy serves it from the origin root.        |
 | `VITE_DASHBOARD_URL`    | landing page | Where "Open the dashboard" points. Defaults to `/Aeroscribe/dashboard/`; set it if you deploy under a different base.                                                                  |
 | `VITE_CONTACT_ENDPOINT` | landing page | If set, the contact form `POST`s JSON to this URL. If unset, the form opens a prefilled GitHub issue and tells the visitor so — it never claims to have sent anything it did not send. |
 
@@ -140,7 +141,10 @@ docker run --rm -p 8787:8787 -e AEROSCRIBE_API_KEY="$(openssl rand -hex 32)" \
 
 `.github/workflows/deploy.yml` publishes to GitHub Pages on pushes to `main`: the landing page at
 the site root and the dashboard under `/dashboard/`. It verifies typecheck and tests before
-publishing. Pull requests run the separate CI workflow (`.github/workflows/ci.yml`), which adds
+publishing, then runs `scripts/check-site.mjs` over the assembled tree — every absolute URL in the
+published HTML must resolve to a file inside it, which is how a dashboard built with the wrong base
+path fails the deploy instead of going live as a blank page. Pull requests run the separate CI
+workflow (`.github/workflows/ci.yml`), which adds
 lint, format checking, coverage thresholds, a production build of both apps, a job that
 typechecks, tests and runs the synthetic CFD smoke test for `services/api`, and a job that builds
 the API image and waits for `/health` inside it.

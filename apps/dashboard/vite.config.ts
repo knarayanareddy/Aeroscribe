@@ -39,9 +39,16 @@ export default defineConfig(({ command, mode }) => {
     plugins: [react(), tailwindcss()],
     /**
      * The dashboard is published as a sub-app of the landing page:
-     * https://<user>.github.io/Aeroscribe/dashboard/. Override with BASE_PATH.
+     * https://<user>.github.io/Aeroscribe/dashboard/.
+     *
+     * A separate variable from the landing page's `BASE_PATH` on purpose: one
+     * shared name built this app with the landing page's base, so its
+     * `index.html` asked for `/Aeroscribe/assets/…` while its own files were
+     * copied to `/Aeroscribe/dashboard/assets/…` — a 404 behind a blank page.
+     * The docker image, which serves the dashboard from the origin root, sets
+     * `DASHBOARD_BASE_PATH=/`.
      */
-    base: command === 'serve' ? '/' : (process.env.BASE_PATH ?? '/Aeroscribe/dashboard/'),
+    base: command === 'serve' ? '/' : (process.env.DASHBOARD_BASE_PATH ?? '/Aeroscribe/dashboard/'),
     // `allowedHosts` lists the hosts the dev/preview server answers for. The
     // sandbox preview domain is included explicitly rather than allowing every
     // host, which would make the dev server a DNS-rebinding target.

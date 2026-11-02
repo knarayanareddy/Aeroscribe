@@ -20,6 +20,20 @@ jobs:
   build:
     name: Build Pages site
     runs-on: ubuntu-latest
+    # The suite's coordination tests run against a real Redis and refuse to
+    # skip: without the service this job failed on every push to main, so the
+    # site kept serving an older build. Same fixture as `.github/workflows/ci.yml`.
+    services:
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      AEROSCRIBE_TEST_REDIS_URL: redis://127.0.0.1:6379/0
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -38,6 +52,11 @@ jobs:
           npm run typecheck
           npm test
           npm run build
+        env:
+          # Explicit, not defaulted: the site is published at these paths, and a
+          # default that drifts would publish a page whose assets 404.
+          BASE_PATH: /Aeroscribe/
+          DASHBOARD_BASE_PATH: /Aeroscribe/dashboard/
 
       - name: Assemble site (landing page + dashboard sub-app)
         run: |
@@ -45,6 +64,13 @@ jobs:
           cp -R apps/landing-page/dist/. site/
           cp -R apps/dashboard/dist/. site/dashboard/
           touch site/.nojekyll
+
+      # Every absolute URL in the artefact has to resolve inside it. This is the
+      # check that would have caught the dashboard being built with the landing
+      # page's base: its scripts pointed at `/Aeroscribe/assets/…` while the
+      # files were copied to `/Aeroscribe/dashboard/assets/…`.
+      - name: Check the assembled site resolves its own URLs
+        run: node scripts/check-site.mjs site
 
       - name: Configure Pages
         uses: actions/configure-pages@v6

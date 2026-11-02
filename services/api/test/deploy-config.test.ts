@@ -1,8 +1,10 @@
 // @vitest-environment node
 import { access } from 'node:fs/promises';
-import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { checkSite, SITE_PREFIX, targetOf } from '../../../scripts/check-site.mjs';
 
 /**
  * The deployment files are code that only runs on a host this repository cannot
@@ -197,8 +199,10 @@ describe('compose.yaml is wired to real configuration', () => {
     // Present and empty is same-origin. Omitting the argument builds the
     // fixture-only dashboard, which must never be what a stack serves.
     expect(caddy).toMatch(/VITE_API_URL: ''/);
-    // Served from the origin root, not from the Pages sub-path.
-    expect(dockerfile).toContain('ENV BASE_PATH=/');
+    // Served from the origin root, not from the Pages sub-path. The dashboard
+    // has its own variable: one shared `BASE_PATH` built it with the landing
+    // page's base, whose asset URLs 404 once published under /dashboard/.
+    expect(dockerfile).toContain('ENV DASHBOARD_BASE_PATH=/');
     expect(dockerfile).toMatch(/ARG VITE_API_URL/);
   });
 });
@@ -318,5 +322,141 @@ describe('the deploy workflows gate on the right environment', () => {
       expect(workflow, `${file} must create .env with mode 600`).toContain('install -m 600');
       expect(workflow).toContain("trap 'rm -f deploy.env' EXIT");
     }
+  });
+});
+
+describe('the Pages site is assembled from the build it verifies', () => {
+  it('publishes on main and by hand, with the permissions Pages needs', async () => {
+    const workflow = await readRepoFile('.github/workflows/deploy.yml');
+    expect(workflow).toContain("branches: ['main']");
+    expect(workflow).toContain('workflow_dispatch:');
+    expect(workflow).toContain('pages: write');
+    expect(workflow).toContain('id-token: write');
+    // A cancelled deploy can leave the site half-published; a queued one is fine.
+    expect(workflow).toContain('cancel-in-progress: false');
+  });
+
+  it('runs the suite with the Redis the coordination tests require', async () => {
+    const workflow = await readRepoFile('.github/workflows/deploy.yml');
+    // This is why every deploy after E failed: `npm test` refused to skip the
+    // Redis tests and the job had no server for them.
+    expect(workflow).toContain('redis:7');
+    expect(workflow).toContain('AEROSCRIBE_TEST_REDIS_URL: redis://127.0.0.1:6379/0');
+    expect(workflow).toContain('npm test');
+  });
+
+  it('builds both apps for the paths they are published under', async () => {
+    const workflow = await readRepoFile('.github/workflows/deploy.yml');
+    expect(workflow).toContain('BASE_PATH: /Aeroscribe/');
+    expect(workflow).toContain('DASHBOARD_BASE_PATH: /Aeroscribe/dashboard/');
+    // The same two values in CI, so the build that is tested is the build that
+    // is published.
+    const ci = await readRepoFile('.github/workflows/ci.yml');
+    expect(ci).toContain('BASE_PATH: /Aeroscribe/');
+    expect(ci).toContain('DASHBOARD_BASE_PATH: /Aeroscribe/dashboard/');
+  });
+
+  it('checks the assembled site before uploading it', async () => {
+    const workflow = await readRepoFile('.github/workflows/deploy.yml');
+    expect(workflow).toContain('node scripts/check-site.mjs site');
+    // Order matters: the check has to see the copied tree.
+    expect(workflow.indexOf('cp -R apps/dashboard/dist/. site/dashboard/')).toBeLessThan(
+      workflow.indexOf('node scripts/check-site.mjs site'),
+    );
+    expect(workflow.indexOf('node scripts/check-site.mjs site')).toBeLessThan(
+      workflow.indexOf('upload-pages-artifact'),
+    );
+  });
+});
+
+describe('scripts/check-site.mjs', () => {
+  const directories: string[] = [];
+  afterEach(async () => {
+    await Promise.all(directories.splice(0).map((path) => rm(path, { recursive: true })));
+  });
+
+  /** An assembled site whose every URL resolves, as the workflow produces it. */
+  async function site(): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), 'aeroscribe-site-'));
+    directories.push(root);
+    await mkdir(join(root, 'assets'), { recursive: true });
+    await mkdir(join(root, 'dashboard', 'assets'), { recursive: true });
+    await writeFile(join(root, 'assets', 'landing.js'), 'export {};');
+    await writeFile(join(root, 'assets', 'landing.css'), 'body{}');
+    await writeFile(join(root, 'dashboard', 'assets', 'app.js'), 'export {};');
+    await writeFile(join(root, 'dashboard', 'assets', 'app.css'), 'body{}');
+    await writeFile(join(root, '.nojekyll'), '');
+    await writeFile(
+      join(root, 'index.html'),
+      '<script type="module" src="/Aeroscribe/assets/landing.js"></script><link rel="stylesheet" href="/Aeroscribe/assets/landing.css">',
+    );
+    await writeFile(
+      join(root, 'dashboard', 'index.html'),
+      '<script type="module" src="/Aeroscribe/dashboard/assets/app.js"></script><link rel="stylesheet" href="/Aeroscribe/dashboard/assets/app.css">',
+    );
+    return root;
+  }
+
+  it('accepts the layout the deploy workflow assembles', async () => {
+    const { problems, documents } = await checkSite(await site());
+    expect(problems).toEqual([]);
+    expect(documents).toEqual(['index.html', 'dashboard/index.html']);
+  });
+
+  it('rejects the dashboard built with the landing page base', async () => {
+    // The exact artefact the old CI build produced: `BASE_PATH=/Aeroscribe/`
+    // for both apps, so the dashboard asked for the landing page's assets.
+    const root = await site();
+    await writeFile(
+      join(root, 'dashboard', 'index.html'),
+      '<script type="module" src="/Aeroscribe/assets/app.js"></script><link rel="stylesheet" href="/Aeroscribe/assets/app.css">',
+    );
+    const { problems } = await checkSite(root);
+    expect(problems).toEqual([
+      'dashboard/index.html references /Aeroscribe/assets/app.js, but assets/app.js is not in the assembled site',
+      'dashboard/index.html references /Aeroscribe/assets/app.css, but assets/app.css is not in the assembled site',
+    ]);
+  });
+
+  it('rejects a site that would run Jekyll or load no script', async () => {
+    const root = await site();
+    await rm(join(root, '.nojekyll'));
+    await writeFile(
+      join(root, 'dashboard', 'index.html'),
+      '<link rel="stylesheet" href="/Aeroscribe/dashboard/assets/app.css">',
+    );
+    const { problems } = await checkSite(root);
+    expect(problems.join('\n')).toMatch(/\.nojekyll is missing/);
+    expect(problems.join('\n')).toMatch(/dashboard\/index\.html loads no script/);
+  });
+
+  it('rejects a reference outside the published sub-path', async () => {
+    const root = await site();
+    await writeFile(
+      join(root, 'index.html'),
+      '<script type="module" src="/assets/landing.js"></script><link rel="stylesheet" href="/Aeroscribe/assets/landing.css">',
+    );
+    const { problems } = await checkSite(root);
+    expect(problems.join('\n')).toMatch(
+      /\/assets\/landing\.js, which is outside the published sub-path/,
+    );
+  });
+
+  it('maps a URL to the file the browser would ask for', () => {
+    expect(SITE_PREFIX).toBe('/Aeroscribe/');
+    expect(targetOf('index.html', '/Aeroscribe/assets/a.js')).toEqual({
+      outsidePrefix: false,
+      path: 'assets/a.js',
+    });
+    expect(targetOf('index.html', '/Aeroscribe/dashboard/#/runs')).toEqual({
+      outsidePrefix: false,
+      path: 'dashboard/index.html',
+    });
+    // Relative URLs resolve against the document and cannot leave the site.
+    expect(targetOf('dashboard/index.html', './favicon.svg')).toBeNull();
+    expect(targetOf('index.html', '/favicon.svg')).toEqual({
+      outsidePrefix: true,
+      path: '/favicon.svg',
+    });
   });
 });

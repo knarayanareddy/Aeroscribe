@@ -61,6 +61,13 @@ jobs:
       - name: Test with coverage thresholds
         run: npm run coverage
 
+      # Both apps are built for the path GitHub Pages serves them from: the
+      # landing page at `/Aeroscribe/`, the dashboard at
+      # `/Aeroscribe/dashboard/`. They read different variables for a reason —
+      # one shared value silently built the dashboard with the landing page's
+      # base, whose URLs 404 once published (scripts/check-site.mjs now fails
+      # the deploy for that).
+      #
       # `npm run build` ends with scripts/check-bundle-secrets.mjs, which fails
       # the job if a secret — or a non-VITE_ environment read in client code —
       # reached the bundle.
@@ -68,6 +75,17 @@ jobs:
         run: npm run build
         env:
           BASE_PATH: /Aeroscribe/
+          DASHBOARD_BASE_PATH: /Aeroscribe/dashboard/
+
+      # The same check the Pages deploy runs, so a wrong base path fails here
+      # and not after a merge to main.
+      - name: Assemble and check the published site
+        run: |
+          mkdir -p site/dashboard
+          cp -R apps/landing-page/dist/. site/
+          cp -R apps/dashboard/dist/. site/dashboard/
+          touch site/.nojekyll
+          node scripts/check-site.mjs site
 
   api:
     name: API (typecheck, tests, synthetic CFD smoke)
