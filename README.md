@@ -15,6 +15,7 @@ synthetic benchmark** that blocks submission. Read
 
 [Landing page](https://knarayanareddy.github.io/Aeroscribe/) ·
 [Researcher dashboard](https://knarayanareddy.github.io/Aeroscribe/dashboard/) ·
+[Demo video](apps/demo-video/README.md) ·
 [Implementation status](docs/IMPLEMENTATION_STATUS.md) ·
 [Backend map](docs/BACKEND.md) ·
 [Architecture](specs/architecture.md) ·
@@ -23,16 +24,17 @@ synthetic benchmark** that blocks submission. Read
 
 ## What is here
 
-| Path                            | What it is                                                                                                         |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `apps/landing-page`             | Static marketing/info site (Vite, React 19, Tailwind 4). No third-party requests; fonts are self-hosted.           |
-| `apps/dashboard`                | Researcher dashboard prototype: nine views over fixtures, plus a real (in-memory) pipeline state machine.          |
-| `services/api`                  | The agent runtime: orchestrator, stage handlers, evidence registry, literature and CFD adapters, HTTP API.         |
-| `packages/pipeline`             | Domain types, the nine-stage catalogue, the pure reducer, derived statistics and number formatting.                |
-| `packages/ui`                   | `cn()` class-name helper.                                                                                          |
-| `specs/`                        | Short, maintained specifications. `specs/archive/` keeps the original design drafts, clearly marked as historical. |
-| `docs/IMPLEMENTATION_STATUS.md` | What works, what is a mock, what is missing.                                                                       |
-| `docs/BACKEND.md`               | Step-by-step map of the backend: stages, evidence, endpoints, configuration, failure modes.                        |
+| Path                            | What it is                                                                                                          |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `apps/landing-page`             | Static marketing/info site (Vite, React 19, Tailwind 4). No third-party requests; fonts are self-hosted.            |
+| `apps/dashboard`                | Researcher dashboard prototype: nine views over fixtures, plus a real (in-memory) pipeline state machine.           |
+| `apps/demo-video`               | The product demo: ten Remotion scenes — React components — rendered to MP4. Reads the dashboard's evidence fixture. |
+| `services/api`                  | The agent runtime: orchestrator, stage handlers, evidence registry, literature and CFD adapters, HTTP API.          |
+| `packages/pipeline`             | Domain types, the nine-stage catalogue, the pure reducer, derived statistics and number formatting.                 |
+| `packages/ui`                   | `cn()` class-name helper.                                                                                           |
+| `specs/`                        | Short, maintained specifications. `specs/archive/` keeps the original design drafts, clearly marked as historical.  |
+| `docs/IMPLEMENTATION_STATUS.md` | What works, what is a mock, what is missing.                                                                        |
+| `docs/BACKEND.md`               | Step-by-step map of the backend: stages, evidence, endpoints, configuration, failure modes.                         |
 
 ## Requirements
 
@@ -109,6 +111,7 @@ its fixture papers carry no DOIs, so an offline run can never cite anything.
 | `npm run dev:api` / `npm run start:api`         | Run the API with `tsx` (watch / once).                                    |
 | `npm run smoke:literature -- "your topic"`      | Live search across all three providers, then resolve every DOI it got.    |
 | `npm run smoke:cfd`                             | Grid-convergence study, printing the mesh table and the asymptotic check. |
+| `npm run render -w @aeroscribe/demo-video`      | Render the demo video to `apps/demo-video/render/aeroscribe-demo.mp4`.    |
 
 ## Configuration
 
