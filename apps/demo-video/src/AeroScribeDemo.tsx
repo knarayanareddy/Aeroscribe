@@ -1,5 +1,7 @@
 import type { ComponentType } from 'react';
-import { AbsoluteFill, Sequence } from 'remotion';
+import { AbsoluteFill, Audio, Sequence, staticFile } from 'remotion';
+import { SceneTimingProvider } from './components/SceneTiming';
+import { narrationFile } from './narration';
 import { Citations } from './scenes/Citations';
 import { Evidence } from './scenes/Evidence';
 import { Figure } from './scenes/Figure';
@@ -11,7 +13,7 @@ import { Review } from './scenes/Review';
 import { Title } from './scenes/Title';
 import { Trace } from './scenes/Trace';
 import { theme } from './theme';
-import { timeline, type SceneId } from './timeline';
+import { LEAD_FRAMES, timeline, type SceneId } from './timeline';
 
 const SCENE_COMPONENTS: Record<SceneId, ComponentType> = {
   title: Title,
@@ -27,10 +29,15 @@ const SCENE_COMPONENTS: Record<SceneId, ComponentType> = {
 };
 
 /**
- * The video: ten scenes, laid end to end on the timeline in `timeline.ts`.
+ * The video: ten scenes, laid end to end, each with its own narration.
  *
- * Each scene owns its own animation and reads the frame relative to its own
- * `Sequence`, so a scene can be moved without rewriting its timings.
+ * The voice is placed inside the scene's sequence, off by `LEAD_FRAMES`, so the
+ * cut lands a fifth of a second before the sentence starts and the sentence
+ * never runs into the next scene — the scene's length is its clip plus that
+ * lead and a tail (`timeline.ts`).
+ *
+ * Every scene also gets `SceneTimingProvider`, which slows its animation clock
+ * down to match the longer runtime (see the note in `anim.ts`).
  */
 export function AeroScribeDemo() {
   return (
@@ -44,7 +51,16 @@ export function AeroScribeDemo() {
             durationInFrames={scene.frames}
             name={scene.id}
           >
-            <Scene />
+            <SceneTimingProvider frames={scene.frames} designFrames={scene.designFrames}>
+              <Scene />
+              <Sequence
+                from={LEAD_FRAMES}
+                durationInFrames={scene.audioFrames}
+                name={`${scene.id} narration`}
+              >
+                <Audio src={staticFile(narrationFile(scene.id))} />
+              </Sequence>
+            </SceneTimingProvider>
           </Sequence>
         );
       })}

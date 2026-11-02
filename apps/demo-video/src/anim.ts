@@ -1,4 +1,5 @@
-import { interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
+import { interpolate, spring, useVideoConfig } from 'remotion';
+import { useSceneFrame } from './scene-timing';
 
 /**
  * Motion helpers.
@@ -8,7 +9,12 @@ import { interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
  * of order, in parallel, and still produce a file that is identical on every
  * machine. A `transition` would look right in the Studio and flicker in the
  * render, which is the one bug this file exists to prevent.
+ *
+ * The hooks read *paced* time, not wall time: see `scene-timing.ts` for why a
+ * scene that runs three times its designed length slows its animations down.
  */
+
+export { useSceneFrame, useSceneProgress } from './scene-timing';
 
 export const clamp = (value: number, min = 0, max = 1): number =>
   Math.min(max, Math.max(min, value));
@@ -40,7 +46,7 @@ export function easedAt(frame: number, start: number, frames: number): number {
  * progress for a bar width and an eased copy for an opacity without two clocks.
  */
 export function useRamp(start: number, frames: number): number {
-  return rampAt(useCurrentFrame(), start, frames);
+  return rampAt(useSceneFrame(), start, frames);
 }
 
 /** The same ramp, eased. */
@@ -62,7 +68,7 @@ export function useFade(start: number, frames = 14, end?: number): number {
  * feel physical (a panel arriving, a number landing), never for opacity.
  */
 export function useLanding(start: number, damping = 26, stiffness = 140): number {
-  const frame = useCurrentFrame();
+  const frame = useSceneFrame();
   const { fps } = useVideoConfig();
   return spring({
     frame: frame - start,

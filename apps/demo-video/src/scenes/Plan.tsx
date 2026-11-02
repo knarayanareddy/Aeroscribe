@@ -1,5 +1,5 @@
-import { interpolate, useCurrentFrame } from 'remotion';
-import { easedAt, stagger } from '../anim';
+import { interpolate } from 'remotion';
+import { easedAt, stagger, useSceneFrame } from '../anim';
 import { Chip } from '../components/Chip';
 import { SceneFrame } from '../components/SceneFrame';
 import { plan, planRecord, resultsParagraph } from '../data';
@@ -14,7 +14,7 @@ import { theme } from '../theme';
  * same ids, declared numbers only.
  */
 export function Plan() {
-  const frame = useCurrentFrame();
+  const frame = useSceneFrame();
   const arrow = easedAt(frame, 40, 20);
   const section = plan.sections.find((entry) =>
     entry.paragraphs.some((paragraph) => paragraph.id === resultsParagraph.id),

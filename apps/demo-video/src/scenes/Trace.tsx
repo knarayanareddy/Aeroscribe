@@ -1,5 +1,4 @@
-import { useCurrentFrame } from 'remotion';
-import { easedAt, stagger, useEased, useRamp } from '../anim';
+import { easedAt, stagger, useEased, useRamp, useSceneFrame } from '../anim';
 import { Chip } from '../components/Chip';
 import { SceneFrame } from '../components/SceneFrame';
 import { cfd, cfdRecord, headline, render, resultsParagraph, shortHash } from '../data';
@@ -14,7 +13,7 @@ import { theme } from '../theme';
  * the digest, in that order.
  */
 export function Trace() {
-  const frame = useCurrentFrame();
+  const frame = useSceneFrame();
   const line = useRamp(26, 26);
   const claimOpacity = useEased(10, 16);
   const figureOpacity = useEased(24, 16);

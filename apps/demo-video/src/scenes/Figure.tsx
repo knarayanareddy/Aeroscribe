@@ -1,5 +1,4 @@
-import { useCurrentFrame } from 'remotion';
-import { easedAt, stagger } from '../anim';
+import { easedAt, stagger, useSceneFrame } from '../anim';
 import { Chip } from '../components/Chip';
 import { Hash } from '../components/Hash';
 import { SceneFrame } from '../components/SceneFrame';
@@ -17,7 +16,7 @@ const PLOT = { width: 720, height: 380, padLeft: 96, padBottom: 62, padTop: 26, 
  * hashes both files.
  */
 export function Figure() {
-  const frame = useCurrentFrame();
+  const frame = useSceneFrame();
 
   const values = mesh.map((level) => Number(level.value));
   const cells = mesh.map((level) => level.cells);
