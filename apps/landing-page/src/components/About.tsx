@@ -7,7 +7,10 @@ const buildStatus = [
   { label: 'Landing site', value: 'Implemented', dot: 'bg-emerald-400' },
   { label: 'Researcher dashboard', value: 'Fixture data', dot: 'bg-amber-400' },
   { label: 'Agent API', value: 'Implemented', dot: 'bg-emerald-400' },
-  { label: 'API ↔ dashboard', value: 'Not wired', dot: 'bg-amber-400' },
+  // Two builds, two answers: the published one here is fixtures, and the live
+  // build calls this API. "Not wired" stopped being true when live mode covered
+  // all nine views; IMPLEMENTATION_STATUS.md keeps the current wording.
+  { label: 'API ↔ dashboard', value: 'Live mode · opt-in', dot: 'bg-sky-400' },
 ];
 
 export default function About() {
