@@ -21,6 +21,10 @@
  *    neither is a build that half-failed.
  * 4. No document points at `localhost` or `127.0.0.1`: a published page that
  *    only works on the machine that built it is worse than no page.
+ * 5. Every media file the *bundles* name is in the artefact. The demo video is
+ *    referenced from React, not from `index.html`, so a per-document scan
+ *    cannot see it — and a site whose "watch the demo" button 404s looks fine
+ *    to every other check here unless this one looks inside the JavaScript.
  *
  * Usage: node scripts/check-site.mjs site
  */
@@ -34,8 +38,24 @@ export const SITE_PREFIX = '/Aeroscribe/';
 /** Documents that must exist, relative to the site root. */
 export const REQUIRED_DOCUMENTS = ['index.html', 'dashboard/index.html'];
 
-/** The attribute pairs a browser fetches automatically. */
-const REFERENCE = /\b(?:src|href)\s*=\s*"([^"]*)"/g;
+/**
+ * The attribute pairs a browser fetches automatically.
+ *
+ * `poster` is in the list because a `<video>` downloads it before the visitor
+ * presses play: a poster that 404s is a black rectangle where the thumbnail
+ * should be, which is exactly the kind of quiet breakage this script exists to
+ * catch before publishing.
+ */
+/**
+ * Media a bundle can name, as it appears in the built JavaScript:
+ * `demo/aeroscribe-demo.mp4`, from a `BASE_URL + 'demo/…'` expression.
+ *
+ * Only extensions a page loads over HTTP are matched; the bundle and stylesheet
+ * files themselves are covered by the document scan above.
+ */
+const BUNDLED_MEDIA = /\/((?:[\w.-]+\/)*[\w.-]+\.(?:mp4|webm|vtt|jpg|jpeg|png|webp|svg))/g;
+
+const REFERENCE = /\b(?:src|href|poster)\s*=\s*"([^"]*)"/g;
 
 const LOCAL_HOST = /(?:^|[/:])(?:localhost|127\.0\.0\.1)(?:[:/]|$)/;
 
@@ -136,7 +156,26 @@ export async function checkSite(directory) {
   const assets = await readdir(join(root, 'assets')).catch(() => []);
   if (assets.length === 0) problems.push('assets/ is empty; the landing bundle was not copied');
 
-  return { problems, documents, references };
+  // Media named from inside the bundles: a name that does not resolve is a
+  // button that 404s, which no HTML-level check can see.
+  const media = new Set();
+  for (const bundle of assets.filter((name) => name.endsWith('.js'))) {
+    const source = await readFile(join(root, 'assets', bundle), 'utf8');
+    for (const match of source.matchAll(BUNDLED_MEDIA)) {
+      const url = `/${match[1]}`;
+      const target = targetOf('index.html', url);
+      // Hashed build output lives in `assets/` and is covered by the bundle
+      // itself; third-party media is somebody else's problem, not a 404 here.
+      if (target === null || target.outsidePrefix) continue;
+      if (target.path.startsWith('assets/')) continue;
+      media.add(target.path);
+      if (!(await exists(join(root, target.path.split('/').join(sep))))) {
+        problems.push(`the bundle references ${url}, but ${target.path} is not in the site`);
+      }
+    }
+  }
+
+  return { problems, documents, references, media: [...media].sort() };
 }
 
 const invokedDirectly =
@@ -151,8 +190,9 @@ if (invokedDirectly) {
     console.error('[site] Refusing to publish a site whose own URLs do not resolve.');
     process.exitCode = 1;
   } else {
+    const { media } = await checkSite(directory);
     console.log(
-      `[site] ${documents.length} document(s), ${references} absolute reference(s) checked in ${directory}; nothing to report.`,
+      `[site] ${documents.length} document(s), ${references} absolute reference(s), ${media.length} bundled media file(s) checked in ${directory}; nothing to report.`,
     );
   }
 }

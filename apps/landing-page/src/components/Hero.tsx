@@ -67,6 +67,12 @@ export default function Hero() {
             Explore the pipeline →
           </a>
           <a
+            href="#demo"
+            className="rounded-full border border-violet-500/40 bg-violet-500/10 px-8 py-4 font-grotesk text-base font-semibold text-violet-300 backdrop-blur-sm transition-all hover:border-violet-400 hover:bg-violet-500/20 hover:text-white"
+          >
+            Watch the 2½-minute demo
+          </a>
+          <a
             href={site.dashboardUrl}
             className="rounded-full border border-blue-500/40 bg-blue-500/10 px-8 py-4 font-grotesk text-base font-semibold text-blue-300 backdrop-blur-sm transition-all hover:border-blue-400 hover:bg-blue-500/20 hover:text-white"
           >

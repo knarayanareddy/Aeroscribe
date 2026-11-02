@@ -14,8 +14,9 @@ synthetic benchmark** that blocks submission. Read
 [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) before trusting any number.
 
 [Landing page](https://knarayanareddy.github.io/Aeroscribe/) ·
+[Demo video](https://knarayanareddy.github.io/Aeroscribe/#demo) ·
 [Researcher dashboard](https://knarayanareddy.github.io/Aeroscribe/dashboard/) ·
-[Demo video](apps/demo-video/README.md) ·
+[How the video is made](apps/demo-video/README.md) ·
 [Implementation status](docs/IMPLEMENTATION_STATUS.md) ·
 [Backend map](docs/BACKEND.md) ·
 [Architecture](specs/architecture.md) ·
@@ -29,6 +30,7 @@ synthetic benchmark** that blocks submission. Read
 | `apps/landing-page`             | Static marketing/info site (Vite, React 19, Tailwind 4). No third-party requests; fonts are self-hosted.           |
 | `apps/dashboard`                | Researcher dashboard prototype: nine views over fixtures, plus a real (in-memory) pipeline state machine.          |
 | `apps/demo-video`               | The narrated product demo: ten Remotion scenes — React components — plus synthesised voiceover, rendered to MP4.   |
+| `apps/landing-page/public/demo` | The published demo: MP4, poster and generated captions, served by the landing page at `/#demo`.                    |
 | `services/api`                  | The agent runtime: orchestrator, stage handlers, evidence registry, literature and CFD adapters, HTTP API.         |
 | `packages/pipeline`             | Domain types, the nine-stage catalogue, the pure reducer, derived statistics and number formatting.                |
 | `packages/ui`                   | `cn()` class-name helper.                                                                                          |

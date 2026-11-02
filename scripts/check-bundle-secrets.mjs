@@ -35,6 +35,16 @@ const FORBIDDEN_VALUES = [
   { pattern: /\bghp_[A-Za-z0-9]{20,}/, reason: 'a GitHub token was bundled' },
 ];
 
+/**
+ * Built-in `import.meta.env` names Vite defines itself. They carry no secret —
+ * `BASE_URL` is the deploy path, `MODE` is "production" — and Vite substitutes
+ * them at build time, so reading one is the supported way to ask "where am I
+ * deployed?" rather than a variable someone might later fill with a key.
+ * Listing them explicitly (instead of allowing any name Vite happens to define)
+ * keeps the rule "public means declared public" honest.
+ */
+const PUBLIC_VITE_VARS = new Set(['BASE_URL', 'MODE', 'DEV', 'PROD', 'SSR']);
+
 /** Client code must only read `VITE_`-prefixed variables. */
 const UNSAFE_ENV_READ = /(?:import\.meta\.env\.([A-Z0-9_]+)|process\.env\.([A-Z0-9_]+))/g;
 
@@ -103,8 +113,7 @@ async function scanClientSource(findings) {
         if (!name) continue;
         // A `VITE_`-prefixed variable is public by definition. Anything else in
         // browser code is either dead or about to be inlined by accident.
-        const allowed =
-          name.startsWith('VITE_') || name === 'MODE' || name === 'DEV' || name === 'PROD';
+        const allowed = name.startsWith('VITE_') || PUBLIC_VITE_VARS.has(name);
         if (!allowed) {
           findings.push({
             where: file,
