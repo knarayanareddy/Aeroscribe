@@ -54,8 +54,9 @@ export default function Hero() {
         <p className="mx-auto mb-10 max-w-2xl font-grotesk text-sm text-gray-400">
           Status: this site, the researcher dashboard and the agent API in{' '}
           <span className="font-mono text-gray-300">services/api</span> are implemented and tested.
-          The dashboard still runs on labelled fixture data — it is not wired to the API yet, and
-          without a real CFD solver the pipeline&rsquo;s numbers are marked synthetic.
+          This published dashboard build renders labelled fixture data; a live build, opt-in at
+          build time, reads the API. Without a real CFD solver the pipeline&rsquo;s numbers are
+          marked synthetic.
         </p>
 
         <div className="mb-16 flex flex-col justify-center gap-4 sm:flex-row">

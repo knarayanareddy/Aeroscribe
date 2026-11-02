@@ -17,6 +17,13 @@ describe('Hero', () => {
     expect(screen.getByText(/the researcher dashboard and the agent API/i)).toBeInTheDocument();
     // The old copy claimed the backend did not exist; it must not come back.
     expect(screen.queryByText(/is not running yet/i)).not.toBeInTheDocument();
+    // Nor may it claim the dashboard is unwired: live mode exists and is opt-in
+    // at build time, which is what IMPLEMENTATION_STATUS.md says.
+    expect(screen.queryByText(/not wired to the API/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/a live build, opt-in at build time, reads the API/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/marked synthetic/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Open the dashboard/i })).toHaveAttribute(
       'href',
       '/Aeroscribe/dashboard/',

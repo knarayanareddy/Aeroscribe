@@ -38,7 +38,8 @@ export default function About() {
                 <span className="font-mono text-sm text-blue-200">services/api</span>: nine stage
                 handlers, Crossref/arXiv/Semantic Scholar clients, a SU2 adapter with grid
                 convergence checks, and an append-only hash chain that every generated number is
-                verified against. The dashboard is still a fixture-data prototype and the{' '}
+                verified against. The published dashboard is the fixture build — live mode is opt-in
+                at build time — and the{' '}
                 <a
                   href={`${site.repoUrl}/blob/main/docs/BACKEND.md`}
                   className="text-blue-300 underline decoration-blue-500/40 underline-offset-4 hover:text-white"

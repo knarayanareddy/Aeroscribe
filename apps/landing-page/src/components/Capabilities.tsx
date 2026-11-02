@@ -39,7 +39,10 @@ const capabilities: readonly Capability[] = [
   {
     title: 'Peer-review council',
     description:
-      'Six deterministic checks with stated rule ids — claim tracing, DOI resolution, abstract length, reference count, AI disclosure and GCI validity. Any major comment blocks submission; nothing is scored by a language model.',
+      // Seven is counted from `peerReview`'s checks in
+      // services/api/src/agents/review.ts; services/api/test/agents.test.ts pins
+      // the list, so this sentence cannot drift from the council in silence.
+      'Seven deterministic checks with stated rule ids — claim tracing, DOI resolution, abstract length, reference count, AI disclosure, GCI validity and whether the text is the projection of its manuscript plan. Any major comment blocks submission; nothing is scored by a language model.',
     status: 'implemented',
     icon: '🧪',
   },
@@ -79,7 +82,7 @@ export default function Capabilities() {
           </h2>
           <p className="mx-auto max-w-2xl font-grotesk text-lg text-gray-400">
             Each card is labelled with what actually exists today: code running in the API, pieces
-            rendered by the fixture-data dashboard, and anything still specified only.
+            rendered by the dashboard's fixture build, and anything still specified only.
           </p>
         </div>
 
